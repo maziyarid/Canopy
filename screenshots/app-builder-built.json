@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Canopy",
+      "hasCanvas": false,
+      "bodyTextLen": 1333,
+      "bodyTextHash": "e14bd25cde98398d87801283dfb023dbacdadf7f85b744ed48861f93337d4293",
+      "bodyTextPrefix": "Canopy Sheet Agents Apps Script API Setup Lookups 412/500 · SERP",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Canopy",
+      "hasCanvas": false,
+      "bodyTextLen": 1274,
+      "bodyTextHash": "e067dcbd18592139baac3b20162cf92724f1778cef87f137afb0af2e75f29d9d",
+      "bodyTextPrefix": "Canopy Connect Mangools Sheet Agents Apps Script API Setup WORKB",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}

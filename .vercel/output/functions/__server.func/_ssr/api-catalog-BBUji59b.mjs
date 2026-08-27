@@ -1,0 +1,675 @@
+//#region node_modules/.nitro/vite/services/ssr/assets/api-catalog-BBUji59b.js
+var BASE_URL = "https://api.mangools.com/v3";
+var ENDPOINTS = [
+	{
+		method: "GET",
+		path: "/kwfinder/related-keywords",
+		name: "Related keywords",
+		group: "KWFinder",
+		credits: "1 keyword lookup (24h cache)",
+		params: [
+			{
+				name: "kw",
+				required: true,
+				hint: "Seed keyword"
+			},
+			{
+				name: "location_id",
+				required: false,
+				hint: "Default 0 (global)"
+			},
+			{
+				name: "language_id",
+				required: false,
+				hint: "Default 0"
+			}
+		],
+		notes: "Up to ~700 related ideas with volume, CPC, PPC, monthly history. KD is often cached/null until a SERP lookup.",
+		sheet: "Related"
+	},
+	{
+		method: "POST",
+		path: "/kwfinder/keyword-imports",
+		name: "Bulk keyword details",
+		group: "KWFinder",
+		credits: "1 lookup per unique set (24h cache)",
+		params: [
+			{
+				name: "keywords",
+				required: true,
+				hint: "Up to 700 strings"
+			},
+			{
+				name: "location_id",
+				required: true,
+				hint: "e.g. 2840 US"
+			},
+			{
+				name: "language_id",
+				required: true,
+				hint: "e.g. 1000 English"
+			}
+		],
+		body: `{ "keywords": ["seo agency","seo"], "location_id": 2840, "language_id": 1000 }`,
+		notes: "Most powerful research endpoint. Import your own list and get sv, cpc, ppc, msv, seo difficulty.",
+		sheet: "Keywords"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/competitor-keywords",
+		name: "Competitor keywords",
+		group: "KWFinder",
+		credits: "1 keyword lookup",
+		params: [{
+			name: "url",
+			required: true,
+			hint: "Domain, subdomain, or URL"
+		}, {
+			name: "location_id",
+			required: true,
+			hint: "Country id (default 2840)"
+		}],
+		notes: "Keywords a domain ranks for, sorted by estimated organic impact. Up to 1,000 rows. POST variant exists for the same path.",
+		sheet: "Competitors"
+	},
+	{
+		method: "POST",
+		path: "/kwfinder/competitor-keywords",
+		name: "Competitor keywords (POST)",
+		group: "KWFinder",
+		credits: "1 keyword lookup",
+		params: [{
+			name: "url",
+			required: true,
+			hint: "Domain in JSON body"
+		}, {
+			name: "location_id",
+			required: true,
+			hint: "Country id"
+		}],
+		body: `{ "url": "example.com", "location_id": 2840 }`,
+		notes: "Use POST when the URL is awkward as a query string.",
+		sheet: "Competitors"
+	},
+	{
+		method: "POST",
+		path: "/kwfinder/gap-analysis",
+		name: "Keyword gap analysis",
+		group: "KWFinder",
+		credits: "1 keyword lookup",
+		params: [
+			{
+				name: "domain",
+				required: true,
+				hint: "Your domain"
+			},
+			{
+				name: "competitors",
+				required: true,
+				hint: "1–5 competitor domains"
+			},
+			{
+				name: "location_id",
+				required: true,
+				hint: "Location id"
+			},
+			{
+				name: "page",
+				required: false,
+				hint: "Premium/Agency pagination"
+			}
+		],
+		body: `{ "domain": "yoursite.com", "competitors": ["a.com","b.com"], "location_id": 2840 }`,
+		notes: "Keywords they rank for that you don't. Sorted by opportunity.",
+		sheet: "Gaps"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/suggested-keywords",
+		name: "Suggested keywords for URL",
+		group: "KWFinder",
+		credits: "1 keyword lookup",
+		params: [{
+			name: "url",
+			required: true,
+			hint: "Page or domain URL"
+		}],
+		notes: "Ranking-keyword suggestions for a URL. Useful when spinning up a SERPWatcher tracking.",
+		sheet: "Keywords"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/competitor-domain",
+		name: "Competitor domains",
+		group: "KWFinder",
+		credits: "1 keyword lookup",
+		params: [{
+			name: "kw",
+			required: true,
+			hint: "Keyword to find competing domains for"
+		}],
+		notes: "Who ranks in the neighborhood of a keyword.",
+		sheet: "Competitors"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/trends",
+		name: "Search volume trends",
+		group: "KWFinder",
+		credits: "trends quota",
+		params: [{
+			name: "kw",
+			required: true,
+			hint: "Keyword"
+		}],
+		notes: "Legacy. New integrations should use msv from keyword-imports.",
+		sheet: "Keywords"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/kd/url-metrics",
+		name: "URL metrics for KD",
+		group: "KWFinder",
+		credits: "kw-url-metrics",
+		params: [{
+			name: "url",
+			required: true,
+			hint: "URL to score"
+		}],
+		notes: "Compute SEO difficulty inputs for a specific URL.",
+		sheet: "SERP"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/kd/requests",
+		name: "KD lookup history",
+		group: "KWFinder",
+		credits: "none",
+		params: [],
+		notes: "Recent KD computations for the account.",
+		sheet: "Log"
+	},
+	{
+		method: "POST",
+		path: "/kwfinder/keywords",
+		name: "Export keywords CSV",
+		group: "KWFinder",
+		credits: "none extra",
+		params: [{
+			name: "keyword_ids",
+			required: true,
+			hint: "IDs from prior lookups (_id)"
+		}],
+		body: `{ "keyword_ids": ["11e2a4ff…"], "fields": "kw,sv,cpc,ppc,seo,msv" }`,
+		notes: "CSV export of previously fetched keyword ids.",
+		sheet: "Keywords"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/lists",
+		name: "List all keyword lists",
+		group: "KWFinder",
+		credits: "none",
+		params: [],
+		notes: "Saved KWFinder lists on the account.",
+		sheet: "Lists"
+	},
+	{
+		method: "POST",
+		path: "/kwfinder/lists",
+		name: "Create keyword list",
+		group: "KWFinder",
+		credits: "none",
+		params: [{
+			name: "name",
+			required: true,
+			hint: "List name"
+		}],
+		body: `{ "name": "Q3 content" }`,
+		notes: "Create a list, then add keywords via /lists/{id}/keyword.",
+		sheet: "Lists"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/lists/{list_id}",
+		name: "Get list items",
+		group: "KWFinder",
+		credits: "none",
+		params: [{
+			name: "list_id",
+			required: true,
+			hint: "Path id"
+		}],
+		notes: "Keywords saved in a list.",
+		sheet: "Lists"
+	},
+	{
+		method: "PATCH",
+		path: "/kwfinder/lists/{list_id}",
+		name: "Rename list",
+		group: "KWFinder",
+		credits: "none",
+		params: [{
+			name: "name",
+			required: true,
+			hint: "New name"
+		}],
+		notes: "Update list metadata.",
+		sheet: "Lists"
+	},
+	{
+		method: "DELETE",
+		path: "/kwfinder/lists/{list_id}",
+		name: "Delete list",
+		group: "KWFinder",
+		credits: "none",
+		params: [{
+			name: "list_id",
+			required: true,
+			hint: "Path id"
+		}],
+		notes: "Remove a custom list.",
+		sheet: "Lists"
+	},
+	{
+		method: "POST",
+		path: "/kwfinder/lists/{list_id}/keyword",
+		name: "Add keywords to list",
+		group: "KWFinder",
+		credits: "none",
+		params: [{
+			name: "keywords",
+			required: true,
+			hint: "One or more keywords"
+		}],
+		notes: "Append keywords to an existing list.",
+		sheet: "Lists"
+	},
+	{
+		method: "DELETE",
+		path: "/kwfinder/lists/{list_id}/keyword",
+		name: "Remove keywords from list",
+		group: "KWFinder",
+		credits: "none",
+		params: [{
+			name: "keywords",
+			required: true,
+			hint: "Keywords to drop"
+		}],
+		notes: "Remove selected keywords from a list.",
+		sheet: "Lists"
+	},
+	{
+		method: "GET",
+		path: "/serpchecker/serps",
+		name: "SERP results + live KD",
+		group: "SERPChecker",
+		credits: "1 SERP lookup",
+		params: [
+			{
+				name: "kw",
+				required: true,
+				hint: "Keyword"
+			},
+			{
+				name: "location_id",
+				required: false,
+				hint: "Local SERP"
+			},
+			{
+				name: "language_id",
+				required: false,
+				hint: "Language"
+			}
+		],
+		notes: "Organic results, SERP features, CTR, result count. Recomputes keyword difficulty in real time.",
+		sheet: "SERP"
+	},
+	{
+		method: "GET",
+		path: "/serpchecker/serps/{serp_id}/snapshot",
+		name: "SERP snapshot",
+		group: "SERPChecker",
+		credits: "none extra",
+		params: [{
+			name: "serp_id",
+			required: true,
+			hint: "From a prior SERP call"
+		}],
+		notes: "Historical snapshot of a fetched SERP.",
+		sheet: "SERP"
+	},
+	{
+		method: "GET",
+		path: "/serpchecker/url-metrics",
+		name: "Moz / Majestic URL metrics",
+		group: "SERPChecker",
+		credits: "sch-url-metrics",
+		params: [{
+			name: "url",
+			required: true,
+			hint: "URL to inspect"
+		}],
+		notes: "Authority metrics used when scoring SERP difficulty.",
+		sheet: "SERP"
+	},
+	{
+		method: "GET",
+		path: "/serpwatcher/trackings",
+		name: "List trackings",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [],
+		notes: "All rank-tracking projects on the account.",
+		sheet: "Tracking"
+	},
+	{
+		method: "POST",
+		path: "/serpwatcher/trackings",
+		name: "Create tracking",
+		group: "SERPWatcher",
+		credits: "tracked keyword quota",
+		params: [
+			{
+				name: "domain",
+				required: true,
+				hint: "Site to track"
+			},
+			{
+				name: "location_id",
+				required: true,
+				hint: "Rank location"
+			},
+			{
+				name: "platform_id",
+				required: true,
+				hint: "1 desktop, 2 mobile"
+			},
+			{
+				name: "keywords",
+				required: true,
+				hint: "Keywords to watch"
+			}
+		],
+		body: `{ "domain": "example.com", "location_id": 2840, "platform_id": 1, "keywords": ["rank tracking api"] }`,
+		notes: "Creates a SERPWatcher project. Consumes tracked-keyword quota on paid plans.",
+		sheet: "Tracking"
+	},
+	{
+		method: "POST",
+		path: "/serpwatcher/multiple-trackings",
+		name: "Create trackings in bulk",
+		group: "SERPWatcher",
+		credits: "tracked keyword quota",
+		params: [{
+			name: "trackings",
+			required: true,
+			hint: "Array of tracking payloads"
+		}],
+		notes: "Batch create projects (locations × devices).",
+		sheet: "Tracking"
+	},
+	{
+		method: "GET",
+		path: "/serpwatcher/trackings/{id}/detail",
+		name: "Tracking detail + keywords",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [{
+			name: "tracking_id",
+			required: true,
+			hint: "Path id"
+		}],
+		notes: "Full project with current keyword set.",
+		sheet: "Tracking"
+	},
+	{
+		method: "POST",
+		path: "/serpwatcher/trackings/{id}/stats",
+		name: "Ranking stats over time",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [
+			{
+				name: "tracking_id",
+				required: true,
+				hint: "Path id"
+			},
+			{
+				name: "from",
+				required: false,
+				hint: "Start date"
+			},
+			{
+				name: "to",
+				required: false,
+				hint: "End date"
+			}
+		],
+		notes: "Current / best / average rank, rank change, estimated visits, sampled history.",
+		sheet: "Tracking"
+	},
+	{
+		method: "PUT",
+		path: "/serpwatcher/trackings/{id}",
+		name: "Update tracking",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [{
+			name: "domain",
+			required: false,
+			hint: "New domain"
+		}, {
+			name: "location_id",
+			required: false,
+			hint: "New location"
+		}],
+		notes: "Change domain or location of an existing project.",
+		sheet: "Tracking"
+	},
+	{
+		method: "DELETE",
+		path: "/serpwatcher/trackings/{id}",
+		name: "Delete tracking",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [{
+			name: "tracking_id",
+			required: true,
+			hint: "Path id"
+		}],
+		notes: "Remove a project.",
+		sheet: "Tracking"
+	},
+	{
+		method: "GET",
+		path: "/serpwatcher/trackings/{id}/tracked-keywords",
+		name: "List tracked keywords",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [{
+			name: "tracking_id",
+			required: true,
+			hint: "Path id"
+		}],
+		notes: "Keywords currently watched in a project.",
+		sheet: "Tracking"
+	},
+	{
+		method: "POST",
+		path: "/serpwatcher/trackings/{id}/tracked-keywords",
+		name: "Add tracked keywords",
+		group: "SERPWatcher",
+		credits: "tracked keyword quota",
+		params: [{
+			name: "keywords",
+			required: true,
+			hint: "Keywords to add"
+		}],
+		notes: "Append keywords to a live tracking.",
+		sheet: "Tracking"
+	},
+	{
+		method: "DELETE",
+		path: "/serpwatcher/trackings/{id}/tracked-keywords",
+		name: "Remove tracked keywords",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [{
+			name: "keywords",
+			required: true,
+			hint: "Keywords to drop"
+		}],
+		notes: "Stop watching selected keywords.",
+		sheet: "Tracking"
+	},
+	{
+		method: "GET",
+		path: "/serpwatcher/trackings/{id}/reports",
+		name: "List reports",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [],
+		notes: "Scheduled/shareable ranking reports.",
+		sheet: "Tracking"
+	},
+	{
+		method: "POST",
+		path: "/serpwatcher/trackings/{id}/annotations",
+		name: "Add annotation",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [{
+			name: "text",
+			required: true,
+			hint: "Note, e.g. 'published guide'"
+		}],
+		notes: "Pin an event on the rank chart (content ship, links, algorithm).",
+		sheet: "Tracking"
+	},
+	{
+		method: "GET",
+		path: "/serpwatcher/tags",
+		name: "List tags",
+		group: "SERPWatcher",
+		credits: "none",
+		params: [],
+		notes: "Account-level tags for organizing trackings.",
+		sheet: "Tracking"
+	},
+	{
+		method: "GET",
+		path: "/kwfinder/limits",
+		name: "Quota and remaining credits",
+		group: "Quota",
+		credits: "none",
+		params: [],
+		notes: "Keyword lookups, SERPs, tracked keywords, backlink rows, short-period rate (often 3 reqs). Duplicate lookups within 24h do not recount.",
+		sheet: "Quota"
+	},
+	{
+		method: "GET",
+		path: "/mangools/locations",
+		name: "Search locations",
+		group: "Locations",
+		credits: "none",
+		params: [{
+			name: "query",
+			required: false,
+			hint: "City, region, or country"
+		}],
+		notes: "Resolve location_id for local volume and ranks. City-level targeting is supported.",
+		sheet: "Locations"
+	},
+	{
+		method: "GET",
+		path: "/mangools/locations/{location}",
+		name: "Location detail",
+		group: "Locations",
+		credits: "none",
+		params: [{
+			name: "location",
+			required: true,
+			hint: "Location id"
+		}],
+		notes: "Canonical name, country code, google_domain.",
+		sheet: "Locations"
+	}
+];
+var FIELD_MAP = [
+	{
+		key: "kw",
+		label: "Keyword",
+		meaning: "The query string"
+	},
+	{
+		key: "_id",
+		label: "Keyword ID",
+		meaning: "Mangools id — reuse for CSV export and lists"
+	},
+	{
+		key: "sv",
+		label: "Avg. search volume",
+		meaning: "Average monthly searches"
+	},
+	{
+		key: "svn",
+		label: "Normalized volume",
+		meaning: "Normalized / current volume figure"
+	},
+	{
+		key: "svs",
+		label: "Volume (alt)",
+		meaning: "Secondary volume field from some endpoints"
+	},
+	{
+		key: "msv",
+		label: "Monthly history",
+		meaning: "Array: often [year, month, volume] triples or monthly series"
+	},
+	{
+		key: "cpc",
+		label: "CPC",
+		meaning: "Cost per click in the location's currency, often USD"
+	},
+	{
+		key: "ppc",
+		label: "PPC competition",
+		meaning: "Paid competition 0–100"
+	},
+	{
+		key: "seo",
+		label: "Keyword difficulty",
+		meaning: "Cached KD 0–100. Null until SERP/KD compute"
+	},
+	{
+		key: "seo_ts",
+		label: "KD timestamp",
+		meaning: "When KD was last computed"
+	},
+	{
+		key: "lid",
+		label: "Location id",
+		meaning: "Geotarget of this keyword row"
+	},
+	{
+		key: "ts",
+		label: "Fetched at",
+		meaning: "Unix timestamp of the metric snapshot"
+	},
+	{
+		key: "h",
+		label: "History tuples",
+		meaning: "Competitor-keyword history: volume, KD, PPC, timestamps, CPC"
+	}
+];
+var RATE_NOTES = [
+	"Identical requests inside 24 hours are served from cache and do not recount toward keyword lookups.",
+	"Burst limit is small (reqs-per-short-period is often 3). Canopy sleeps and retries 429s with exponential backoff.",
+	"Apps Script executions cap at 6 minutes. The script chunks work and stores a continuation token.",
+	"Bulk import accepts at most 700 keywords per request.",
+	"Creating SERPWatcher trackings consumes tracked-keyword quota on paid plans.",
+	"Get a key at mangools.com/api-token and send it as the X-Access-Token header. Never put it in the URL."
+];
+//#endregion
+export { RATE_NOTES as i, ENDPOINTS as n, FIELD_MAP as r, BASE_URL as t };
