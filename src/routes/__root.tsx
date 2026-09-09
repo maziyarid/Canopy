@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { LocaleRoot } from "@/components/locale-root";
 import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 
@@ -15,9 +16,9 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Keyword research and rank tracking for Google Sheets, wired to the Mangools API and your AI agents.",
+          "Canopy by MΛZ — bilingual keyword research and SERP tracking for client websites, with scoped access and Maz•Assist agents.",
       },
-      { name: "theme-color", content: "#12140f" },
+      { name: "theme-color", content: "#0F1724" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
@@ -28,7 +29,7 @@ export const Route = createRootRoute({
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,500;0,600;1,400&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Poppins:wght@600;700&family=Vazirmatn:wght@400;500;600;700&display=swap",
       },
     ],
   }),
@@ -40,14 +41,15 @@ export const Route = createRootRoute({
       <body className="bg-bg text-fg">
         <PreviewHostBridge />
         <AuthProvider>
-          <Outlet />
+          <LocaleRoot>
+            <Outlet />
+          </LocaleRoot>
         </AuthProvider>
         <Toaster
           theme="dark"
           position="bottom-right"
           toastOptions={{
-            className:
-              "!bg-raised !text-fg !border-border !font-sans !shadow-[var(--shadow-border)]",
+            className: "!bg-raised !text-fg !border-border !font-sans !shadow-[var(--shadow-border)]",
           }}
         />
         <Scripts />

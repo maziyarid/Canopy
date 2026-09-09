@@ -1,11 +1,9 @@
 /// <reference types="vite/client" />
 
-declare module "*.gs?raw" {
-  const content: string;
-  export default content;
+interface ImportMetaEnv {
+  readonly VITE_AUTH_ENABLED: string;
 }
 
-declare module "*.json?raw" {
-  const content: string;
-  export default content;
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
 }
