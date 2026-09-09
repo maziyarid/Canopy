@@ -1,21 +1,46 @@
-export type ViewId = "workspace" | "agents" | "script" | "atlas" | "setup";
+export type Lang = "en" | "fa";
 
-export type SheetTab =
+export type Role = "owner" | "editor" | "client";
+
+export type KeywordStatus = "new" | "tracked" | "briefed" | "ignored";
+
+export type ProjectTab =
+  | "overview"
   | "keywords"
-  | "related"
-  | "tracking"
-  | "competitors"
-  | "gaps"
-  | "lists"
-  | "log";
+  | "tracker"
+  | "research"
+  | "agents"
+  | "access"
+  | "progress"
+  | "connect";
+
+export type Project = {
+  id: string;
+  ownerId: string;
+  name: string;
+  domain: string;
+  locationId: number;
+  languageId: number;
+  platformId: number;
+  competitors: string;
+  trackingId: string;
+  notes: string;
+  status: string;
+  createdAt: string;
+  role: Role;
+  keywordFilter: string;
+  keywordCount: number;
+  memberCount: number;
+  avgRank: number | null;
+  top10: number;
+};
 
 export type KeywordRow = {
   id: string;
+  projectId: string;
   seed: string;
   keyword: string;
-  location: string;
   locationId: number;
-  language: string;
   languageId: number;
   volume: number;
   msv: number[];
@@ -23,19 +48,17 @@ export type KeywordRow = {
   cpc: number;
   ppc: number;
   opportunity: number;
-  status: "new" | "tracked" | "briefed" | "ignored";
-  lastFetched: string;
+  status: KeywordStatus;
   keywordId: string;
   notes: string;
   agent: string;
+  lastFetched: string;
 };
 
-export type TrackingRow = {
+export type RankRow = {
   id: string;
-  trackingId: string;
-  domain: string;
+  projectId: string;
   keyword: string;
-  location: string;
   device: "desktop" | "mobile";
   rank: number | null;
   prev: number | null;
@@ -43,22 +66,36 @@ export type TrackingRow = {
   visits: number;
   volume: number;
   url: string;
-  lastCheck: string;
+  checkedAt: string;
+};
+
+export type SerpOrganic = {
+  id: string;
+  projectId: string;
+  keyword: string;
+  position: number;
+  url: string;
+  title: string;
+  domain: string;
+  kd: number | null;
+  features: string;
+  fetchedAt: string;
 };
 
 export type CompetitorRow = {
   id: string;
+  projectId: string;
   domain: string;
   keyword: string;
   volume: number;
   kd: number | null;
   cpc: number;
   position: number | null;
-  visitsEst: number;
 };
 
 export type GapRow = {
   id: string;
+  projectId: string;
   keyword: string;
   volume: number;
   cpc: number;
@@ -67,36 +104,32 @@ export type GapRow = {
   competitorPosition: number;
 };
 
-export type ListRow = {
+export type AccessRow = {
   id: string;
-  name: string;
-  count: number;
-  updated: string;
+  projectId: string;
+  email: string;
+  userId: string | null;
+  role: Role;
+  keywordFilter: string;
+  createdAt: string;
+};
+
+export type BriefRow = {
+  id: string;
+  projectId: string;
+  keyword: string;
+  content: string;
+  createdAt: string;
 };
 
 export type LogRow = {
   id: string;
-  at: string;
+  projectId: string;
   level: "info" | "warn" | "error";
   action: string;
   detail: string;
   credits: number;
-};
-
-export type QuotaState = {
-  lookups: { limit: number; remaining: number };
-  serps: { limit: number; remaining: number };
-  tracked: { limit: number; remaining: number };
-  resetHours: number;
-  live: boolean;
-};
-
-export type AgentMessage = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  at: string;
-  playbook?: AgentPlaybook | null;
+  createdAt: string;
 };
 
 export type AgentPlaybook = {
@@ -107,10 +140,12 @@ export type AgentPlaybook = {
   notes: string;
 };
 
-export type LocationOption = {
-  id: number;
-  label: string;
-  country: string;
+export type QuotaState = {
+  lookups: { limit: number; remaining: number };
+  serps: { limit: number; remaining: number };
+  tracked: { limit: number; remaining: number };
+  resetHours: number;
+  live: boolean;
 };
 
 export type AtlasEndpoint = {
@@ -125,14 +160,24 @@ export type AtlasEndpoint = {
   sheet: string;
 };
 
-export type Settings = {
-  apiKey: string;
-  domain: string;
-  locationId: number;
-  languageId: number;
-  trackingId: string;
-  llmKey: string;
-  llmBase: string;
-  webhookSecret: string;
-  dailyTrigger: boolean;
+export type StudioSettings = {
+  hasKey: boolean;
+  mondayWebhook: string;
+  defaultLocationId: number;
+  defaultLanguageId: number;
+};
+
+export type ProjectBundle = {
+  project: Project;
+  keywords: KeywordRow[];
+  ranks: RankRow[];
+  history: RankRow[];
+  related: KeywordRow[];
+  competitors: CompetitorRow[];
+  gaps: GapRow[];
+  serp: SerpOrganic[];
+  access: AccessRow[];
+  briefs: BriefRow[];
+  log: LogRow[];
+  quota: QuotaState | null;
 };

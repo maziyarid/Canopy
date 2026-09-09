@@ -13,7 +13,7 @@ export function Button({
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "ghost" | "paper" | "danger" | "quiet";
+  variant?: "primary" | "ghost" | "paper" | "danger" | "quiet" | "accent";
   size?: "sm" | "md" | "lg";
 }) {
   return (
@@ -23,8 +23,10 @@ export function Button({
         size === "sm" && "h-9 rounded-sm px-3 text-sm",
         size === "md" && "h-10 rounded-md px-4 text-sm",
         size === "lg" && "h-11 rounded-md px-5 text-base",
-        variant === "primary" && "bg-accent text-accent-fg hover:opacity-90",
-        variant === "ghost" && "bg-raised text-fg shadow-[var(--shadow-border)] hover:shadow-[var(--shadow-border-hover)]",
+        variant === "primary" && "bg-primary text-primary-fg hover:opacity-90",
+        variant === "accent" && "bg-accent text-accent-fg hover:opacity-90",
+        variant === "ghost" &&
+          "bg-raised text-fg shadow-[var(--shadow-border)] hover:shadow-[var(--shadow-border-hover)]",
         variant === "paper" && "bg-paper text-ink hover:opacity-90",
         variant === "danger" && "bg-bad/20 text-bad hover:opacity-90",
         variant === "quiet" && "text-muted hover:bg-raised hover:text-fg",
@@ -64,7 +66,7 @@ export function Badge({
   className,
   ...props
 }: HTMLAttributes<HTMLSpanElement> & {
-  tone?: "good" | "warn" | "bad" | "muted" | "accent" | "paper";
+  tone?: "good" | "warn" | "bad" | "muted" | "accent" | "primary" | "paper";
 }) {
   return (
     <span
@@ -75,6 +77,7 @@ export function Badge({
         tone === "bad" && "bg-bad/15 text-bad",
         tone === "muted" && "bg-raised text-muted",
         tone === "accent" && "bg-accent/15 text-accent",
+        tone === "primary" && "bg-primary/15 text-primary",
         tone === "paper" && "bg-paper/10 text-paper",
         className,
       )}
