@@ -5,7 +5,7 @@ import { LocaleRoot } from "@/components/locale-root";
 import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "Canopy";
+const APP_NAME = "Ms Robot";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -16,7 +16,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Canopy by MΛZ — bilingual keyword research and SERP tracking for client websites, with scoped access and Maz•Assist agents.",
+          "Ms Robot by MΛZ — operations intelligence, analytics evidence and site workspaces with scoped access and ADA-assisted workflows.",
       },
       { name: "theme-color", content: "#0F1724" },
     ],
