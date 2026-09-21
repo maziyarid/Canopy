@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { studioAuth } from "./studio-auth";
 
 // Data source types
 const DataSourceSchema = z.enum([
@@ -60,6 +61,7 @@ const MultiSourceSchema = z.object({
 
 // Save SEO data from any source
 export const saveSEOData = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(SEORecordSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -80,6 +82,7 @@ export const saveSEOData = createServerFn({ method: "POST" })
 
 // Get SEO data for a project
 export const getSEOData = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
   .validator(z.object({
     projectId: z.string(),
     keyword: z.string().optional(),
@@ -144,6 +147,7 @@ export const getSEOData = createServerFn({ method: "GET" })
 
 // Fetch and aggregate data from multiple sources
 export const aggregateSEOData = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(MultiSourceSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -153,8 +157,7 @@ export const aggregateSEOData = createServerFn({ method: "POST" })
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
     // Get existing data from cache
-    const cachedData = await getSEOData.handler({
-      context,
+    const cachedData = await getSEOData({
       data: {
         projectId: data.projectId,
         keyword: data.keyword,
@@ -175,6 +178,7 @@ export const aggregateSEOData = createServerFn({ method: "POST" })
 
 // Get trending data for dashboard
 export const getSEOTimeline = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
   .validator(z.object({
     projectId: z.string(),
     metricName: z.string().optional(),
