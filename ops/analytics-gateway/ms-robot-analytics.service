@@ -1,0 +1,24 @@
+[Unit]
+Description=Ms Robot analytics provider gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maziyarid
+Group=maziyarid
+EnvironmentFile=/etc/ms-robot-analytics.env
+ExecStart=/usr/bin/python3 /srv/ms-robot-analytics/gateway.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ms-robot-analytics
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
