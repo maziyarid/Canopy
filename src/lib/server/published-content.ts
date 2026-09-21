@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { studioAuth } from "./studio-auth";
 
 const ContentTypeSchema = z.enum(["blog", "page", "product", "video", "podcast", "other"]);
 
@@ -24,7 +25,8 @@ const CreateContentSchema = z.object({
   })).optional(),
 });
 
-const UpdateContentSchema = CreateContentSchema.partial().extend({
+const UpdateContentSchema = CreateContentSchema.omit({ projectId: true }).partial().extend({
+  projectId: z.string(),
   id: z.string(),
 });
 
@@ -50,6 +52,7 @@ const ContentStatsSchema = z.object({
 });
 
 export const createPublishedContent = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(CreateContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -99,6 +102,7 @@ export const createPublishedContent = createServerFn({ method: "POST" })
   });
 
 export const updatePublishedContent = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(UpdateContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -172,6 +176,7 @@ export const updatePublishedContent = createServerFn({ method: "POST" })
   });
 
 export const listPublishedContent = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
   .validator(ListContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -234,6 +239,7 @@ export const listPublishedContent = createServerFn({ method: "GET" })
   });
 
 export const getPublishedContent = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
   .validator(z.object({ projectId: z.string(), id: z.string() }))
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -293,6 +299,7 @@ export const getPublishedContent = createServerFn({ method: "GET" })
   });
 
 export const deletePublishedContent = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(DeleteContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -316,6 +323,7 @@ export const deletePublishedContent = createServerFn({ method: "POST" })
   });
 
 export const getContentStats = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
   .validator(ContentStatsSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -394,6 +402,7 @@ export const getContentStats = createServerFn({ method: "GET" })
   });
 
 export const getContentTimeline = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
   .validator(ContentStatsSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
