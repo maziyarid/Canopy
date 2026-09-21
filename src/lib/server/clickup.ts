@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { studioAuth } from "./studio-auth";
 
 const ClickUpAPIKeySchema = z.object({
   apiKey: z.string().min(1),
@@ -33,6 +34,7 @@ const ClickUpListSchema = z.object({
 const CLICKUP_API_URL = "https://api.clickup.com/api/v2";
 
 export const saveClickUpSettings = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(ClickUpAPIKeySchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
@@ -58,6 +60,7 @@ export const saveClickUpSettings = createServerFn({ method: "POST" })
   });
 
 export const getClickUpSettings = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
   .handler(async ({ context }) => {
     const sql = await (await import("@/lib/db")).getSql();
     
@@ -166,6 +169,7 @@ export const createClickUpTask = createServerFn({ method: "POST" })
   });
 
 export const syncClickUpWithProject = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(z.object({
     projectId: z.string(),
     apiKey: z.string().min(1),
@@ -193,7 +197,7 @@ export const syncClickUpWithProject = createServerFn({ method: "POST" })
     
     const createdTasks = [];
     for (const kw of tasksToCreate) {
-      const taskResponse = await createClickUpTask.handler({
+      const taskResponse = await createClickUpTask({
         data: {
           apiKey: data.apiKey,
           listId: data.listId,
