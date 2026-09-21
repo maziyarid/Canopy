@@ -1,7 +1,7 @@
 import type { Lang } from "./types";
 
 export const copy = {
-  appName: { en: "Canopy", fa: "کانوپی" },
+  appName: { en: "Ms Robot", fa: "مس ربات" },
   studio: { en: "MΛZ Studio", fa: "استودیو MΛZ" },
   tagline: {
     en: "Keyword research and SERP tracking for every client website.",
@@ -49,7 +49,7 @@ export const copy = {
     fa: "زیپ اسکریپت را دانلود کنید، در شیت بچسبانید و بگذارید ایجنت‌ها به doPost پست کنند.",
   },
 
-  welcome: { en: "Sign in to Canopy", fa: "ورود به کانوپی" },
+  welcome: { en: "Sign in to Ms Robot", fa: "ورود به مس ربات" },
   welcomeBody: {
     en: "Agency desk for you. Client portal for the people you invite.",
     fa: "میز آژانس برای شما. پورتال پیشرفت برای کسانی که دعوت می‌کنید.",
@@ -318,5 +318,4 @@ export const AGENT_ROSTER = [
     uses: "Grok · optional SERP lookup",
   },
 ] as const;
-
 
