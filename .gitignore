@@ -3,3 +3,7 @@ node_modules/
 .github_repo
 .env
 .env.*
+
+# Python runtime/test artefacts
+__pycache__/
+*.pyc
