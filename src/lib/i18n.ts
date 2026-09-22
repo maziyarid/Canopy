@@ -96,6 +96,7 @@ export const copy = {
   agents: { en: "Agents", fa: "ایجنت‌ها" },
   access: { en: "Access", fa: "دسترسی" },
   progress: { en: "Client progress", fa: "پیشرفت مشتری" },
+  providers: { en: "Providers", fa: "منابع داده" },
   connect: { en: "Connect", fa: "اتصال" },
 
   top10: { en: "In top 10", fa: "در ۱۰ تای اول" },
@@ -318,4 +319,5 @@ export const AGENT_ROSTER = [
     uses: "Grok · optional SERP lookup",
   },
 ] as const;
+
 

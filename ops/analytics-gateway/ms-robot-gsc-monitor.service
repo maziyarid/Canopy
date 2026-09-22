@@ -1,0 +1,41 @@
+[Unit]
+Description=Ms Robot portfolio Search Console sync and investigation monitor
+After=network-online.target ms-robot-google-provider.service ms-robot-analytics.service ms-robot-bridge.service
+Wants=network-online.target ms-robot-bridge.service
+Requires=ms-robot-google-provider.service
+
+[Service]
+Type=oneshot
+User=maziyarid
+Group=maziyarid
+WorkingDirectory=/srv/ms-robot-analytics
+EnvironmentFile=/etc/ms-robot-analytics.env
+EnvironmentFile=-/etc/ms-robot-bridge.env
+ExecStart=/usr/bin/python3 /srv/ms-robot-analytics/portfolio_gsc.py
+Restart=on-failure
+RestartSec=15m
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ms-robot-analytics
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+UMask=0077

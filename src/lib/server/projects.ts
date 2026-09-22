@@ -53,21 +53,25 @@ export const listProjects = createServerFn({ method: "GET" })
     for (const p of all) {
       const role: Role = p.owner_id === context.userId ? "owner" : (accessMap.get(p.id)?.role ?? "client");
       const filter = p.owner_id === context.userId ? "" : (accessMap.get(p.id)?.keyword_filter ?? "");
-      const kw = await sql<{ c: number }>`select count(*)::int as c from keywords where project_id = ${p.id}`;
+      const keywordRows = await sql<{ keyword: string }>`
+        select keyword from keywords where project_id = ${p.id}
+      `;
+      const scopedKeywords = filterKeywords(keywordRows, filter);
       const mem = await sql<{ c: number }>`select count(*)::int as c from project_access where project_id = ${p.id}`;
-      const ranks = await sql<{ rank: number | null }>`
-        select distinct on (keyword) rank from rank_history
+      const rankRows = await sql<{ keyword: string; rank: number | null }>`
+        select distinct on (keyword) keyword, rank from rank_history
         where project_id = ${p.id}
         order by keyword, checked_at desc
       `;
-      const ranked = ranks.map((r) => n(r.rank)).filter((x) => x > 0);
+      const scopedRanks = filterKeywords(rankRows, filter);
+      const ranked = scopedRanks.map((r) => n(r.rank)).filter((x) => x > 0);
       const avgRank = ranked.length ? Math.round((ranked.reduce((s, x) => s + x, 0) / ranked.length) * 10) / 10 : null;
       const top10 = ranked.filter((x) => x <= 10).length;
       out.push(
         toProject(p, {
           role,
           keywordFilter: filter,
-          keywordCount: n(kw[0]?.c),
+          keywordCount: scopedKeywords.length,
           memberCount: n(mem[0]?.c) + 1,
           avgRank,
           top10,
@@ -192,7 +196,9 @@ export const getProjectBundle = createServerFn({ method: "GET" })
         ? []
         : await sql`select * from project_access where project_id = ${data.id} order by created_at desc`;
     const briefRows = await sql`select * from briefs where project_id = ${data.id} order by created_at desc`;
-    const logRows = await sql`select * from activity_log where project_id = ${data.id} order by created_at desc limit 40`;
+    const logRows = filter.trim()
+      ? []
+      : await sql`select * from activity_log where project_id = ${data.id} order by created_at desc limit 40`;
     return {
       project: toProject(project, {
         role,

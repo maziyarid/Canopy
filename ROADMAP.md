@@ -57,23 +57,32 @@ Remaining:
 - process the supplied Ms Robot brand kit when its raw archive is accessible; do not invent replacement identity assets.
 
 ### P1 — Analytics/provider gateway — AAX-50, AAX-64, AAX-66, AAX-67, AAX-68
-**Status: local provider runtime baseline deployed; live provider adapters/credentials pending.**
+**Status: GSC live read-only path verified; provider runtime/admin control plane implemented; GA4/GTM/Clarity/Bing/SEO-provider credentials or adapters remain pending.**
 Completed baseline:
 - `ms-robot-analytics.service` deployed on `127.0.0.1:9130`;
+- `ms-robot-google-provider.service` deployed on `127.0.0.1:9131`, reusing the existing VPS service account with the Search Console read-only scope;
+- live connection test enumerates 7 authorised Search Console properties without exposing credentials;
+- real `teznevise.ir` 27-day GSC sync completed with 409 durable metric rows (27 site/day + 382 query/page), and the Ms Robot snapshot reports GSC health `ok`;
+- Google discovery tests now distinguish provider blockers: GA4 has no authorised accounts/properties for the current service account; GTM API is disabled in the existing Google Cloud project, so both remain explicitly `not_configured`;
 - bearer-authenticated `/v1/*` provider API with public minimal `/health`;
 - durable SQLite provider state + sync ledger at `/var/lib/ms-robot-analytics/state.sqlite3`;
 - providers default to explicit `not_configured`; refresh attempts are recorded as `blocked/not_configured` until real credentials exist;
-- service restart persistence verified; systemd security exposure score 3.4/OK;
-- gateway unit tests PASS (auth + blocked-not-stuck behaviour).
+- service restart persistence verified; hardened systemd security exposure score 2.8/OK;
+- gateway unit tests PASS (auth + blocked-not-stuck behaviour + full registry refresh contract);
+- typed Provider Admin server surface + workspace Providers UI implemented without exposing credentials;
+- provider registry and sync ledger are visible per project/site;
+- provider states remain explicit: GSC is live/verified; GA4/GTM/Clarity/Bing/Semrush/Ubersuggest/Mangools remain `not_configured` or adapter-gated until verified;
+- live runtime verified that GTM, Bing Webmaster and Semrush refresh requests persist as `blocked/not_configured` with the requested `28d` window rather than pretending success.
+- GSC trigger-to-investigation monitor is live with stable fingerprints/deduplication; current runtime detected an open Teznevise traffic-surge investigation and Bluethesis sitemap-warning investigation from fresh GSC evidence.
+- daily portfolio GSC sync→monitor execution is enabled through `ms-robot-gsc-monitor.timer`; the oneshot runs without ChatGPT/MCP, is persistent across downtime, and is sandboxed at systemd exposure 2.8/OK;
+- the scheduled monitor now emits evidence-backed `ms_robot.analytics.signal` events into the local ADA bridge; stable evidence-derived idempotency suppresses duplicate queue entries while changed/resolved evidence can produce new events;
 
 Next:
-- connect the already-merged Ms Robot gateway client to the local runtime;
-- add provider registry, health, capability and sync-ledger persistence;
-- Google: GSC + GA4 + GTM read-only by default;
+- Google: grant the existing service account read access to required GA4 properties; enable the Tag Manager API in the existing project and grant least-privilege container access; keep GSC on the verified service-account path;
 - Bing Webmaster adapter;
 - Clarity and approved SEO-provider adapters;
 - explicit freshness, quota/cost, retry/backoff and circuit-breaker state;
-- Search Console trigger-to-investigation workflow; no automatic production mutation.
+- Search Console monitor + scheduled execution + ADA bridge handoff are implemented/live; current runtime investigations are mirrored to Agiflow follow-up tasks TNS-41 and TNS-42. Next expand indexing/crawl/security signal coverage and add the bounded ADA consumer that acknowledges/routes bridge events into Agiflow. No automatic production mutation.
 
 ### P2 — ADA operations console / event router — AAX-44, AAX-45, AAX-49, AAX-52
 **Status: bridge exists; UI/workflows pending.**
@@ -89,14 +98,35 @@ Next:
 - approval queue, incidents, retries, receipts and Agiflow summaries in Ms Robot.
 
 ### P3 — Maz Robot core — AAX-70, AAX-71
-**Status: planned.**
+**Status: shared schema + capability registry + encrypted-vault crypto + publication state machine implemented; durable DB worker/UI pending.**
 
-Implement shared Tenant → Workspace/Site → SocialConnection → Schedule → ContentItem → PublicationJob → PublicationResult model, shared credential references, RBAC, idempotency, retry, audit receipts, quotas and entitlement boundaries.
+Implemented baseline:
+- migration `0004_unified_stack.sql` reuses existing `projects` as workspace/site identity and backfills per-owner tenants;
+- provider connections + provider sync ledger;
+- social connections, schedules, Qalam-linked content items, publication jobs/results and social metrics;
+- workspace entitlements and operation receipts;
+- platform capability registry with explicit provider gates;
+- permanent PGLite migration regression test and social capability tests.
+
+Implemented runtime-safety baseline:
+- `0005_social_runtime.sql` adds scoped encrypted credential storage plus publication lease/max-attempt/dead-letter fields;
+- AES-256-GCM credential primitive uses scoped associated data and fails closed on wrong key/scope;
+- database vault store enforces project scope, persists ciphertext only, emits secret-free operation receipts and supports key-version rotation;
+- publication state machine enforces platform capability gates, stable per-platform idempotency, bounded retry/backoff and dead-letter semantics;
+- regression test proves a successful platform is not republished when a sibling platform fails and retries.
+- database-backed publication store now atomically leases one due job with FOR UPDATE SKIP LOCKED, persists provider success receipts, suppresses duplicate publish after prior success, releases retry leases with not_before, and records terminal dead-letter state;
+- publication worker binds the DB store + project-scoped vault resolver + Telegram adapter, validates migration/vault prerequisites, and has no PGLite fallback;
+
+Remaining:
+- encrypted vault DB CRUD/key rotation/access receipts implemented; remaining secret lifecycle work is operator key provisioning/rotation runbook + production key custody;
+- publication worker code + hardened systemd unit implemented and installed fail-closed; production activation remains blocked on durable DATABASE_URL + vault key provisioning;
+- tenant-isolation/RBAC integration tests against real sessions;
+- admin/client UI.
 ### P4 — Social adapters — AAX-72..AAX-78
-**Status: planned / provider-gated.**
+**Status: Telegram Bot API adapter implemented/tested; live credentials and other provider gates pending.**
 
 Order:
-1. Telegram Bot API V1.
+1. Telegram Bot API V1 — adapter implemented (`bcf6ffb`); live bot/channel verification pending.
 2. Pinterest Trial → Standard.
 3. Meta adapter with review/verification gates.
 4. LinkedIn eligibility + skeleton.
@@ -134,8 +164,32 @@ A phase is not “done” until applicable gates pass:
 | 2026-09-21 | `a422eb5` | Added server-only analytics gateway client. |
 | 2026-09-21 | verification | Typecheck PASS; tests PASS; lint exits 0 with warnings only. |
 | 2026-09-21 | `244d54e` + `da98651` | Deployed local Ms Robot analytics gateway baseline; removed accidental Python bytecode artefacts and added prevention ignore rule. |
+| 2026-09-21 | `23fe903` | Added shared tenant/provider/social schema, SaaS entitlements, capability registry and permanent migration/capability regression tests. |
+| 2026-09-21 | `bcf6ffb` | Added server-only Telegram Bot API publication adapter with media/button payloads, provider receipt IDs and rate-limit metadata tests. |
+| 2026-09-21 | `986f413` | Repaired the unified migration regression test lint gate; migration test remains green. |
+| 2026-09-21 | `b70bcea` | Added project-scoped Provider Admin UI/server surface and expanded gateway registry/sync-ledger contract. |
+| 2026-09-21 | `0988e64` | Hardened `ms-robot-analytics.service`; restart persistence verified and systemd exposure reduced from 7.8 EXPOSED to 2.8 OK. |
 | 2026-09-21 | runtime verification | Vite/Nitro build PASS; PGlite assets packaged; desktop/mobile browser smoke PASS with HTTP 200 and no runtime console/page errors. |
 | 2026-09-21 | branding checkpoint | Active app title/metadata switched from Canopy to Ms Robot; legacy technical identifiers preserved. |
+
+| 2026-09-21 | live GSC verification | Deployed/wired the local read-only Google provider; 7 authorised properties discovered; `teznevise.ir` sync completed with 409 stored rows and GSC snapshot health `ok`. |
+
+| 2026-09-21 | Google discovery checkpoint | Provider connection tests added for GA4/GTM: GA4 currently has no authorised accounts; GTM is blocked by the API being disabled in the existing project. |
+
+| 2026-09-21 | `54ee810` + live verification | Added durable GSC investigation monitor, dedupe/resolution logic and API endpoints; live runtime byte-matches branch and returned two current evidence-backed investigations. |
+
+| 2026-09-21 | scheduled GSC monitor | Enabled persistent daily `ms-robot-gsc-monitor.timer`; live oneshot exit 0; all 7 GSC properties refreshed/checked; runtime investigations mirrored to TNS-41 and TNS-42; systemd exposure 2.8/OK. |
+
+| 2026-09-21 | ADA bridge monitor handoff | Daily GSC job now queues `ms_robot.analytics.signal` events to ADA with evidence-hash idempotency; repeated live run returned duplicate=true and bridge queue count remained 2. |
+| 2026-09-21 | `cfd33d2` | Added persistent Ms Robot analytics -> ADA control-core event projection; live two-event handoff/ack verified and timer activated. |
+
+| 2026-09-21 | Maz Robot runtime-safety tests | Added encrypted credential-vault primitive and publication retry/idempotency engine; dedicated tests PASS (5/5), full application test suite PASS (196 script/core + 44 app/auth/social tests), typecheck PASS and lint 0 errors. |
+
+| 2026-09-21 | DB publication-store integration | Added atomic Postgres/PGLite claim/lease + context + success/retry/dead transitions; DB integration tests 2/2 PASS, complete test suite PASS (196 script/core + 46 app/auth/social), typecheck PASS, lint 0 errors. |
+
+| 2026-09-21 | Vault DB integration | Added project-scoped encrypted credential store/read/rotate with access receipts; cross-project read and wrong-scope/key fail closed; vault integration tests 2/2 PASS, full suite PASS (196 script/core + 48 app/auth/social), typecheck PASS, lint 0 errors. |
+
+| 2026-09-21 | Maz Robot worker checkpoint | Worker unit installed but intentionally disabled/inactive: missing `/etc/maz-robot-worker.env` causes systemd condition skip; direct preflight without config exits 78 with `DATABASE_URL is required`; unit branch/runtime hashes match and exposure is 4.6/OK. Full suite PASS (196 script/core + 50 app/auth/social/worker), typecheck PASS, lint 0 errors. |
 
 ## Tracking rule
 
@@ -144,3 +198,4 @@ Every material implementation checkpoint must be recorded in both:
 2. the relevant Agiflow AAX task comment/status.
 
 Do not mark roadmap phases or Agiflow tasks complete from code changes alone; attach verification evidence and record any external provider blocker explicitly.
+| 2026-09-21 | ADA analytics event projector | Added and deployed ada_event_projector.py plus persistent ms-robot-analytics-event-router.timer; two queued analytics events were projected into control-core/Agiflow and acknowledged, a repeat run produced queued=0, and the hardened service is branch/runtime byte-identical. |

@@ -57,7 +57,12 @@ export const refreshRanks = createServerFn({ method: "POST" })
     const device = Number(project.platform_id) === 2 ? "mobile" : "desktop";
     const now = stamp();
 
-    if (key && project.tracking_id) {
+    if (!key) throw new Error("Add your Mangools API key in Connect.");
+    if (!project.tracking_id) {
+      throw new Error("Add a Mangools tracking ID to this project before refreshing ranks.");
+    }
+
+    {
       const detail = await mangoolsFetch({
         apiKey: key,
         path: `/serpwatcher/trackings/${encodeURIComponent(project.tracking_id)}/detail`,
@@ -106,38 +111,6 @@ export const refreshRanks = createServerFn({ method: "POST" })
             prev,
           });
         }
-      }
-    } else {
-      const tracked = await sql<{ keyword: string; volume: number }>`
-        select keyword, volume from keywords where project_id = ${data.projectId} and status = 'tracked'
-      `;
-      const fallback =
-        tracked.length > 0
-          ? tracked
-          : await sql<{ keyword: string; volume: number }>`
-              select keyword, volume from keywords where project_id = ${data.projectId} limit 20
-            `;
-      for (const row of fallback) {
-        const last = await sql<{ rank: number | null; best: number | null; url: string }>`
-          select rank, best, url from rank_history
-          where project_id = ${data.projectId} and keyword = ${row.keyword}
-          order by checked_at desc limit 1
-        `;
-        const prev = last[0]?.rank ?? null;
-        const jitter = Math.round((Math.random() - 0.45) * 3);
-        const next = prev == null ? 20 : Math.max(1, Math.min(100, prev + jitter));
-        const best = last[0]?.best == null ? next : Math.min(last[0].best, next);
-        await sql`
-          insert into rank_history (id, project_id, keyword, device, rank, prev, best, visits, volume, url, checked_at)
-          values (
-            ${nid()}, ${data.projectId}, ${row.keyword}, ${device},
-            ${next}, ${prev}, ${best}, ${Math.max(0, Math.round((row.volume || 0) * (next <= 10 ? 0.08 : 0.01)))},
-            ${row.volume}, ${last[0]?.url ?? ""}, ${now}
-          )
-        `;
-        await sql`
-          update keywords set status = 'tracked' where project_id = ${data.projectId} and keyword = ${row.keyword}
-        `;
       }
     }
 

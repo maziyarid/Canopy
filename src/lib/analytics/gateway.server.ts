@@ -2,23 +2,21 @@ import type {
   AnalyticsRefreshResult,
   AnalyticsSnapshot,
   AnalyticsSource,
-} from './contracts'
+  ProviderKey,
+  ProviderListResponse,
+  ProviderRefreshResult,
+  ProviderSyncRunsResponse,
+} from "./contracts";
 
-const DEFAULT_TIMEOUT_MS = 15_000
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 function getGatewayConfig() {
-  const baseUrl = process.env.ANALYTICS_GATEWAY_URL?.replace(/\/+$/, '')
-  const token = process.env.ANALYTICS_GATEWAY_TOKEN
+  const baseUrl = process.env.ANALYTICS_GATEWAY_URL?.replace(/\/+$/, "");
+  const token = process.env.ANALYTICS_GATEWAY_TOKEN;
 
-  if (!baseUrl) {
-    throw new Error('ANALYTICS_GATEWAY_URL is not configured')
-  }
-
-  if (!token) {
-    throw new Error('ANALYTICS_GATEWAY_TOKEN is not configured')
-  }
-
-  return { baseUrl, token }
+  if (!baseUrl) throw new Error("ANALYTICS_GATEWAY_URL is not configured");
+  if (!token) throw new Error("ANALYTICS_GATEWAY_TOKEN is not configured");
+  return { baseUrl, token };
 }
 
 async function gatewayFetch<T>(
@@ -26,56 +24,78 @@ async function gatewayFetch<T>(
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
-  const { baseUrl, token } = getGatewayConfig()
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const { baseUrl, token } = getGatewayConfig();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       ...init,
       headers: {
-        Accept: 'application/json',
+        Accept: "application/json",
         Authorization: `Bearer ${token}`,
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...init.headers,
       },
-      cache: 'no-store',
+      cache: "no-store",
       signal: controller.signal,
-    })
+    });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '')
+      const body = await response.text().catch(() => "");
       throw new Error(
-        `Analytics gateway request failed (${response.status} ${response.statusText})${
-          body ? `: ${body.slice(0, 500)}` : ''
-        }`,
-      )
+        `Analytics gateway request failed (${response.status} ${response.statusText})${body ? `: ${body.slice(0, 500)}` : ""}`,
+      );
     }
-
-    return (await response.json()) as T
+    return (await response.json()) as T;
   } finally {
-    clearTimeout(timeout)
+    clearTimeout(timeout);
   }
 }
 
 export async function getAnalyticsSnapshot(
   site: string,
-  window = '7d',
+  window = "7d",
 ): Promise<AnalyticsSnapshot> {
   return gatewayFetch<AnalyticsSnapshot>(
     `/v1/sites/${encodeURIComponent(site)}/snapshot?window=${encodeURIComponent(window)}`,
-  )
+  );
+}
+
+export async function getProviderStates(): Promise<ProviderListResponse> {
+  return gatewayFetch<ProviderListResponse>("/v1/providers");
+}
+
+export async function getProviderSyncRuns(limit = 50): Promise<ProviderSyncRunsResponse> {
+  const bounded = Math.max(1, Math.min(200, Math.trunc(limit)));
+  return gatewayFetch<ProviderSyncRunsResponse>(`/v1/sync-runs?limit=${bounded}`);
+}
+
+export async function requestProviderRefresh(
+  site: string,
+  sources: ProviderKey[],
+  window = "default",
+): Promise<ProviderRefreshResult> {
+  return gatewayFetch<ProviderRefreshResult>(
+    `/v1/sites/${encodeURIComponent(site)}/refresh`,
+    {
+      method: "POST",
+      body: JSON.stringify({ sources, window }),
+    },
+  );
 }
 
 export async function requestAnalyticsRefresh(
   site: string,
-  sources: AnalyticsSource[] = ['gsc', 'ga4', 'clarity'],
+  sources: AnalyticsSource[] = ["gsc", "ga4", "clarity"],
 ): Promise<AnalyticsRefreshResult> {
-  return gatewayFetch<AnalyticsRefreshResult>(
-    `/v1/sites/${encodeURIComponent(site)}/refresh`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ sources }),
-    },
-  )
+  const result = await requestProviderRefresh(site, sources);
+  return {
+    site: result.site,
+    accepted: result.accepted.filter(
+      (source): source is AnalyticsSource =>
+        source === "gsc" || source === "ga4" || source === "clarity",
+    ),
+    queuedAt: result.queuedAt,
+  };
 }

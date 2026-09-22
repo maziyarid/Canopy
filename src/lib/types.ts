@@ -12,6 +12,7 @@ export type ProjectTab =
   | "agents"
   | "access"
   | "progress"
+  | "providers"
   | "connect";
 
 export type Project = {

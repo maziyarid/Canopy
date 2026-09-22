@@ -1,0 +1,39 @@
+[Unit]
+Description=Maz Robot durable social publication worker
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/maz-robot-worker.env
+
+[Service]
+Type=simple
+User=maziyarid
+Group=maziyarid
+WorkingDirectory=/srv/canopy-handoff/ms-robot-unified-20260921
+EnvironmentFile=/etc/maz-robot-worker.env
+ExecStart=/usr/bin/node-22 --experimental-strip-types ops/maz-robot-worker/worker.ts
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,6 @@
 import { Badge, Button, Field, Input, Textarea } from "@/components/ui";
 import { Spark } from "@/components/spark";
+import { ProviderAdminPanel } from "@/components/provider-admin";
 import { cn } from "@/lib/cn";
 import { AGENT_ROSTER, type CopyKey } from "@/lib/i18n";
 import { LANGUAGES, LOCATIONS, locationLabel } from "@/lib/locations";
@@ -59,6 +60,7 @@ const TAB_IDS: { id: ProjectTab; owner?: boolean; hideClient?: boolean }[] = [
   { id: "agents", hideClient: true },
   { id: "progress" },
   { id: "access", owner: true },
+  { id: "providers", hideClient: true },
   { id: "connect", hideClient: true },
 ];
 
@@ -151,6 +153,7 @@ export function Workspace({ id }: { id: string }) {
       {tab === "agents" && <AgentsPanel bundle={bundle} reload={reload} />}
       {tab === "progress" && <ProgressPanel bundle={bundle} />}
       {tab === "access" && <AccessPanel bundle={bundle} reload={reload} />}
+      {tab === "providers" && <ProviderAdminPanel projectId={bundle.project.id} />}
       {tab === "connect" && <ConnectPanel bundle={bundle} reload={reload} />}
     </div>
   );
