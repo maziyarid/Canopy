@@ -190,14 +190,21 @@ export function buildClickUpClaimQuery(input: { id: string; claimId: string; pre
   };
 }
 
-export function buildClickUpRecoveryQuery(input: { id: string; remoteId: string; url: string }) {
+export function buildClickUpRecoveryQuery(input: {
+  id: string;
+  remoteId: string;
+  url: string;
+  claimId: string;
+}) {
   const recovery = input.url.trim() || input.remoteId;
   return {
     text: `UPDATE keywords
            SET clickup_task_url = $1
            WHERE id = $2
-             AND clickup_task_id LIKE 'pending:%'`,
-    params: [recovery, input.id],
+             AND clickup_task_id = $3
+             AND clickup_task_id LIKE 'pending:%'
+           RETURNING id`,
+    params: [recovery, input.id, input.claimId],
   };
 }
 
@@ -205,7 +212,19 @@ export function buildClickUpLinkQuery(input: {
   id: string;
   clickUpId: string;
   url: string;
+  claimId?: string;
 }) {
+  if (input.claimId) {
+    return {
+      text: `UPDATE keywords
+             SET clickup_task_id = $1, clickup_task_url = $2
+             WHERE id = $3
+               AND clickup_task_id = $4
+               AND clickup_task_id LIKE 'pending:%'
+             RETURNING id`,
+      params: [input.clickUpId, input.url, input.id, input.claimId],
+    };
+  }
   return {
     text: `UPDATE keywords
            SET clickup_task_id = $1, clickup_task_url = $2
@@ -213,7 +232,8 @@ export function buildClickUpLinkQuery(input: {
              AND (
                coalesce(nullif(trim(clickup_task_id), ''), '') = ''
                OR clickup_task_id LIKE 'pending:%'
-             )`,
+             )
+           RETURNING id`,
     params: [input.clickUpId, input.url, input.id],
   };
 }
@@ -250,7 +270,10 @@ export async function executeClickUpKeywordSync(
       const url = recoveredClickUpTaskUrl(kw, recoveredId);
       try {
         const link = buildClickUpLinkQuery({ id: kw.id, clickUpId: recoveredId, url });
-        await sql.query(link.text, link.params);
+        const linked = await sql.query<{ id: string }>(link.text, link.params);
+        if (!linked.length) {
+          throw new Error("ClickUp claim was lost before the task could be linked");
+        }
         created.push({ keyword: kw.keyword, clickUpId: recoveredId, url });
       } catch (error) {
         failed.push({
@@ -283,14 +306,22 @@ export async function executeClickUpKeywordSync(
         id: kw.id,
         remoteId: remote.id,
         url: remote.url,
+        claimId,
       });
-      await sql.query(recovery.text, recovery.params);
+      const recovered = await sql.query<{ id: string }>(recovery.text, recovery.params);
+      if (!recovered.length) {
+        throw new Error("ClickUp claim was lost before the task could be linked");
+      }
       const link = buildClickUpLinkQuery({
         id: kw.id,
         clickUpId: remote.id,
         url: remote.url,
+        claimId,
       });
-      await sql.query(link.text, link.params);
+      const linked = await sql.query<{ id: string }>(link.text, link.params);
+      if (!linked.length) {
+        throw new Error("ClickUp claim was lost before the task could be linked");
+      }
       created.push({ keyword: kw.keyword, clickUpId: remote.id, url: remote.url });
     } catch (error) {
       if (!remote) {

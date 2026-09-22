@@ -5,6 +5,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   buildClickUpClaimQuery,
+  buildClickUpLinkQuery,
+  buildClickUpRecoveryQuery,
   buildProjectKeywordQuery,
   executeClickUpKeywordSync,
   mergeClickUpSettings,
@@ -411,6 +413,67 @@ test("stale pending ClickUp claims without a recovered id are reclaimed and crea
     assert.equal(result.created, 1);
     const row = await sql.query<{ clickup_task_id: string }>("select clickup_task_id from keywords where id='k1'");
     assert.equal(row[0].clickup_task_id, "cu-stale");
+  } finally {
+    await db.close();
+  }
+});
+
+test("expired ClickUp workers cannot overwrite a newer worker claim", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into keywords(id,project_id,keyword,status,volume) values('k1','p1','alpha','new',10)",
+    );
+    let creates = 0;
+    const first = await executeClickUpKeywordSync(sql, {
+      keywords: [keywordRow({ id: "k1", keyword: "alpha" })],
+      newClaimId: () => "pending:1111111111111:worker-1",
+      createTask: async () => {
+        creates += 1;
+        const reclaim = buildClickUpClaimQuery({
+          id: "k1",
+          claimId: "pending:2222222222222:worker-2",
+          previous: "pending:1111111111111:worker-1",
+        });
+        const reclaimed = await sql.query<{ id: string }>(reclaim.text, reclaim.params);
+        assert.equal(reclaimed.length, 1);
+        return { id: "cu-worker-1", url: "https://app.clickup.com/t/cu-worker-1" };
+      },
+    });
+    assert.equal(creates, 1);
+    assert.equal(first.ok, false);
+    assert.equal(first.created, 0);
+    assert.equal(first.failed, 1);
+    assert.match(first.failures[0]?.error ?? "", /claim was lost/);
+    const row = await sql.query<{ clickup_task_id: string; clickup_task_url: string }>(
+      "select clickup_task_id, clickup_task_url from keywords where id='k1'",
+    );
+    assert.equal(row[0].clickup_task_id, "pending:2222222222222:worker-2");
+    assert.equal(row[0].clickup_task_url ?? "", "");
+
+    const recovery = buildClickUpRecoveryQuery({
+      id: "k1",
+      remoteId: "cu-worker-1",
+      url: "https://app.clickup.com/t/cu-worker-1",
+      claimId: "pending:1111111111111:worker-1",
+    });
+    const recovered = await sql.query<{ id: string }>(recovery.text, recovery.params);
+    assert.equal(recovered.length, 0);
+    const link = buildClickUpLinkQuery({
+      id: "k1",
+      clickUpId: "cu-worker-1",
+      url: "https://app.clickup.com/t/cu-worker-1",
+      claimId: "pending:1111111111111:worker-1",
+    });
+    const linked = await sql.query<{ id: string }>(link.text, link.params);
+    assert.equal(linked.length, 0);
+    const after = await sql.query<{ clickup_task_id: string; clickup_task_url: string }>(
+      "select clickup_task_id, clickup_task_url from keywords where id='k1'",
+    );
+    assert.equal(after[0].clickup_task_id, "pending:2222222222222:worker-2");
+    assert.equal(after[0].clickup_task_url ?? "", "");
   } finally {
     await db.close();
   }
