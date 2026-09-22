@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { studioAuth } from "./studio-auth";
+import { buildPublishedContentListQuery, buildPublishedContentUpdateQuery } from "./query-builders";
 
 const ContentTypeSchema = z.enum(["blog", "page", "product", "video", "podcast", "other"]);
 
@@ -56,8 +57,6 @@ export const createPublishedContent = createServerFn({ method: "POST" })
   .validator(CreateContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
-    
-    // Verify project access
     const { resolveAccess } = await import("./access");
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
@@ -66,7 +65,7 @@ export const createPublishedContent = createServerFn({ method: "POST" })
 
     await sql`
       INSERT INTO published_content (
-        id, project_id, url, title, keyword, content_type, publish_date, 
+        id, project_id, url, title, keyword, content_type, publish_date,
         author, status, backlinks, social_shares, notes, created_at
       )
       VALUES (
@@ -76,7 +75,6 @@ export const createPublishedContent = createServerFn({ method: "POST" })
       )
     `;
 
-    // Save links if provided
     if (data.links && data.links.length > 0) {
       for (const link of data.links) {
         await sql`
@@ -91,13 +89,6 @@ export const createPublishedContent = createServerFn({ method: "POST" })
       }
     }
 
-    // Update keyword with content reference
-    await sql`
-      UPDATE keywords 
-      SET last_published = NOW()
-      WHERE project_id = ${data.projectId} AND keyword = ${data.keyword}
-    `;
-
     return { ok: true as const, id, message: "Content published successfully" };
   });
 
@@ -106,70 +97,33 @@ export const updatePublishedContent = createServerFn({ method: "POST" })
   .validator(UpdateContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
-    
-    // Verify project access
     const { resolveAccess } = await import("./access");
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
-    // Check if content exists and belongs to project
     const existing = await sql<{ project_id: string }>`
-      SELECT project_id FROM published_content WHERE id = ${data.id}
+      SELECT project_id FROM published_content WHERE id = ${data.id} AND project_id = ${data.projectId}
     `;
 
-    if (!existing[0] || existing[0].project_id !== data.projectId) {
+    if (!existing[0]) {
       throw new Error("Content not found or access denied");
     }
 
-    const updates: string[] = [];
-    const values: (string | number | boolean)[] = [];
-
-    if (data.url !== undefined) {
-      updates.push(`url = $${values.length + 1}`);
-      values.push(data.url);
-    }
-    if (data.title !== undefined) {
-      updates.push(`title = $${values.length + 1}`);
-      values.push(data.title);
-    }
-    if (data.keyword !== undefined) {
-      updates.push(`keyword = $${values.length + 1}`);
-      values.push(data.keyword);
-    }
-    if (data.contentType !== undefined) {
-      updates.push(`content_type = $${values.length + 1}`);
-      values.push(data.contentType);
-    }
-    if (data.publishDate !== undefined) {
-      updates.push(`publish_date = $${values.length + 1}`);
-      values.push(data.publishDate);
-    }
-    if (data.author !== undefined) {
-      updates.push(`author = $${values.length + 1}`);
-      values.push(data.author || "");
-    }
-    if (data.status !== undefined) {
-      updates.push(`status = $${values.length + 1}`);
-      values.push(data.status);
-    }
-    if (data.backlinks !== undefined) {
-      updates.push(`backlinks = $${values.length + 1}`);
-      values.push(data.backlinks);
-    }
-    if (data.socialShares !== undefined) {
-      updates.push(`social_shares = $${values.length + 1}`);
-      values.push(data.socialShares);
-    }
-    if (data.notes !== undefined) {
-      updates.push(`notes = $${values.length + 1}`);
-      values.push(data.notes || "");
-    }
-
-    if (updates.length > 0) {
-      await sql`
-        UPDATE published_content 
-        SET ${updates.join(", ")} 
-        WHERE id = ${data.id}
-      `;
+    const query = buildPublishedContentUpdateQuery({
+      id: data.id,
+      projectId: data.projectId,
+      url: data.url,
+      title: data.title,
+      keyword: data.keyword,
+      contentType: data.contentType,
+      publishDate: data.publishDate,
+      author: data.author,
+      status: data.status,
+      backlinks: data.backlinks,
+      socialShares: data.socialShares,
+      notes: data.notes,
+    });
+    if (query) {
+      await sql.query(query.text, query.params);
     }
 
     return { ok: true as const, message: "Content updated successfully" };
@@ -180,30 +134,11 @@ export const listPublishedContent = createServerFn({ method: "GET" })
   .validator(ListContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
-    
-    // Verify project access
     const { resolveAccess } = await import("./access");
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
-    let query = `
-      SELECT * FROM published_content 
-      WHERE project_id = ${data.projectId}
-    `;
-
-    const params: string[] = [];
-    if (data.keyword) params.push(`keyword ILIKE '%${data.keyword}%'`);
-    if (data.contentType) params.push(`content_type = ${data.contentType}`);
-    if (data.status) params.push(`status = ${data.status}`);
-    if (data.startDate) params.push(`publish_date >= ${data.startDate}`);
-    if (data.endDate) params.push(`publish_date <= ${data.endDate}`);
-
-    if (params.length > 0) {
-      query += ` AND ${params.join(" AND ")}`;
-    }
-
-    query += ` ORDER BY publish_date DESC, created_at DESC LIMIT ${data.limit} OFFSET ${data.offset}`;
-
-    const rows = await sql<{
+    const query = buildPublishedContentListQuery(data);
+    const rows = await sql.query<{
       id: string;
       project_id: string;
       url: string;
@@ -217,20 +152,20 @@ export const listPublishedContent = createServerFn({ method: "GET" })
       social_shares: number;
       notes: string;
       created_at: string;
-    }>`${query}`;
+    }>(query.text, query.params);
 
-    // Get link counts for each content
-    const contentIds = rows.map(r => r.id);
-    const linkCounts = await sql<{ content_id: string; count: number }>`
-      SELECT content_id, COUNT(*)::int as count 
-      FROM content_links 
-      WHERE content_id = ANY(${contentIds})
-      GROUP BY content_id
-    `;
+    const contentIds = rows.map((r) => r.id);
+    const linkCounts = contentIds.length
+      ? await sql<{ content_id: string; count: number }>`
+          SELECT content_id, COUNT(*)::int as count
+          FROM content_links
+          WHERE content_id = ANY(${contentIds})
+          GROUP BY content_id
+        `
+      : [];
 
-    const linkCountMap = new Map(linkCounts.map(lc => [lc.content_id, lc.count]));
-
-    const result = rows.map(row => ({
+    const linkCountMap = new Map(linkCounts.map((lc) => [lc.content_id, lc.count]));
+    const result = rows.map((row) => ({
       ...row,
       linkCount: linkCountMap.get(row.id) || 0,
     }));
@@ -243,8 +178,6 @@ export const getPublishedContent = createServerFn({ method: "GET" })
   .validator(z.object({ projectId: z.string(), id: z.string() }))
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
-    
-    // Verify project access
     const { resolveAccess } = await import("./access");
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
@@ -263,7 +196,7 @@ export const getPublishedContent = createServerFn({ method: "GET" })
       notes: string;
       created_at: string;
     }>`
-      SELECT * FROM published_content 
+      SELECT * FROM published_content
       WHERE id = ${data.id} AND project_id = ${data.projectId}
       LIMIT 1
     `;
@@ -282,19 +215,19 @@ export const getPublishedContent = createServerFn({ method: "GET" })
       is_dofollow: boolean;
       created_at: string;
     }>`
-      SELECT * FROM content_links 
+      SELECT * FROM content_links
       WHERE content_id = ${data.id}
       ORDER BY created_at
     `;
 
-    return { 
-      ok: true as const, 
-      data: { 
+    return {
+      ok: true as const,
+      data: {
         ...content[0],
         links,
-        internalLinks: links.filter(l => l.is_internal),
-        externalLinks: links.filter(l => !l.is_internal),
-      } 
+        internalLinks: links.filter((l) => l.is_internal),
+        externalLinks: links.filter((l) => !l.is_internal),
+      },
     };
   });
 
@@ -303,8 +236,6 @@ export const deletePublishedContent = createServerFn({ method: "POST" })
   .validator(DeleteContentSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
-    
-    // Verify project access
     const { resolveAccess, canWrite } = await import("./access");
     const access = await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
     if (!canWrite(access.role)) {
@@ -327,8 +258,6 @@ export const getContentStats = createServerFn({ method: "GET" })
   .validator(ContentStatsSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
-    
-    // Verify project access
     const { resolveAccess } = await import("./access");
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
@@ -336,52 +265,45 @@ export const getContentStats = createServerFn({ method: "GET" })
     startDate.setDate(startDate.getDate() - data.days);
     const startDateStr = startDate.toISOString().split("T")[0];
 
-    // Total content published
     const totalContent = await sql<{ count: number }>`
-      SELECT COUNT(*)::int as count FROM published_content 
+      SELECT COUNT(*)::int as count FROM published_content
       WHERE project_id = ${data.projectId}
     `;
 
-    // Content by type
     const contentByType = await sql<{ content_type: string; count: number }>`
-      SELECT content_type, COUNT(*)::int as count 
-      FROM published_content 
+      SELECT content_type, COUNT(*)::int as count
+      FROM published_content
       WHERE project_id = ${data.projectId}
       GROUP BY content_type
     `;
 
-    // Content by status
     const contentByStatus = await sql<{ status: string; count: number }>`
-      SELECT status, COUNT(*)::int as count 
-      FROM published_content 
+      SELECT status, COUNT(*)::int as count
+      FROM published_content
       WHERE project_id = ${data.projectId}
       GROUP BY status
     `;
 
-    // Recently published (last N days)
     const recentContent = await sql<{ count: number }>`
-      SELECT COUNT(*)::int as count FROM published_content 
+      SELECT COUNT(*)::int as count FROM published_content
       WHERE project_id = ${data.projectId}
       AND publish_date >= ${startDateStr}
     `;
 
-    // Total backlinks
     const totalBacklinks = await sql<{ sum: number }>`
-      SELECT COALESCE(SUM(backlinks), 0)::int as sum 
-      FROM published_content 
+      SELECT COALESCE(SUM(backlinks), 0)::int as sum
+      FROM published_content
       WHERE project_id = ${data.projectId}
     `;
 
-    // Total social shares
     const totalSocialShares = await sql<{ sum: number }>`
-      SELECT COALESCE(SUM(social_shares), 0)::int as sum 
-      FROM published_content 
+      SELECT COALESCE(SUM(social_shares), 0)::int as sum
+      FROM published_content
       WHERE project_id = ${data.projectId}
     `;
 
-    // Total links
     const totalLinks = await sql<{ count: number }>`
-      SELECT COUNT(*)::int as count FROM content_links 
+      SELECT COUNT(*)::int as count FROM content_links
       WHERE content_id IN (
         SELECT id FROM published_content WHERE project_id = ${data.projectId}
       )
@@ -406,8 +328,6 @@ export const getContentTimeline = createServerFn({ method: "GET" })
   .validator(ContentStatsSchema)
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
-    
-    // Verify project access
     const { resolveAccess } = await import("./access");
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
@@ -416,17 +336,16 @@ export const getContentTimeline = createServerFn({ method: "GET" })
     const startDateStr = startDate.toISOString().split("T")[0];
 
     const rows = await sql<{ publish_date: string; count: number }>`
-      SELECT 
+      SELECT
         publish_date,
         COUNT(*)::int as count
-      FROM published_content 
+      FROM published_content
       WHERE project_id = ${data.projectId}
       AND publish_date >= ${startDateStr}
       GROUP BY publish_date
       ORDER BY publish_date
     `;
 
-    // Fill in missing dates
     const timeline: Record<string, number> = {};
     for (let i = 0; i < data.days; i++) {
       const date = new Date();

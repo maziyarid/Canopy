@@ -13,6 +13,7 @@ test("unified stack migrations apply in order on PGLite", async () => {
   const plan = pendingMigrations(entries, []);
   assert.deepEqual(plan.map((x) => x.name), [
     "0001_auth.sql", "0002_canopy.sql", "0003_clickup.sql", "0004_unified_stack.sql", "0005_social_runtime.sql",
+    "0008_seo_data_cache_identity.sql",
   ]);
   const db = new PGlite();
   try {
@@ -32,6 +33,10 @@ test("unified stack migrations apply in order on PGLite", async () => {
     assert.equal(vault.rows.length, 1);
     const jobColumns = await db.query("select column_name from information_schema.columns where table_name='social_publication_jobs' and column_name in ('max_attempts','locked_by','lease_until','completed_at','dead_lettered_at','failure_class') order by column_name");
     assert.deepEqual(jobColumns.rows.map((x) => x.column_name), ['completed_at','dead_lettered_at','failure_class','lease_until','locked_by','max_attempts']);
+    const cacheIdentity = await db.query(
+      "select indexname from pg_indexes where schemaname='public' and indexname='seo_data_cache_identity_idx'",
+    );
+    assert.equal(cacheIdentity.rows.length, 1);
   } finally {
     await db.close();
   }
