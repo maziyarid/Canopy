@@ -255,7 +255,7 @@ def safe_error_message(error):
     # Redact compound auth schemes first. A generic "authorization" pass would
     # otherwise consume only the word "Bearer" and leave the credential behind.
     message=re.sub(
-        r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s&,;]+",
+        r"(?i)(authorization[\"']?\s*[:=]\s*[\"']?\s*bearer\s+)[^\"'\s&,;}]+",
         r'\1<redacted>',
         message,
     )
@@ -284,17 +284,17 @@ def safe_error_message(error):
 def upsert_metric(c,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,run_id,stamp):
     dims=json.dumps(dimensions,separators=(',',':'),sort_keys=True)
     vals=json.dumps(metrics,separators=(',',':'),sort_keys=True)
-    existed=c.execute('''select 1 from provider_metric
-      where project_id=? and provider=? and site=? and dataset=? and data_date=? and dimensions=?''',
-      (project_id,provider,site,dataset,data_date,dims)).fetchone() is not None
-    c.execute('''insert into provider_metric
+    inserted=c.execute('''insert or ignore into provider_metric
       (id,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
-      values(?,?,?,?,?,?,?,?,?,?,?)
-      on conflict(project_id,provider,site,dataset,data_date,dimensions) do update set
-        metrics=excluded.metrics,freshness=excluded.freshness,
-        sync_run_id=excluded.sync_run_id,updated_at=excluded.updated_at''',
-      (str(uuid.uuid4()),project_id,provider,site,dataset,data_date,dims,vals,freshness,run_id,stamp))
-    return 'updated' if existed else 'inserted'
+      values(?,?,?,?,?,?,?,?,?,?,?)''',
+      (str(uuid.uuid4()),project_id,provider,site,dataset,data_date,dims,vals,freshness,run_id,stamp)).rowcount
+    if inserted:
+        return 'inserted'
+    c.execute('''update provider_metric
+      set metrics=?,freshness=?,sync_run_id=?,updated_at=?
+      where project_id=? and provider=? and site=? and dataset=? and data_date=? and dimensions=?''',
+      (vals,freshness,run_id,stamp,project_id,provider,site,dataset,data_date,dims))
+    return 'updated'
 
 def run_gsc_sync(project_id,site,window,run_id):
     start_date,end_date=window_dates(window)

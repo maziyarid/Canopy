@@ -25,7 +25,8 @@ class FakeGoogle(BaseHTTPRequestHandler):
         if self.path=='/health':
             self.sendj(200,{'ok':True}); return
         if self.path=='/v1/sites' and self.leak_authorization_error:
-            self.sendj(401,{'error':'Authorization: Bearer provider-secret-123'}); return
+            detail=self.leak_authorization_error if isinstance(self.leak_authorization_error,str) else 'Authorization: Bearer provider-secret-123'
+            self.sendj(401,{'error':detail}); return
         if not self.authed():
             self.sendj(401,{'error':'unauthorised'}); return
         if self.path=='/v1/sites':
@@ -299,33 +300,41 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(len(body['investigations']),2)
 
     def test_bearer_credentials_are_redacted_everywhere(self):
-        FakeGoogle.leak_authorization_error=True
+        cases=[
+            ('header','Authorization: Bearer provider-secret-123','provider-secret-123'),
+            ('json','{"Authorization":"Bearer provider-json-secret-456"}','provider-json-secret-456'),
+        ]
         try:
-            status,body=self.request(
-                '/v1/sites/example.com/refresh','POST',
-                {'sources':['gsc'],'window':'7d','idempotencyKey':'redact-bearer'},
-                project='project-a',
-            )
-            self.assertEqual(status,202)
-            run=body['runs'][0]
-            self.assertEqual(run['status'],'error')
-            self.assertNotIn('provider-secret-123',run['error_message_safe'])
-            self.assertIn('<redacted>',run['error_message_safe'])
+            for suffix,upstream_error,secret in cases:
+                FakeGoogle.leak_authorization_error=upstream_error
+                status,body=self.request(
+                    '/v1/sites/example.com/refresh','POST',
+                    {'sources':['gsc'],'window':'7d','idempotencyKey':f'redact-bearer-{suffix}'},
+                    project='project-a',
+                )
+                self.assertEqual(status,202)
+                run=body['runs'][0]
+                self.assertEqual(run['status'],'error')
+                self.assertNotIn(secret,run['error_message_safe'])
+                self.assertIn('<redacted>',run['error_message_safe'])
 
-            _,ledger=self.request('/v1/sync-runs?limit=20',project='project-a')
-            persisted_run=next(r for r in ledger['runs'] if 'redact-bearer' in r['idempotency_key'])
-            self.assertNotIn('provider-secret-123',persisted_run['error_message_safe'])
+                _,ledger=self.request('/v1/sync-runs?limit=20',project='project-a')
+                persisted_run=next(
+                    r for r in ledger['runs']
+                    if f'redact-bearer-{suffix}' in r['idempotency_key']
+                )
+                self.assertNotIn(secret,persisted_run['error_message_safe'])
 
-            _,providers=self.request('/v1/providers',project='project-a')
-            gsc=next(p for p in providers['providers'] if p['provider']=='gsc')
-            self.assertNotIn('provider-secret-123',gsc.get('last_error') or '')
+                _,providers=self.request('/v1/providers',project='project-a')
+                gsc=next(p for p in providers['providers'] if p['provider']=='gsc')
+                self.assertNotIn(secret,gsc.get('last_error') or '')
 
-            with sqlite3.connect(self.db_path) as connection:
-                raw=connection.execute(
-                    "select error_message_safe from sync_run where project_id=? and idempotency_key like ?",
-                    ('project-a','%redact-bearer'),
-                ).fetchone()[0]
-            self.assertNotIn('provider-secret-123',raw)
+                with sqlite3.connect(self.db_path) as connection:
+                    raw=connection.execute(
+                        "select error_message_safe from sync_run where project_id=? and idempotency_key like ?",
+                        ('project-a',f'%redact-bearer-{suffix}'),
+                    ).fetchone()[0]
+                self.assertNotIn(secret,raw)
         finally:
             FakeGoogle.leak_authorization_error=False
 
@@ -414,6 +423,38 @@ class GatewayTest(unittest.TestCase):
         matching=[r for r in ledger['runs'] if 'concurrent-same-key' in r['idempotency_key']]
         self.assertEqual(len(matching),1)
 
+    def test_concurrent_gsc_refreshes_report_atomic_insert_update_counts(self):
+        barrier=threading.Barrier(2)
+        results=[]
+        errors=[]
+
+        def invoke(key):
+            try:
+                barrier.wait(timeout=5)
+                results.append(self.request(
+                    '/v1/sites/example.com/refresh','POST',
+                    {'sources':['gsc'],'window':'7d','idempotencyKey':key},
+                    project='project-a',
+                ))
+            except Exception as exc:
+                errors.append(exc)
+
+        workers=[
+            threading.Thread(target=invoke,args=('metric-race-a',)),
+            threading.Thread(target=invoke,args=('metric-race-b',)),
+        ]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join(timeout=10)
+
+        self.assertEqual(errors,[])
+        self.assertEqual(len(results),2)
+        self.assertTrue(all(status==202 for status,_ in results))
+        runs=[body['runs'][0] for _,body in results]
+        self.assertTrue(all(run['status']=='completed' for run in runs))
+        self.assertEqual(sum(run['rows_inserted'] for run in runs),3)
+        self.assertEqual(sum(run['rows_updated'] for run in runs),3)
+        self.assertEqual(sum(run['rows_received'] for run in runs),6)
+
     def test_portfolio_mapping_is_explicit_and_normalized(self):
         mapping=project_site_map({
             'MS_ROBOT_PROJECT_SITE_MAP_JSON':json.dumps({
@@ -436,5 +477,69 @@ class GatewayTest(unittest.TestCase):
                 {'site':'example.com','signalType':'traffic_click_drop','evidence':{}},
                 'open',
             )
+
+    def test_legacy_gateway_rows_migrate_to_reserved_scope_with_scoped_index(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path=Path(tmp)/'legacy.sqlite3'
+            with sqlite3.connect(db_path) as connection:
+                connection.executescript("""
+                create table provider_metric(
+                  id text primary key, provider text not null, site text not null,
+                  dataset text not null, data_date text not null default '',
+                  dimensions text not null default '{}', metrics text not null default '{}',
+                  freshness text, sync_run_id text not null, updated_at text not null,
+                  unique(provider,site,dataset,data_date,dimensions));
+                create index provider_metric_lookup
+                  on provider_metric(provider,site,dataset,data_date);
+                """)
+                connection.execute(
+                    """insert into provider_metric
+                       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
+                       values(?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        'legacy-row','gsc','legacy.example','site_daily','2026-09-01',
+                        '{"date":"2026-09-01"}','{"clicks":1}','2026-09-01',
+                        'legacy-run','2026-09-03T00:00:00Z',
+                    ),
+                )
+
+            port=free_port()
+            env=os.environ.copy()
+            env.update(
+                ANALYTICS_GATEWAY_PORT=str(port),
+                ANALYTICS_GATEWAY_TOKEN='legacy-token',
+                ANALYTICS_GATEWAY_DB=str(db_path),
+                GOOGLE_PROVIDER_URL=f'http://127.0.0.1:{self.google_port}',
+                GOOGLE_PROVIDER_TOKEN=FakeGoogle.token,
+            )
+            proc=subprocess.Popen(
+                ['python3',str(GATEWAY)],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                for _ in range(50):
+                    try:
+                        urllib.request.urlopen(f'http://127.0.0.1:{port}/health',timeout=.2)
+                        break
+                    except Exception:
+                        time.sleep(.05)
+            finally:
+                proc.terminate()
+                proc.wait(timeout=5)
+
+            with sqlite3.connect(db_path) as connection:
+                connection.row_factory=sqlite3.Row
+                columns={row['name'] for row in connection.execute('pragma table_info(provider_metric)')}
+                row=connection.execute(
+                    "select project_id,site from provider_metric where id='legacy-row'"
+                ).fetchone()
+                index_sql=connection.execute(
+                    "select sql from sqlite_master where type='index' and name='provider_metric_lookup'"
+                ).fetchone()[0]
+            self.assertIn('project_id',columns)
+            self.assertEqual(dict(row),{'project_id':'legacy','site':'legacy.example'})
+            self.assertIn('project_id',index_sql)
 
 if __name__=='__main__': unittest.main()

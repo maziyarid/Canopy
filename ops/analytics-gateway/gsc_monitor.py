@@ -259,6 +259,7 @@ def run_monitor(db_path, project_id):
 
                 active.append(
                     {
+                        "projectId": project_id,
                         "site": site,
                         "signalType": signal_type,
                         "severity": severity,
@@ -281,6 +282,7 @@ def run_monitor(db_path, project_id):
                     )
                     resolved += 1
                     resolved_items.append({
+                        "projectId": project_id,
                         "site": site,
                         "signalType": row["signal_type"],
                         "severity": row["severity"],
