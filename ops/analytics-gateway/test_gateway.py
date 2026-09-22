@@ -1,8 +1,11 @@
-import json, os, socket, sqlite3, subprocess, tempfile, threading, time, unittest, urllib.error, urllib.request
+import json, os, socket, sqlite3, subprocess, sys, tempfile, threading, time, unittest, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
+sys.path.insert(0,str(ROOT))
+from portfolio_gsc import project_site_map
+from monitor_dispatch import bridge_event
 GATEWAY=ROOT/'gateway.py'
 
 def free_port():
@@ -10,6 +13,7 @@ def free_port():
 
 class FakeGoogle(BaseHTTPRequestHandler):
     token='fake-google-token'
+    leak_authorization_error=False
     def log_message(self,*_): pass
     def sendj(self,code,obj):
         raw=json.dumps(obj).encode()
@@ -20,6 +24,9 @@ class FakeGoogle(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path=='/health':
             self.sendj(200,{'ok':True}); return
+        if self.path=='/v1/sites' and self.leak_authorization_error:
+            detail=self.leak_authorization_error if isinstance(self.leak_authorization_error,str) else 'Authorization: Bearer provider-secret-123'
+            self.sendj(401,{'error':detail}); return
         if not self.authed():
             self.sendj(401,{'error':'unauthorised'}); return
         if self.path=='/v1/sites':
@@ -77,9 +84,12 @@ class GatewayTest(unittest.TestCase):
         self.google.shutdown(); self.google.server_close()
         self.tmp.cleanup()
 
-    def request(self,path,method='GET',body=None,auth=True):
+    def request(self,path,method='GET',body=None,auth=True,project='project-a'):
         headers={}
-        if auth: headers['Authorization']='Bearer '+self.token
+        if auth:
+            headers['Authorization']='Bearer '+self.token
+            if project is not None:
+                headers['X-Ms-Robot-Project-Id']=project
         data=None
         if body is not None:
             data=json.dumps(body).encode(); headers['Content-Type']='application/json'
@@ -113,6 +123,37 @@ class GatewayTest(unittest.TestCase):
         matching=[r for r in ledger['runs'] if r['provider'] in {'gtm','bing_webmaster','semrush'}]
         self.assertEqual({r['window'] for r in matching},{'28d'})
         self.assertEqual({r['status'] for r in matching},{'blocked'})
+
+    def test_sync_ledger_schema_is_upgraded_additively(self):
+        with sqlite3.connect(self.db_path) as connection:
+            columns={row[1] for row in connection.execute('pragma table_info(sync_run)')}
+        expected={
+            'requested_start','requested_end','cursor_before','cursor_after',
+            'rows_received','rows_inserted','rows_updated','rows_skipped',
+            'rate_limit_state','quota_state','error_message_safe',
+            'data_freshness','code_version',
+        }
+        self.assertTrue(expected.issubset(columns))
+
+    def test_custom_window_does_not_invent_date_range(self):
+        payload={'sources':['semrush'],'window':'same-window','idempotencyKey':'dates-1'}
+        _,body=self.request('/v1/sites/example.com/refresh','POST',payload)
+        run=body['runs'][0]
+        self.assertIsNone(run['requested_start'])
+        self.assertIsNone(run['requested_end'])
+
+    def test_blocked_sync_has_safe_receipt_fields(self):
+        payload={'sources':['semrush'],'window':'28d','idempotencyKey':'safe-receipt-1'}
+        _,body=self.request('/v1/sites/example.com/refresh','POST',payload)
+        run=body['runs'][0]
+        self.assertEqual(run['status'],'blocked')
+        self.assertEqual(run['error_class'],'not_configured')
+        self.assertEqual(run['error_message_safe'],'not_configured')
+        self.assertIn('code_version',run)
+        self.assertIn('rows_received',run)
+        self.assertIn('rows_inserted',run)
+        self.assertIn('rows_updated',run)
+        self.assertIn('rows_skipped',run)
 
     def test_repeated_refresh_is_idempotent_with_caller_key(self):
         payload={'sources':['semrush'],'window':'same-window','idempotencyKey':'retry-1'}
@@ -168,10 +209,10 @@ class GatewayTest(unittest.TestCase):
                 )
                 connection.execute(
                     '''insert into provider_metric
-                       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
-                       values(?,?,?,?,?,?,?,?,?,?)''',
+                       (id,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
+                       values(?,?,?,?,?,?,?,?,?,?,?)''',
                     (
-                        f'monitor-{day}','gsc','monitor.example','site_daily',data_date,
+                        f'monitor-{day}','project-a','gsc','monitor.example','site_daily',data_date,
                         dimensions,metrics,'2026-09-14','monitor-run','2026-09-21T00:00:00Z',
                     ),
                 )
@@ -229,10 +270,10 @@ class GatewayTest(unittest.TestCase):
                 )
                 connection.execute(
                     '''insert into provider_metric
-                       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
-                       values(?,?,?,?,?,?,?,?,?,?)''',
+                       (id,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
+                       values(?,?,?,?,?,?,?,?,?,?,?)''',
                     (
-                        f'concurrent-monitor-{day}','gsc','concurrent.example','site_daily',data_date,
+                        f'concurrent-monitor-{day}','project-a','gsc','concurrent.example','site_daily',data_date,
                         dimensions,metrics,'2026-09-14','monitor-run','2026-09-21T00:00:00Z',
                     ),
                 )
@@ -257,5 +298,248 @@ class GatewayTest(unittest.TestCase):
         status,body=self.request('/v1/investigations?site=concurrent.example&status=open')
         self.assertEqual(status,200)
         self.assertEqual(len(body['investigations']),2)
+
+    def test_bearer_credentials_are_redacted_everywhere(self):
+        cases=[
+            ('header','Authorization: Bearer provider-secret-123','provider-secret-123'),
+            ('json','{"Authorization":"Bearer provider-json-secret-456"}','provider-json-secret-456'),
+        ]
+        try:
+            for suffix,upstream_error,secret in cases:
+                FakeGoogle.leak_authorization_error=upstream_error
+                status,body=self.request(
+                    '/v1/sites/example.com/refresh','POST',
+                    {'sources':['gsc'],'window':'7d','idempotencyKey':f'redact-bearer-{suffix}'},
+                    project='project-a',
+                )
+                self.assertEqual(status,202)
+                run=body['runs'][0]
+                self.assertEqual(run['status'],'error')
+                self.assertNotIn(secret,run['error_message_safe'])
+                self.assertIn('<redacted>',run['error_message_safe'])
+
+                _,ledger=self.request('/v1/sync-runs?limit=20',project='project-a')
+                persisted_run=next(
+                    r for r in ledger['runs']
+                    if f'redact-bearer-{suffix}' in r['idempotency_key']
+                )
+                self.assertNotIn(secret,persisted_run['error_message_safe'])
+
+                _,providers=self.request('/v1/providers',project='project-a')
+                gsc=next(p for p in providers['providers'] if p['provider']=='gsc')
+                self.assertNotIn(secret,gsc.get('last_error') or '')
+
+                with sqlite3.connect(self.db_path) as connection:
+                    raw=connection.execute(
+                        "select error_message_safe from sync_run where project_id=? and idempotency_key like ?",
+                        ('project-a',f'%redact-bearer-{suffix}'),
+                    ).fetchone()[0]
+                self.assertNotIn(secret,raw)
+        finally:
+            FakeGoogle.leak_authorization_error=False
+
+    def test_project_scope_is_required_for_authenticated_gateway_calls(self):
+        status,body=self.request('/v1/providers',project=None)
+        self.assertEqual(status,400)
+        self.assertEqual(body['error'],'invalid_project_scope')
+
+    def test_provider_state_and_sync_ledger_are_project_isolated(self):
+        status,result=self.request('/v1/providers/gsc/test','POST',{},project='project-a')
+        self.assertEqual(status,200)
+        self.assertTrue(result['ok'])
+
+        _,states_a=self.request('/v1/providers',project='project-a')
+        _,states_b=self.request('/v1/providers',project='project-b')
+        by_a={item['provider']:item for item in states_a['providers']}
+        by_b={item['provider']:item for item in states_b['providers']}
+        self.assertEqual(by_a['gsc']['status'],'ok')
+        self.assertEqual(by_b['gsc']['status'],'not_configured')
+
+        payload={'sources':['semrush'],'window':'28d','idempotencyKey':'shared-key'}
+        _,first=self.request('/v1/sites/example.com/refresh','POST',payload,project='project-a')
+        _,second=self.request('/v1/sites/example.com/refresh','POST',payload,project='project-b')
+        self.assertTrue(first['runs'][0]['created'])
+        self.assertTrue(second['runs'][0]['created'])
+
+        _,ledger_a=self.request('/v1/sync-runs?limit=10',project='project-a')
+        _,ledger_b=self.request('/v1/sync-runs?limit=10',project='project-b')
+        self.assertEqual(len([r for r in ledger_a['runs'] if r['provider']=='semrush']),1)
+        self.assertEqual(len([r for r in ledger_b['runs'] if r['provider']=='semrush']),1)
+        self.assertTrue(all(r['project_id']=='project-a' for r in ledger_a['runs']))
+        self.assertTrue(all(r['project_id']=='project-b' for r in ledger_b['runs']))
+
+    def test_metrics_and_snapshots_are_project_isolated(self):
+        status,refresh=self.request(
+            '/v1/sites/example.com/refresh','POST',
+            {'sources':['gsc'],'window':'7d','idempotencyKey':'project-metrics'},
+            project='project-a',
+        )
+        self.assertEqual(status,202)
+        self.assertEqual(refresh['runs'][0]['status'],'completed')
+
+        _,metrics_a=self.request(
+            '/v1/metrics?provider=gsc&site=example.com&dataset=site_daily',
+            project='project-a',
+        )
+        _,metrics_b=self.request(
+            '/v1/metrics?provider=gsc&site=example.com&dataset=site_daily',
+            project='project-b',
+        )
+        self.assertEqual(len(metrics_a['rows']),2)
+        self.assertEqual(metrics_b['rows'],[])
+
+        _,snapshot_a=self.request('/v1/sites/example.com/snapshot?window=7d',project='project-a')
+        _,snapshot_b=self.request('/v1/sites/example.com/snapshot?window=7d',project='project-b')
+        self.assertIn('gsc',snapshot_a)
+        self.assertNotIn('gsc',snapshot_b)
+
+    def test_concurrent_duplicate_refreshes_coalesce_atomically(self):
+        barrier=threading.Barrier(8)
+        results=[]
+        errors=[]
+        payload={'sources':['semrush'],'window':'28d','idempotencyKey':'concurrent-same-key'}
+
+        def invoke():
+            try:
+                barrier.wait(timeout=5)
+                results.append(self.request(
+                    '/v1/sites/example.com/refresh','POST',payload,project='project-a'
+                ))
+            except Exception as exc:
+                errors.append(exc)
+
+        workers=[threading.Thread(target=invoke) for _ in range(8)]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join(timeout=10)
+
+        self.assertEqual(errors,[])
+        self.assertEqual(len(results),8)
+        self.assertTrue(all(status==202 for status,_ in results))
+        runs=[body['runs'][0] for _,body in results]
+        self.assertEqual(sum(1 for run in runs if run['created']),1)
+        self.assertEqual(sum(1 for run in runs if run['coalesced']),7)
+
+        _,ledger=self.request('/v1/sync-runs?limit=20',project='project-a')
+        matching=[r for r in ledger['runs'] if 'concurrent-same-key' in r['idempotency_key']]
+        self.assertEqual(len(matching),1)
+
+    def test_concurrent_gsc_refreshes_report_atomic_insert_update_counts(self):
+        barrier=threading.Barrier(2)
+        results=[]
+        errors=[]
+
+        def invoke(key):
+            try:
+                barrier.wait(timeout=5)
+                results.append(self.request(
+                    '/v1/sites/example.com/refresh','POST',
+                    {'sources':['gsc'],'window':'7d','idempotencyKey':key},
+                    project='project-a',
+                ))
+            except Exception as exc:
+                errors.append(exc)
+
+        workers=[
+            threading.Thread(target=invoke,args=('metric-race-a',)),
+            threading.Thread(target=invoke,args=('metric-race-b',)),
+        ]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join(timeout=10)
+
+        self.assertEqual(errors,[])
+        self.assertEqual(len(results),2)
+        self.assertTrue(all(status==202 for status,_ in results))
+        runs=[body['runs'][0] for _,body in results]
+        self.assertTrue(all(run['status']=='completed' for run in runs))
+        self.assertEqual(sum(run['rows_inserted'] for run in runs),3)
+        self.assertEqual(sum(run['rows_updated'] for run in runs),3)
+        self.assertEqual(sum(run['rows_received'] for run in runs),6)
+
+    def test_portfolio_mapping_is_explicit_and_normalized(self):
+        mapping=project_site_map({
+            'MS_ROBOT_PROJECT_SITE_MAP_JSON':json.dumps({
+                'https://www.Example.com/':'project-a',
+                'sc-domain:second.example':'project-b',
+            })
+        })
+        self.assertEqual(mapping,{
+            'example.com':'project-a',
+            'second.example':'project-b',
+        })
+        with self.assertRaises(SystemExit):
+            project_site_map({})
+        with self.assertRaises(SystemExit):
+            project_site_map({'MS_ROBOT_PROJECT_SITE_MAP_JSON':'{"example.com":""}'})
+
+    def test_monitor_bridge_refuses_unscoped_signal(self):
+        with self.assertRaisesRegex(RuntimeError,'monitor_signal_missing_project_id'):
+            bridge_event(
+                {'site':'example.com','signalType':'traffic_click_drop','evidence':{}},
+                'open',
+            )
+
+    def test_legacy_gateway_rows_migrate_to_reserved_scope_with_scoped_index(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path=Path(tmp)/'legacy.sqlite3'
+            with sqlite3.connect(db_path) as connection:
+                connection.executescript("""
+                create table provider_metric(
+                  id text primary key, provider text not null, site text not null,
+                  dataset text not null, data_date text not null default '',
+                  dimensions text not null default '{}', metrics text not null default '{}',
+                  freshness text, sync_run_id text not null, updated_at text not null,
+                  unique(provider,site,dataset,data_date,dimensions));
+                create index provider_metric_lookup
+                  on provider_metric(provider,site,dataset,data_date);
+                """)
+                connection.execute(
+                    """insert into provider_metric
+                       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
+                       values(?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        'legacy-row','gsc','legacy.example','site_daily','2026-09-01',
+                        '{"date":"2026-09-01"}','{"clicks":1}','2026-09-01',
+                        'legacy-run','2026-09-03T00:00:00Z',
+                    ),
+                )
+
+            port=free_port()
+            env=os.environ.copy()
+            env.update(
+                ANALYTICS_GATEWAY_PORT=str(port),
+                ANALYTICS_GATEWAY_TOKEN='legacy-token',
+                ANALYTICS_GATEWAY_DB=str(db_path),
+                GOOGLE_PROVIDER_URL=f'http://127.0.0.1:{self.google_port}',
+                GOOGLE_PROVIDER_TOKEN=FakeGoogle.token,
+            )
+            proc=subprocess.Popen(
+                ['python3',str(GATEWAY)],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                for _ in range(50):
+                    try:
+                        urllib.request.urlopen(f'http://127.0.0.1:{port}/health',timeout=.2)
+                        break
+                    except Exception:
+                        time.sleep(.05)
+            finally:
+                proc.terminate()
+                proc.wait(timeout=5)
+
+            with sqlite3.connect(db_path) as connection:
+                connection.row_factory=sqlite3.Row
+                columns={row['name'] for row in connection.execute('pragma table_info(provider_metric)')}
+                row=connection.execute(
+                    "select project_id,site from provider_metric where id='legacy-row'"
+                ).fetchone()
+                index_sql=connection.execute(
+                    "select sql from sqlite_master where type='index' and name='provider_metric_lookup'"
+                ).fetchone()[0]
+            self.assertIn('project_id',columns)
+            self.assertEqual(dict(row),{'project_id':'legacy','site':'legacy.example'})
+            self.assertIn('project_id',index_sql)
 
 if __name__=='__main__': unittest.main()
