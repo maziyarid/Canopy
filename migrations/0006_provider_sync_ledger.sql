@@ -11,3 +11,7 @@ alter table provider_sync_runs add column if not exists rate_limit_state text no
 alter table provider_sync_runs add column if not exists error_message_safe text;
 alter table provider_sync_runs add column if not exists data_freshness timestamptz;
 alter table provider_sync_runs add column if not exists code_version text not null default '';
+
+alter table provider_sync_runs add column if not exists quota_state text not null default '';
+create index if not exists provider_sync_runs_project_started_idx
+  on provider_sync_runs(project_id, started_at desc);

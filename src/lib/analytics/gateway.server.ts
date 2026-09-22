@@ -54,24 +54,34 @@ async function gatewayFetch<T>(
 }
 
 export async function getAnalyticsSnapshot(
+  projectId: string,
   site: string,
   window = "7d",
 ): Promise<AnalyticsSnapshot> {
   return gatewayFetch<AnalyticsSnapshot>(
     `/v1/sites/${encodeURIComponent(site)}/snapshot?window=${encodeURIComponent(window)}`,
+    { headers: { "X-Ms-Robot-Project-Id": projectId } },
   );
 }
 
-export async function getProviderStates(): Promise<ProviderListResponse> {
-  return gatewayFetch<ProviderListResponse>("/v1/providers");
+export async function getProviderStates(projectId: string): Promise<ProviderListResponse> {
+  return gatewayFetch<ProviderListResponse>("/v1/providers", {
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+  });
 }
 
-export async function getProviderSyncRuns(limit = 50): Promise<ProviderSyncRunsResponse> {
+export async function getProviderSyncRuns(
+  projectId: string,
+  limit = 50,
+): Promise<ProviderSyncRunsResponse> {
   const bounded = Math.max(1, Math.min(200, Math.trunc(limit)));
-  return gatewayFetch<ProviderSyncRunsResponse>(`/v1/sync-runs?limit=${bounded}`);
+  return gatewayFetch<ProviderSyncRunsResponse>(`/v1/sync-runs?limit=${bounded}`, {
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+  });
 }
 
 export async function requestProviderRefresh(
+  projectId: string,
   site: string,
   sources: ProviderKey[],
   window = "default",
@@ -80,16 +90,18 @@ export async function requestProviderRefresh(
     `/v1/sites/${encodeURIComponent(site)}/refresh`,
     {
       method: "POST",
+      headers: { "X-Ms-Robot-Project-Id": projectId },
       body: JSON.stringify({ sources, window }),
     },
   );
 }
 
 export async function requestAnalyticsRefresh(
+  projectId: string,
   site: string,
   sources: AnalyticsSource[] = ["gsc", "ga4", "clarity"],
 ): Promise<AnalyticsRefreshResult> {
-  const result = await requestProviderRefresh(site, sources);
+  const result = await requestProviderRefresh(projectId, site, sources);
   return {
     site: result.site,
     accepted: result.accepted.filter(

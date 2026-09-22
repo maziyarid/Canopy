@@ -77,9 +77,12 @@ class GatewayTest(unittest.TestCase):
         self.google.shutdown(); self.google.server_close()
         self.tmp.cleanup()
 
-    def request(self,path,method='GET',body=None,auth=True):
+    def request(self,path,method='GET',body=None,auth=True,project='project-a'):
         headers={}
-        if auth: headers['Authorization']='Bearer '+self.token
+        if auth:
+            headers['Authorization']='Bearer '+self.token
+            if project is not None:
+                headers['X-Ms-Robot-Project-Id']=project
         data=None
         if body is not None:
             data=json.dumps(body).encode(); headers['Content-Type']='application/json'
@@ -199,10 +202,10 @@ class GatewayTest(unittest.TestCase):
                 )
                 connection.execute(
                     '''insert into provider_metric
-                       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
-                       values(?,?,?,?,?,?,?,?,?,?)''',
+                       (id,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
+                       values(?,?,?,?,?,?,?,?,?,?,?)''',
                     (
-                        f'monitor-{day}','gsc','monitor.example','site_daily',data_date,
+                        f'monitor-{day}','project-a','gsc','monitor.example','site_daily',data_date,
                         dimensions,metrics,'2026-09-14','monitor-run','2026-09-21T00:00:00Z',
                     ),
                 )
@@ -260,10 +263,10 @@ class GatewayTest(unittest.TestCase):
                 )
                 connection.execute(
                     '''insert into provider_metric
-                       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
-                       values(?,?,?,?,?,?,?,?,?,?)''',
+                       (id,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
+                       values(?,?,?,?,?,?,?,?,?,?,?)''',
                     (
-                        f'concurrent-monitor-{day}','gsc','concurrent.example','site_daily',data_date,
+                        f'concurrent-monitor-{day}','project-a','gsc','concurrent.example','site_daily',data_date,
                         dimensions,metrics,'2026-09-14','monitor-run','2026-09-21T00:00:00Z',
                     ),
                 )
@@ -288,5 +291,90 @@ class GatewayTest(unittest.TestCase):
         status,body=self.request('/v1/investigations?site=concurrent.example&status=open')
         self.assertEqual(status,200)
         self.assertEqual(len(body['investigations']),2)
+
+    def test_project_scope_is_required_for_authenticated_gateway_calls(self):
+        status,body=self.request('/v1/providers',project=None)
+        self.assertEqual(status,400)
+        self.assertEqual(body['error'],'invalid_project_scope')
+
+    def test_provider_state_and_sync_ledger_are_project_isolated(self):
+        status,result=self.request('/v1/providers/gsc/test','POST',{},project='project-a')
+        self.assertEqual(status,200)
+        self.assertTrue(result['ok'])
+
+        _,states_a=self.request('/v1/providers',project='project-a')
+        _,states_b=self.request('/v1/providers',project='project-b')
+        by_a={item['provider']:item for item in states_a['providers']}
+        by_b={item['provider']:item for item in states_b['providers']}
+        self.assertEqual(by_a['gsc']['status'],'ok')
+        self.assertEqual(by_b['gsc']['status'],'not_configured')
+
+        payload={'sources':['semrush'],'window':'28d','idempotencyKey':'shared-key'}
+        _,first=self.request('/v1/sites/example.com/refresh','POST',payload,project='project-a')
+        _,second=self.request('/v1/sites/example.com/refresh','POST',payload,project='project-b')
+        self.assertTrue(first['runs'][0]['created'])
+        self.assertTrue(second['runs'][0]['created'])
+
+        _,ledger_a=self.request('/v1/sync-runs?limit=10',project='project-a')
+        _,ledger_b=self.request('/v1/sync-runs?limit=10',project='project-b')
+        self.assertEqual(len([r for r in ledger_a['runs'] if r['provider']=='semrush']),1)
+        self.assertEqual(len([r for r in ledger_b['runs'] if r['provider']=='semrush']),1)
+        self.assertTrue(all(r['project_id']=='project-a' for r in ledger_a['runs']))
+        self.assertTrue(all(r['project_id']=='project-b' for r in ledger_b['runs']))
+
+    def test_metrics_and_snapshots_are_project_isolated(self):
+        status,refresh=self.request(
+            '/v1/sites/example.com/refresh','POST',
+            {'sources':['gsc'],'window':'7d','idempotencyKey':'project-metrics'},
+            project='project-a',
+        )
+        self.assertEqual(status,202)
+        self.assertEqual(refresh['runs'][0]['status'],'completed')
+
+        _,metrics_a=self.request(
+            '/v1/metrics?provider=gsc&site=example.com&dataset=site_daily',
+            project='project-a',
+        )
+        _,metrics_b=self.request(
+            '/v1/metrics?provider=gsc&site=example.com&dataset=site_daily',
+            project='project-b',
+        )
+        self.assertEqual(len(metrics_a['rows']),2)
+        self.assertEqual(metrics_b['rows'],[])
+
+        _,snapshot_a=self.request('/v1/sites/example.com/snapshot?window=7d',project='project-a')
+        _,snapshot_b=self.request('/v1/sites/example.com/snapshot?window=7d',project='project-b')
+        self.assertIn('gsc',snapshot_a)
+        self.assertNotIn('gsc',snapshot_b)
+
+    def test_concurrent_duplicate_refreshes_coalesce_atomically(self):
+        barrier=threading.Barrier(8)
+        results=[]
+        errors=[]
+        payload={'sources':['semrush'],'window':'28d','idempotencyKey':'concurrent-same-key'}
+
+        def invoke():
+            try:
+                barrier.wait(timeout=5)
+                results.append(self.request(
+                    '/v1/sites/example.com/refresh','POST',payload,project='project-a'
+                ))
+            except Exception as exc:
+                errors.append(exc)
+
+        workers=[threading.Thread(target=invoke) for _ in range(8)]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join(timeout=10)
+
+        self.assertEqual(errors,[])
+        self.assertEqual(len(results),8)
+        self.assertTrue(all(status==202 for status,_ in results))
+        runs=[body['runs'][0] for _,body in results]
+        self.assertEqual(sum(1 for run in runs if run['created']),1)
+        self.assertEqual(sum(1 for run in runs if run['coalesced']),7)
+
+        _,ledger=self.request('/v1/sync-runs?limit=20',project='project-a')
+        matching=[r for r in ledger['runs'] if 'concurrent-same-key' in r['idempotency_key']]
+        self.assertEqual(len(matching),1)
 
 if __name__=='__main__': unittest.main()
