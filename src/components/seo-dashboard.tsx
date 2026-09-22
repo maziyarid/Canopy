@@ -1,6 +1,6 @@
 import { Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 import { useLocale, useT } from "@/lib/locale";
-import { getClickUpSettings, getClickUpTasks, syncClickUpWithProject } from "@/lib/server/clickup";
+import { getClickUpSettings, getClickUpTasks, syncClickUpWithProject, type PublicClickUpSettings } from "@/lib/server/clickup";
 import { getSEOData, getSEOTimeline, saveSEOData, aggregateSEOData } from "@/lib/server/seo-sources";
 import { getContentStats, getContentTimeline, listPublishedContent } from "@/lib/server/published-content";
 import { listProjects } from "@/lib/server/projects";
@@ -34,7 +34,7 @@ export function SEODashboard() {
   const [timelineData, setTimelineData] = useState<Record<string, any>>({});
   const [contentList, setContentList] = useState<any[]>([]);
   const [clickUpTasks, setClickUpTasks] = useState<any[]>([]);
-  const [clickUpSettings, setClickUpSettings] = useState<{ apiKey: string; listId: string } | null>(null);
+  const [clickUpSettings, setClickUpSettings] = useState<PublicClickUpSettings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showContentModal, setShowContentModal] = useState(false);
   const [newContent, setNewContent] = useState({
@@ -67,13 +67,13 @@ export function SEODashboard() {
   async function loadProjectData(project: Project) {
     setLoading(true);
     try {
-      const [seo, contentStats, contentList, timeline, tasks] = await PromiseAllSettled([
+      const [seo, contentStats, contentList, timeline, tasks] = await Promise.allSettled([
         aggregateSEOData({ projectId: project.id, keyword: "", sources: ["google-search-console", "bing-webmaster", "ubersuggest"] }),
         getContentStats({ projectId: project.id, days: 30 }),
         listPublishedContent({ projectId: project.id, limit: 20 }),
         getSEOTimeline({ projectId: project.id, days: 30 }),
-        clickUpSettings?.apiKey && clickUpSettings.listId 
-          ? getClickUpTasks({ apiKey: clickUpSettings.apiKey, listId: clickUpSettings.listId, limit: 10 })
+        clickUpSettings?.hasApiKey && clickUpSettings.listId
+          ? getClickUpTasks({ listId: clickUpSettings.listId, limit: 10 })
           : Promise.resolve({ ok: true, data: [] }),
       ]);
 
@@ -90,7 +90,7 @@ export function SEODashboard() {
   }
 
   async function handleSyncClickUp() {
-    if (!selectedProject || !clickUpSettings?.apiKey || !clickUpSettings.listId) {
+    if (!selectedProject || !clickUpSettings?.hasApiKey || !clickUpSettings.listId) {
       toast.error("Please configure ClickUp settings first");
       return;
     }
@@ -98,10 +98,9 @@ export function SEODashboard() {
     try {
       const result = await syncClickUpWithProject({
         projectId: selectedProject.id,
-        apiKey: clickUpSettings.apiKey,
         listId: clickUpSettings.listId,
       });
-      
+
       if (result.ok) {
         toast.success(`Synced ${result.totalTasks} tasks to ClickUp`);
         await loadProjectData(selectedProject);
@@ -228,7 +227,7 @@ export function SEODashboard() {
                 </div>
               </div>
             </Card>
-            
+
             <Card className="p-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -240,7 +239,7 @@ export function SEODashboard() {
                 </div>
               </div>
             </Card>
-            
+
             <Card className="p-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -252,7 +251,7 @@ export function SEODashboard() {
                 </div>
               </div>
             </Card>
-            
+
             <Card className="p-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -330,7 +329,7 @@ export function SEODashboard() {
                   {t("addContent") || "Add Content"}
                 </Button>
               </div>
-              
+
               <div className="mt-4 space-y-3">
                 {contentList.length > 0 ? (
                   contentList.slice(0, 5).map((content) => (
@@ -354,7 +353,7 @@ export function SEODashboard() {
                   </div>
                 )}
               </div>
-              
+
               {contentList.length > 5 && (
                 <Button variant="quiet" className="mt-4 w-full" onClick={() => loadProjectData(selectedProject)}>
                   {t("loadMore") || "Load More"}
@@ -365,14 +364,14 @@ export function SEODashboard() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-lg font-semibold">{t("clickUpTasks") || "ClickUp Tasks"}</h2>
-                {clickUpSettings?.apiKey && clickUpSettings.listId && (
+                {clickUpSettings?.hasApiKey && clickUpSettings.listId && (
                   <Button size="sm" onClick={handleSyncClickUp}>
                     <RefreshCw className="size-4" />
                     {t("sync") || "Sync"}
                   </Button>
                 )}
               </div>
-              
+
               <div className="mt-4 space-y-3">
                 {clickUpTasks.length > 0 ? (
                   clickUpTasks.slice(0, 5).map((task) => (
@@ -391,7 +390,7 @@ export function SEODashboard() {
                   ))
                 ) : (
                   <div className="grid h-32 place-items-center text-muted">
-                    {clickUpSettings?.apiKey && clickUpSettings.listId 
+                    {clickUpSettings?.hasApiKey && clickUpSettings.listId
                       ? (t("noTasks") || "No tasks found")
                       : (t("connectClickUp") || "Connect ClickUp to see tasks")}
                   </div>
@@ -404,14 +403,14 @@ export function SEODashboard() {
           <Card className="p-6">
             <h2 className="font-display text-lg font-semibold">{t("dataSources") || "Data Sources"}</h2>
             <p className="mt-1 text-sm text-muted">{t("connectedSources") || "Connected data sources providing SEO insights"}</p>
-            
+
             <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
               {DATA_SOURCES.map((source) => {
                 // Check if we have data from this source
-                const hasData = Object.values(seoData).some((d: any) => 
+                const hasData = Object.values(seoData).some((d: any) =>
                   Object.keys(d || {}).some(k => Object.keys(d[k] || {}).includes(source.value))
                 );
-                
+
                 return (
                   <div key={source.value} className="flex items-center gap-3 rounded-lg bg-raised p-3">
                     <div className={`size-3 rounded-full ${hasData ? "bg-green-500" : "bg-gray-400"}`} />
@@ -443,12 +442,12 @@ export function SEODashboard() {
                 <X className="size-4" />
               </Button>
             </div>
-            
+
             <div className="mt-4 space-y-4">
               <p className="text-sm text-muted">
                 {t("connectSourcesDesc") || "Connect your SEO data sources to get comprehensive insights. Clients will only see the data you grant them access to."}
               </p>
-              
+
               <div className="space-y-3">
                 <Field label="Mangools API Key">
                   <Input type="password" placeholder={t("enterMangoolsKey") || "Enter Mangools API Key"} />
@@ -463,7 +462,7 @@ export function SEODashboard() {
                   <Input placeholder={t("enterClickUpList") || "Enter ClickUp List ID"} />
                 </Field>
               </div>
-              
+
               <Button className="w-full mt-6" onClick={() => {
                 toast.success("Settings saved!");
                 setShowSettings(false);
@@ -485,34 +484,34 @@ export function SEODashboard() {
                 <X className="size-4" />
               </Button>
             </div>
-            
+
             <form className="mt-4 space-y-4" onSubmit={handleCreateContent}>
               <Field label={t("url") || "URL"}>
-                <Input 
-                  value={newContent.url} 
-                  onChange={(e) => setNewContent({ ...newContent, url: e.target.value })} 
+                <Input
+                  value={newContent.url}
+                  onChange={(e) => setNewContent({ ...newContent, url: e.target.value })}
                   placeholder="https://example.com/my-post"
                   required
                 />
               </Field>
               <Field label={t("title") || "Title"}>
-                <Input 
-                  value={newContent.title} 
-                  onChange={(e) => setNewContent({ ...newContent, title: e.target.value })} 
+                <Input
+                  value={newContent.title}
+                  onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
                   placeholder={t("contentTitle") || "Content Title"}
                   required
                 />
               </Field>
               <Field label={t("keyword") || "Keyword"}>
-                <Input 
-                  value={newContent.keyword} 
-                  onChange={(e) => setNewContent({ ...newContent, keyword: e.target.value })} 
+                <Input
+                  value={newContent.keyword}
+                  onChange={(e) => setNewContent({ ...newContent, keyword: e.target.value })}
                   placeholder={t("targetKeyword") || "Target Keyword"}
                   required
                 />
               </Field>
               <Field label={t("contentType") || "Content Type"}>
-                <Select 
+                <Select
                   value={newContent.contentType}
                   onValueChange={(value) => setNewContent({ ...newContent, contentType: value })}
                 >
@@ -528,7 +527,7 @@ export function SEODashboard() {
                   </Select.Content>
                 </Select>
               </Field>
-              
+
               <div className="flex gap-2">
                 <Button type="button" variant="ghost" onClick={() => setShowContentModal(false)}>
                   {t("cancel") || "Cancel"}
@@ -543,9 +542,4 @@ export function SEODashboard() {
       )}
     </div>
   );
-}
-
-// Helper for Promise.allSettled that preserves types
-function PromiseAllSettled<T extends any[]>(promises: T): Promise<{ status: "fulfilled"; value: Awaited<T[number]> } | { status: "rejected"; reason: any }[]> {
-  return Promise.allSettled(promises) as any;
 }
