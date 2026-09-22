@@ -120,3 +120,129 @@ test("DB publication store parks expired ambiguous dispatch instead of republish
     assert.equal(receipts[0].status,"dispatching");
   } finally { await db.close(); }
 });
+
+
+test("parked publication reconciliation records confirmed success and audit evidence", async () => {
+  const {db,sql}=await fixture();
+  try {
+    await seed(sql);
+    const store=createPublicationStore(sql,60);
+    const started=new Date("2026-09-21T20:00:00Z");
+    const job=await store.claim("worker-1",started);
+    await store.beginDispatch(job!,started);
+    await store.claim("worker-2",new Date("2026-09-21T20:02:00Z"));
+
+    const parked=await store.listParked();
+    assert.equal(parked.length,1);
+    assert.equal(parked[0].id,"j1");
+
+    const resolved=await store.reconcileParked(
+      "j1",
+      {
+        outcome:"succeeded",
+        receipt:{providerPostIds:["42"],providerUrl:"https://t.me/c/42"},
+        evidence:{source:"provider-readback",checkedBy:"operator"},
+      },
+      "operator:test",
+      new Date("2026-09-21T20:03:00Z"),
+    );
+    assert.equal(resolved.outcome,"succeeded");
+
+    const jobs=await sql.query<{status:string}>("select status from social_publication_jobs where id='j1'");
+    assert.equal(jobs[0].status,"succeeded");
+    const results=await sql.query<{status:string;provider_post_id:string}>(
+      "select status,provider_post_id from social_publication_results where job_id='j1' and attempt_no=1"
+    );
+    assert.deepEqual(results[0],{status:"succeeded",provider_post_id:"42"});
+    const receipts=await sql.query<{status:string;actor_ref:string}>(
+      "select status,actor_ref from operation_receipts where operation='social_publication_reconcile' and target_ref='j1'"
+    );
+    assert.deepEqual(receipts[0],{status:"succeeded",actor_ref:"operator:test"});
+  } finally { await db.close(); }
+});
+
+test("confirmed non-publication requeues exactly one safe next attempt", async () => {
+  const {db,sql}=await fixture();
+  try {
+    await seed(sql);
+    const store=createPublicationStore(sql,60);
+    const started=new Date("2026-09-21T20:00:00Z");
+    const job=await store.claim("worker-1",started);
+    await store.beginDispatch(job!,started);
+    await store.claim("worker-2",new Date("2026-09-21T20:02:00Z"));
+
+    await store.reconcileParked(
+      "j1",
+      {outcome:"not_published",evidence:{source:"provider-readback",confirmed:"absent"}},
+      "operator:test",
+      new Date("2026-09-21T20:03:00Z"),
+    );
+
+    const rows=await sql.query<{status:string;attempt_count:number}>(
+      "select status,attempt_count from social_publication_jobs where id='j1'"
+    );
+    assert.equal(rows[0].status,"pending");
+    assert.equal(Number(rows[0].attempt_count),1);
+    const resultRows=await sql.query<{status:string}>(
+      "select status from social_publication_results where job_id='j1' and attempt_no=1"
+    );
+    assert.equal(resultRows[0].status,"confirmed_not_published");
+
+    const retry=await store.claim("worker-3",new Date("2026-09-21T20:03:01Z"));
+    assert.equal(retry?.id,"j1");
+    assert.equal(retry?.attemptCount,2);
+  } finally { await db.close(); }
+});
+
+test("terminal reconciliation dead-letters an ambiguous publication with receipt", async () => {
+  const {db,sql}=await fixture();
+  try {
+    await seed(sql);
+    const store=createPublicationStore(sql,60);
+    const started=new Date("2026-09-21T20:00:00Z");
+    const job=await store.claim("worker-1",started);
+    await store.beginDispatch(job!,started);
+    await store.claim("worker-2",new Date("2026-09-21T20:02:00Z"));
+
+    await store.reconcileParked(
+      "j1",
+      {outcome:"dead",reason:"provider outcome cannot be verified",evidence:{source:"manual-review"}},
+      "operator:test",
+      new Date("2026-09-21T20:03:00Z"),
+    );
+
+    const rows=await sql.query<{status:string;failure_class:string}>(
+      "select status,failure_class from social_publication_jobs where id='j1'"
+    );
+    assert.deepEqual(rows[0],{status:"dead",failure_class:"ReconciledAmbiguousOutcome"});
+    const receipts=await sql.query<{status:string}>(
+      "select status from operation_receipts where operation='social_publication_reconcile' and target_ref='j1'"
+    );
+    assert.equal(receipts[0].status,"dead");
+  } finally { await db.close(); }
+});
+
+test("safe requeue is refused after the publication attempt budget is exhausted", async () => {
+  const {db,sql}=await fixture();
+  try {
+    await seed(sql);
+    await sql.query("update social_publication_jobs set max_attempts=1 where id='j1'");
+    const store=createPublicationStore(sql,60);
+    const started=new Date("2026-09-21T20:00:00Z");
+    const job=await store.claim("worker-1",started);
+    await store.beginDispatch(job!,started);
+    await store.claim("worker-2",new Date("2026-09-21T20:02:00Z"));
+
+    await assert.rejects(
+      store.reconcileParked(
+        "j1",
+        {outcome:"not_published",evidence:{source:"provider-readback",confirmed:"absent"}},
+        "operator:test",
+        new Date("2026-09-21T20:03:00Z"),
+      ),
+      /exhausted attempts/,
+    );
+    const rows=await sql.query<{status:string}>("select status from social_publication_jobs where id='j1'");
+    assert.equal(rows[0].status,"parked");
+  } finally { await db.close(); }
+});
