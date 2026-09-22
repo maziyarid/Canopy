@@ -32,14 +32,42 @@ export function createPublicationStore(sql: Sql, leaseSeconds = 120): Publicatio
   return {
     async claim(workerId, now) {
       const leaseUntil = new Date(now.getTime() + leaseSeconds * 1000);
+
+      // If a worker crashes after dispatch starts, the provider may already
+      // have accepted the post. Reclaiming that lease automatically can
+      // duplicate publication, so park ambiguous outcomes for reconciliation.
+      await sql.query(
+        `update social_publication_jobs j
+         set status='parked',
+             locked_by='',
+             lease_until=null,
+             failure_class='AmbiguousProviderOutcome',
+             last_error='provider dispatch outcome requires reconciliation before retry',
+             updated_at=$1
+         where j.status='running'
+           and j.lease_until is not null
+           and j.lease_until < $1
+           and exists (
+             select 1 from social_publication_results r
+             where r.job_id=j.id
+               and r.attempt_no=j.attempt_count
+               and r.status='dispatching'
+           )`,
+        [now.toISOString()],
+      );
+
       const rows = await sql.query<JobRow>(
         `with candidate as (
            select j.id
            from social_publication_jobs j
-           where (
-             j.status = 'pending'
-             or (j.status = 'running' and j.lease_until is not null and j.lease_until < $1)
-           )
+           join social_content_items ci
+             on ci.id=j.content_item_id and ci.project_id=j.project_id
+           where ci.status='ready'
+             and ci.approval_state='approved'
+             and (
+               j.status = 'pending'
+               or (j.status = 'running' and j.lease_until is not null and j.lease_until < $1)
+             )
              and (j.not_before is null or j.not_before <= $1)
              and j.attempt_count < j.max_attempts
            order by j.created_at, j.id
@@ -117,6 +145,43 @@ export function createPublicationStore(sql: Sql, leaseSeconds = 120): Publicatio
         // Provider ID column remains the safe fallback.
       }
       return { providerPostIds: ids, providerUrl: row.provider_url || undefined };
+    },
+
+    async beginDispatch(job, now) {
+      await sql.query(
+        `insert into social_publication_results
+           (id,job_id,attempt_no,status,request_receipt)
+         values ($1,$2,$3,'dispatching',$4)
+         on conflict (job_id,attempt_no) do update
+           set status=case
+             when social_publication_results.status='succeeded' then social_publication_results.status
+             else 'dispatching'
+           end,
+               request_receipt=excluded.request_receipt`,
+        [
+          crypto.randomUUID(),
+          job.id,
+          job.attemptCount,
+          JSON.stringify({ idempotencyKey: job.idempotencyKey, dispatchedAt: now.toISOString() }),
+        ],
+      );
+    },
+
+    async failDispatch(job, failureClass, error, now) {
+      await sql.query(
+        `update social_publication_results
+         set status='failed',response_receipt=$3
+         where job_id=$1 and attempt_no=$2 and status='dispatching'`,
+        [
+          job.id,
+          job.attemptCount,
+          JSON.stringify({
+            failureClass: failureClass.slice(0, 120),
+            error: error.slice(0, 2000),
+            failedAt: now.toISOString(),
+          }),
+        ],
+      );
     },
 
     async succeed(job, receipt, now) {

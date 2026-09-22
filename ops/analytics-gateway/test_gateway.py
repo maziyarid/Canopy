@@ -215,4 +215,47 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(snapshot['gsc']['impressions'],300.0)
         self.assertAlmostEqual(snapshot['gsc']['ctr'],5/300)
 
+    def test_gsc_monitor_concurrent_requests_do_not_race_investigation_insert(self):
+        with sqlite3.connect(self.db_path) as connection:
+            for day in range(1, 15):
+                recent=day > 7
+                clicks=2 if recent else 10
+                impressions=40 if recent else 100
+                data_date=f'2026-09-{day:02d}'
+                dimensions=json.dumps({'date':data_date},separators=(',',':'),sort_keys=True)
+                metrics=json.dumps(
+                    {'clicks':clicks,'impressions':impressions,'ctr':clicks/impressions,'position':20},
+                    separators=(',',':'),sort_keys=True,
+                )
+                connection.execute(
+                    '''insert into provider_metric
+                       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
+                       values(?,?,?,?,?,?,?,?,?,?)''',
+                    (
+                        f'concurrent-monitor-{day}','gsc','concurrent.example','site_daily',data_date,
+                        dimensions,metrics,'2026-09-14','monitor-run','2026-09-21T00:00:00Z',
+                    ),
+                )
+
+        barrier=threading.Barrier(8)
+        results=[]
+        errors=[]
+        def invoke():
+            try:
+                barrier.wait(timeout=5)
+                results.append(self.request('/v1/monitor/gsc','POST',{}))
+            except Exception as exc:
+                errors.append(exc)
+
+        workers=[threading.Thread(target=invoke) for _ in range(8)]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join(timeout=10)
+
+        self.assertEqual(errors,[])
+        self.assertEqual(len(results),8)
+        self.assertTrue(all(status==200 for status,_ in results))
+        status,body=self.request('/v1/investigations?site=concurrent.example&status=open')
+        self.assertEqual(status,200)
+        self.assertEqual(len(body['investigations']),2)
+
 if __name__=='__main__': unittest.main()

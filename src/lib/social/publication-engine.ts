@@ -34,6 +34,8 @@ export type PublicationStore = {
   claim(workerId: string, now: Date): Promise<PublicationJob | null>;
   context(job: PublicationJob): Promise<PublicationContext>;
   priorSuccess(idempotencyKey: string): Promise<PublishReceipt | null>;
+  beginDispatch(job: PublicationJob, now: Date): Promise<void>;
+  failDispatch(job: PublicationJob, failureClass: string, error: string, now: Date): Promise<void>;
   succeed(job: PublicationJob, receipt: PublishReceipt, now: Date): Promise<void>;
   retry(job: PublicationJob, error: string, notBefore: Date, now: Date): Promise<void>;
   dead(job: PublicationJob, failureClass: string, error: string, now: Date): Promise<void>;
@@ -84,12 +86,14 @@ export async function processOnePublication(input: {
   const context = await input.store.context(job);
   const credential = await input.resolveCredential(context.credentialRef, job);
 
+  await input.store.beginDispatch(job, now);
+
+  let receipt: PublishReceipt;
   try {
-    const receipt = await adapter.publish(context, credential);
-    await input.store.succeed(job, receipt, now);
-    return { state: "succeeded" as const, jobId: job.id, receipt };
+    receipt = await adapter.publish(context, credential);
   } catch (error) {
     const failure = classifyError(error);
+    await input.store.failDispatch(job, failure.failureClass, failure.message, now);
     const nextAttempt = job.attemptCount + 1;
     if (nextAttempt >= job.maxAttempts) {
       await input.store.dead(job, failure.failureClass, failure.message, now);
@@ -100,4 +104,10 @@ export async function processOnePublication(input: {
     await input.store.retry(job, failure.message, notBefore, now);
     return { state: "retry" as const, jobId: job.id, notBefore, failureClass: failure.failureClass };
   }
+
+  // Persist success outside the provider-error catch. If persistence fails
+  // after remote acceptance, the dispatch marker remains ambiguous and the
+  // expired lease is parked rather than automatically publishing again.
+  await input.store.succeed(job, receipt, now);
+  return { state: "succeeded" as const, jobId: job.id, receipt };
 }

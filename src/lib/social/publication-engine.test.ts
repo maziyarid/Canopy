@@ -9,11 +9,15 @@ class MemoryStore implements PublicationStore {
   retries: string[] = [];
   deadJobs: string[] = [];
   publishState = new Map<string,string>();
+  dispatchState = new Map<string,string>();
 
   async claim() { return this.queue.shift() ?? null; }
   async context(job: PublicationJob) { return this.contexts.get(job.id)!; }
   async priorSuccess(key: string) { return this.successes.get(key) ?? null; }
+  async beginDispatch(job: PublicationJob) { this.dispatchState.set(job.id, "dispatching"); }
+  async failDispatch(job: PublicationJob) { this.dispatchState.set(job.id, "failed"); }
   async succeed(job: PublicationJob, receipt: PublishReceipt) {
+    this.dispatchState.set(job.id, "succeeded");
     this.successes.set(job.idempotencyKey, receipt);
     this.publishState.set(job.id, "succeeded");
   }
@@ -93,4 +97,28 @@ test("provider retry_after schedules bounded retry and max attempts dead-letter"
     resolveCredential:async()=> "secret",
   });
   assert.equal(final.state,"dead");
+});
+
+
+test("success persistence failure stays ambiguous instead of scheduling a duplicate retry", async () => {
+  const store = new MemoryStore();
+  const telegram = job("tg-persist","persist-key","telegram");
+  store.queue.push(telegram);
+  store.contexts.set("tg-persist",{credentialRef:"cred",accountRef:"@c",body:"hello",mediaManifest:[]});
+  let calls=0;
+  store.succeed = async () => { throw new Error("database unavailable after provider acceptance"); };
+
+  await assert.rejects(
+    processOnePublication({
+      workerId:"w",
+      store,
+      adapters:{telegram:{publish:async()=>{calls++; return {providerPostIds:["accepted-1"]};}}},
+      resolveCredential:async()=>"secret",
+    }),
+    /database unavailable/,
+  );
+
+  assert.equal(calls,1);
+  assert.equal(store.dispatchState.get("tg-persist"),"dispatching");
+  assert.deepEqual(store.retries,[]);
 });

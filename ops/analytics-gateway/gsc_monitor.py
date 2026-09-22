@@ -209,12 +209,26 @@ def run_monitor(db_path):
             for signal_type, severity, evidence in signals:
                 fp = fingerprint(site, signal_type)
                 current.add(fp)
-                existing = connection.execute(
-                    "select id from investigation where fingerprint=?",
-                    (fp,),
-                ).fetchone()
                 payload = json.dumps(evidence, separators=(",", ":"), sort_keys=True)
-                if existing:
+                inserted = connection.execute(
+                    """insert or ignore into investigation
+                       (id,fingerprint,site,signal_type,severity,status,source,
+                        first_seen,last_seen,evidence)
+                       values(?,?,?,?,?,'open','gsc',?,?,?)""",
+                    (
+                        str(uuid.uuid4()),
+                        fp,
+                        site,
+                        signal_type,
+                        severity,
+                        observed,
+                        observed,
+                        payload,
+                    ),
+                )
+                if inserted.rowcount == 1:
+                    created += 1
+                else:
                     connection.execute(
                         """update investigation
                            set severity=?,status='open',last_seen=?,evidence=?
@@ -222,24 +236,6 @@ def run_monitor(db_path):
                         (severity, observed, payload, fp),
                     )
                     updated += 1
-                else:
-                    connection.execute(
-                        """insert into investigation
-                           (id,fingerprint,site,signal_type,severity,status,source,
-                            first_seen,last_seen,evidence)
-                           values(?,?,?,?,?,'open','gsc',?,?,?)""",
-                        (
-                            str(uuid.uuid4()),
-                            fp,
-                            site,
-                            signal_type,
-                            severity,
-                            observed,
-                            observed,
-                            payload,
-                        ),
-                    )
-                    created += 1
 
                 active.append(
                     {
