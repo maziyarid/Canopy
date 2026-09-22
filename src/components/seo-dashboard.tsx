@@ -1,6 +1,7 @@
 import { Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 import { useLocale, useT } from "@/lib/locale";
-import { getClickUpSettings, getClickUpTasks, syncClickUpWithProject, type PublicClickUpSettings } from "@/lib/server/clickup";
+import { getClickUpSettings, getClickUpTasks, saveClickUpSettings, syncClickUpWithProject, type PublicClickUpSettings } from "@/lib/server/clickup";
+import { getSettings, saveSettings } from "@/lib/server/settings";
 import { getSEOData, getSEOTimeline, saveSEOData, aggregateSEOData } from "@/lib/server/seo-sources";
 import { getContentStats, getContentTimeline, listPublishedContent } from "@/lib/server/published-content";
 import { listProjects } from "@/lib/server/projects";
@@ -35,7 +36,15 @@ export function SEODashboard() {
   const [contentList, setContentList] = useState<any[]>([]);
   const [clickUpTasks, setClickUpTasks] = useState<any[]>([]);
   const [clickUpSettings, setClickUpSettings] = useState<PublicClickUpSettings | null>(null);
+  const [studioSettings, setStudioSettings] = useState<{ hasKey: boolean; mondayWebhook: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [savingSources, setSavingSources] = useState(false);
+  const [sourceForm, setSourceForm] = useState({
+    mangoolsKey: "",
+    mondayWebhook: "",
+    clickUpApiKey: "",
+    clickUpListId: "",
+  });
   const [showContentModal, setShowContentModal] = useState(false);
   const [newContent, setNewContent] = useState({
     url: "",
@@ -47,12 +56,19 @@ export function SEODashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const [projectsData, settings] = await Promise.all([
+      const [projectsData, settings, studio] = await Promise.all([
         listProjects(),
         getClickUpSettings(),
+        getSettings(),
       ]);
       setProjects(projectsData);
       setClickUpSettings(settings);
+      setStudioSettings(studio);
+      setSourceForm((form) => ({
+        ...form,
+        mondayWebhook: studio.mondayWebhook || form.mondayWebhook,
+        clickUpListId: settings.listId || form.clickUpListId,
+      }));
 
       if (projectsData.length > 0 && !selectedProject) {
         setSelectedProject(projectsData[0]);
@@ -102,13 +118,68 @@ export function SEODashboard() {
       });
 
       if (result.ok) {
-        toast.success(`Synced ${result.totalTasks} tasks to ClickUp`);
+        toast.success(
+          `Synced ${result.created} tasks to ClickUp` +
+            (result.skipped ? `, skipped ${result.skipped}` : ""),
+        );
         await loadProjectData(selectedProject);
       } else {
-        toast.error(result.error || "Sync failed");
+        toast.error(
+          result.error ||
+            `Sync failed (${result.created} created, ${result.failed} failed, ${result.skipped} skipped)`,
+        );
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Sync failed");
+    }
+  }
+
+  async function handleSaveSources() {
+    setSavingSources(true);
+    try {
+      const mangoolsKey = sourceForm.mangoolsKey.trim();
+      const mondayWebhook = sourceForm.mondayWebhook.trim();
+      const clickUpApiKey = sourceForm.clickUpApiKey.trim();
+      const clickUpListId = sourceForm.clickUpListId.trim();
+      const jobs: Promise<unknown>[] = [];
+      if (mangoolsKey || mondayWebhook !== (studioSettings?.mondayWebhook ?? "")) {
+        jobs.push(
+          saveSettings({
+            data: {
+              ...(mangoolsKey ? { mangoolsKey } : {}),
+              mondayWebhook,
+            },
+          }),
+        );
+      }
+      if (clickUpApiKey || clickUpListId !== (clickUpSettings?.listId ?? "")) {
+        jobs.push(
+          saveClickUpSettings({
+            ...(clickUpApiKey ? { apiKey: clickUpApiKey } : {}),
+            ...(clickUpListId ? { listId: clickUpListId } : {}),
+          }),
+        );
+      }
+      if (!jobs.length) {
+        toast.error("Enter at least one data source setting");
+        return;
+      }
+      await Promise.all(jobs);
+      const [nextClickUp, nextStudio] = await Promise.all([getClickUpSettings(), getSettings()]);
+      setClickUpSettings(nextClickUp);
+      setStudioSettings(nextStudio);
+      setSourceForm({
+        mangoolsKey: "",
+        mondayWebhook: nextStudio.mondayWebhook,
+        clickUpApiKey: "",
+        clickUpListId: nextClickUp.listId,
+      });
+      toast.success("Settings saved");
+      setShowSettings(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save settings");
+    } finally {
+      setSavingSources(false);
     }
   }
 
@@ -205,7 +276,15 @@ export function SEODashboard() {
             <Settings className="size-4" />
             {t("settings") || "Settings"}
           </Button>
-          <Button onClick={() => setShowSettings(true)}>
+          <Button onClick={() => {
+            setSourceForm({
+              mangoolsKey: "",
+              mondayWebhook: studioSettings?.mondayWebhook ?? "",
+              clickUpApiKey: "",
+              clickUpListId: clickUpSettings?.listId ?? "",
+            });
+            setShowSettings(true);
+          }}>
             <Globe className="size-4" />
             {t("connectSources") || "Connect Sources"}
           </Button>
@@ -450,24 +529,41 @@ export function SEODashboard() {
 
               <div className="space-y-3">
                 <Field label="Mangools API Key">
-                  <Input type="password" placeholder={t("enterMangoolsKey") || "Enter Mangools API Key"} />
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    value={sourceForm.mangoolsKey}
+                    onChange={(e) => setSourceForm({ ...sourceForm, mangoolsKey: e.target.value })}
+                    placeholder={studioSettings?.hasKey ? "••••••••" : (t("enterMangoolsKey") || "Enter Mangools API Key")}
+                  />
                 </Field>
                 <Field label="Monday.com Webhook">
-                  <Input placeholder={t("enterMondayWebhook") || "Enter Monday.com Webhook URL"} />
+                  <Input
+                    value={sourceForm.mondayWebhook}
+                    onChange={(e) => setSourceForm({ ...sourceForm, mondayWebhook: e.target.value })}
+                    placeholder={t("enterMondayWebhook") || "Enter Monday.com Webhook URL"}
+                  />
                 </Field>
                 <Field label="ClickUp API Key">
-                  <Input type="password" placeholder={t("enterClickUpKey") || "Enter ClickUp API Key"} />
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    value={sourceForm.clickUpApiKey}
+                    onChange={(e) => setSourceForm({ ...sourceForm, clickUpApiKey: e.target.value })}
+                    placeholder={clickUpSettings?.hasApiKey ? "••••••••" : (t("enterClickUpKey") || "Enter ClickUp API Key")}
+                  />
                 </Field>
                 <Field label="ClickUp List ID">
-                  <Input placeholder={t("enterClickUpList") || "Enter ClickUp List ID"} />
+                  <Input
+                    value={sourceForm.clickUpListId}
+                    onChange={(e) => setSourceForm({ ...sourceForm, clickUpListId: e.target.value })}
+                    placeholder={t("enterClickUpList") || "Enter ClickUp List ID"}
+                  />
                 </Field>
               </div>
 
-              <Button className="w-full mt-6" onClick={() => {
-                toast.success("Settings saved!");
-                setShowSettings(false);
-              }}>
-                {t("saveSettings") || "Save Settings"}
+              <Button className="w-full mt-6" onClick={() => void handleSaveSources()} disabled={savingSources}>
+                {savingSources ? (t("saving") || "Saving...") : (t("saveSettings") || "Save Settings")}
               </Button>
             </div>
           </Card>

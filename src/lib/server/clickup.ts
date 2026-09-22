@@ -5,7 +5,10 @@ import { studioAuth } from "./studio-auth";
 import { canWrite, resolveAccess } from "./access";
 import {
   buildProjectKeywordQuery,
+  executeClickUpKeywordSync,
+  mergeClickUpSettings,
   toPublicClickUpSettings,
+  type ClickUpKeywordRow,
   type ClickUpSettingsRow,
   type PublicClickUpSettings,
 } from "./query-builders";
@@ -29,7 +32,7 @@ function jsonString(value: Json, key: string) {
 
 
 const ClickUpAPIKeySchema = z.object({
-  apiKey: z.string().min(1),
+  apiKey: z.string().min(1).optional(),
   teamId: z.string().min(1).optional(),
   folderId: z.string().min(1).optional(),
   listId: z.string().min(1).optional(),
@@ -112,19 +115,27 @@ export const saveClickUpSettings = createServerFn({ method: "POST" })
       throw new Error("Unauthorized");
     }
 
+    const existing = await sql<ClickUpSettingsRow>`
+      SELECT api_key, team_id, folder_id, list_id
+      FROM clickup_settings
+      WHERE user_id = ${context.userId}
+      LIMIT 1
+    `;
+    const merged = mergeClickUpSettings(existing[0], data);
+
     await sql`
       INSERT INTO clickup_settings (user_id, api_key, team_id, folder_id, list_id, created_at, updated_at)
-      VALUES (${context.userId}, ${data.apiKey}, ${data.teamId || ""}, ${data.folderId || ""}, ${data.listId || ""}, NOW(), NOW())
+      VALUES (${context.userId}, ${merged.api_key}, ${merged.team_id}, ${merged.folder_id}, ${merged.list_id}, NOW(), NOW())
       ON CONFLICT (user_id)
       DO UPDATE SET
-        api_key = ${data.apiKey},
-        team_id = ${data.teamId || ""},
-        folder_id = ${data.folderId || ""},
-        list_id = ${data.listId || ""},
+        api_key = ${merged.api_key},
+        team_id = ${merged.team_id},
+        folder_id = ${merged.folder_id},
+        list_id = ${merged.list_id},
         updated_at = NOW()
     `;
 
-    return { ok: true as const, message: "ClickUp settings saved successfully" };
+    return { ok: true as const, message: "ClickUp settings saved successfully", ...toPublicClickUpSettings(merged) };
   });
 
 export const getClickUpSettings = createServerFn({ method: "GET" })
@@ -239,7 +250,7 @@ export const syncClickUpWithProject = createServerFn({ method: "POST" })
     }
 
     const query = buildProjectKeywordQuery(data.projectId, data.keywordFilter);
-    const keywords = await sql.query<{ keyword: string; status: string; volume: number }>(query.text, query.params);
+    const keywords = await sql.query<ClickUpKeywordRow>(query.text, query.params);
     const scoped = access.filter.trim()
       ? keywords.filter((kw) =>
           access.filter
@@ -250,39 +261,16 @@ export const syncClickUpWithProject = createServerFn({ method: "POST" })
         )
       : keywords;
 
-    const tasksToCreate = scoped.filter((kw) => kw.status === "briefed" || kw.status === "new");
-    const createdTasks = [];
-    for (const kw of tasksToCreate) {
-      try {
+    return executeClickUpKeywordSync(sql, {
+      keywords: scoped,
+      createTask: async (kw) => {
         const task = await createClickUpTaskInternal(settings.api_key, {
           listId,
           title: `SEO: ${kw.keyword} (Volume: ${kw.volume})`,
           description: `Keyword research task for: ${kw.keyword}\n\nVolume: ${kw.volume}\nStatus: ${kw.status}`,
           priority: kw.status === "briefed" ? 2 : 3,
         });
-        createdTasks.push({
-          keyword: kw.keyword,
-          clickUpId: jsonString(task, "id"),
-          url: jsonString(task, "url"),
-        });
-        await sql`
-          UPDATE keywords
-          SET clickup_task_id = ${jsonString(task, "id")},
-              clickup_task_url = ${jsonString(task, "url")}
-          WHERE project_id = ${data.projectId} AND keyword = ${kw.keyword}
-        `;
-      } catch {
-        createdTasks.push({
-          keyword: kw.keyword,
-          clickUpId: "",
-          url: "",
-        });
-      }
-    }
-
-    return {
-      ok: true as const,
-      createdTasks,
-      totalTasks: tasksToCreate.length,
-    };
+        return { id: jsonString(task, "id"), url: jsonString(task, "url") };
+      },
+    });
   });

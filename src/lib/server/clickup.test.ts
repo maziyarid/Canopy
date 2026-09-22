@@ -3,7 +3,16 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { buildProjectKeywordQuery, toPublicClickUpSettings } from "./query-builders.ts";
+import {
+  buildClickUpClaimQuery,
+  buildProjectKeywordQuery,
+  executeClickUpKeywordSync,
+  mergeClickUpSettings,
+  partitionClickUpSyncKeywords,
+  summarizeClickUpSync,
+  toPublicClickUpSettings,
+  type ClickUpKeywordRow,
+} from "./query-builders.ts";
 import type { Sql } from "../db.ts";
 
 async function fixture() {
@@ -23,6 +32,15 @@ async function fixture() {
     return result.rows;
   };
   return { db, sql };
+}
+
+function keywordRow(partial: Partial<ClickUpKeywordRow> & Pick<ClickUpKeywordRow, "id" | "keyword">): ClickUpKeywordRow {
+  return {
+    status: "new",
+    volume: 10,
+    clickup_task_id: "",
+    ...partial,
+  };
 }
 
 test("public ClickUp settings never include the stored API key", () => {
@@ -50,6 +68,7 @@ test("ClickUp keyword filter stays parameterized and does not interpolate SQL", 
   const query = buildProjectKeywordQuery("project-1", injection);
   assert.equal(query.text.includes("$1"), true);
   assert.equal(query.text.includes("$2"), true);
+  assert.match(query.text, /clickup_task_id/);
   assert.equal(query.text.includes(injection), false);
   assert.equal(query.text.toLowerCase().includes("drop table"), false);
   assert.deepEqual(query.params, ["project-1", injection]);
@@ -76,6 +95,181 @@ test("ClickUp keyword filter query executes with hostile input as a value", asyn
       })(),
     );
     assert.deepEqual(matched.map((row) => row.keyword), ["seo audit"]);
+  } finally {
+    await db.close();
+  }
+});
+
+test("mergeClickUpSettings keeps the stored key when apiKey is omitted", () => {
+  const merged = mergeClickUpSettings(
+    { api_key: "pk_stored", team_id: "t", folder_id: "f", list_id: "old-list" },
+    { listId: "new-list" },
+  );
+  assert.equal(merged.api_key, "pk_stored");
+  assert.equal(merged.list_id, "new-list");
+  assert.equal(merged.team_id, "t");
+  assert.throws(
+    () => mergeClickUpSettings(undefined, { listId: "new-list" }),
+    /ClickUp is not configured/,
+  );
+  const replaced = mergeClickUpSettings(
+    { api_key: "pk_stored", team_id: "t", folder_id: "f", list_id: "old-list" },
+    { apiKey: "pk_new", listId: "new-list" },
+  );
+  assert.equal(replaced.api_key, "pk_new");
+  assert.equal(
+    JSON.stringify(toPublicClickUpSettings(replaced)).includes("pk_new"),
+    false,
+  );
+});
+
+test("partitionClickUpSyncKeywords skips already-linked rows", () => {
+  const { toCreate, skippedLinked } = partitionClickUpSyncKeywords([
+    keywordRow({ id: "k1", keyword: "alpha", status: "new" }),
+    keywordRow({ id: "k2", keyword: "beta", status: "briefed", clickup_task_id: "cu-1" }),
+    keywordRow({ id: "k3", keyword: "gamma", status: "tracked" }),
+    keywordRow({ id: "k4", keyword: "delta", status: "new", clickup_task_id: "pending:abc" }),
+  ]);
+  assert.deepEqual(toCreate.map((row) => row.keyword), ["alpha"]);
+  assert.deepEqual(skippedLinked.map((row) => row.keyword), ["beta", "delta"]);
+});
+
+test("summarizeClickUpSync is truthful for mixed and all-failure results", () => {
+  const mixed = summarizeClickUpSync({
+    created: [{ keyword: "ok", clickUpId: "cu-1", url: "https://app.clickup.com/t/cu-1" }],
+    failed: [{ keyword: "bad", error: "ClickUp API error: 500" }],
+    skipped: 2,
+  });
+  assert.equal(mixed.ok, false);
+  assert.equal(mixed.created, 1);
+  assert.equal(mixed.failed, 1);
+  assert.equal(mixed.skipped, 2);
+  assert.equal(mixed.totalTasks, 4);
+  assert.match(mixed.error, /1 ClickUp task/);
+
+  const allFailed = summarizeClickUpSync({
+    created: [],
+    failed: [
+      { keyword: "a", error: "ClickUp API error: 401" },
+      { keyword: "b", error: "ClickUp API error: 500" },
+    ],
+    skipped: 0,
+  });
+  assert.equal(allFailed.ok, false);
+  assert.equal(allFailed.created, 0);
+  assert.equal(allFailed.failed, 2);
+  assert.equal(allFailed.error.includes("401"), false); // summary stays generic
+
+  const clean = summarizeClickUpSync({ created: [{ keyword: "ok", clickUpId: "1", url: "" }], failed: [], skipped: 1 });
+  assert.equal(clean.ok, true);
+  assert.equal(clean.error, "");
+});
+
+test("repeated ClickUp sync skips linked keywords and claims atomically", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into keywords(id,project_id,keyword,status,volume,clickup_task_id) values('k1','p1','alpha','new',10,''),('k2','p1','beta','briefed',4,'cu-existing'),('k3','p1','gamma','tracked',1,'')",
+    );
+    const query = buildProjectKeywordQuery("p1");
+    const rows = await sql.query<ClickUpKeywordRow>(query.text, query.params);
+    const first = await executeClickUpKeywordSync(sql, {
+      keywords: rows,
+      createTask: async (kw) => ({ id: `cu-${kw.keyword}`, url: `https://app.clickup.com/t/${kw.keyword}` }),
+    });
+    assert.equal(first.ok, true);
+    assert.equal(first.created, 1);
+    assert.equal(first.skipped, 1);
+    assert.deepEqual(first.createdTasks.map((row) => row.keyword), ["alpha"]);
+
+    const after = await sql.query<{ keyword: string; clickup_task_id: string }>(
+      "select keyword, clickup_task_id from keywords order by keyword",
+    );
+    assert.equal(after.find((row) => row.keyword === "alpha")?.clickup_task_id, "cu-alpha");
+    assert.equal(after.find((row) => row.keyword === "beta")?.clickup_task_id, "cu-existing");
+
+    const secondRows = await sql.query<ClickUpKeywordRow>(query.text, query.params);
+    const second = await executeClickUpKeywordSync(sql, {
+      keywords: secondRows,
+      createTask: async () => {
+        throw new Error("should not create again");
+      },
+    });
+    assert.equal(second.ok, true);
+    assert.equal(second.created, 0);
+    assert.equal(second.skipped, 2);
+
+    const firstClaim = buildClickUpClaimQuery({ id: "k1", claimId: "pending:one" });
+    const firstClaimRows = await sql.query(firstClaim.text, firstClaim.params);
+    assert.equal(firstClaimRows.length, 0, "already-linked row cannot be claimed again");
+  } finally {
+    await db.close();
+  }
+});
+
+test("ClickUp create failures release the claim and report mixed/all-failure status", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into keywords(id,project_id,keyword,status,volume) values('k1','p1','ok-kw','new',10),('k2','p1','fail-kw','briefed',4)",
+    );
+    const mixed = await executeClickUpKeywordSync(sql, {
+      keywords: [
+        keywordRow({ id: "k1", keyword: "ok-kw" }),
+        keywordRow({ id: "k2", keyword: "fail-kw", status: "briefed" }),
+      ],
+      createTask: async (kw) => {
+        if (kw.keyword === "fail-kw") throw new Error("ClickUp API error: 500");
+        return { id: "cu-ok", url: "https://app.clickup.com/t/cu-ok" };
+      },
+    });
+    assert.equal(mixed.ok, false);
+    assert.equal(mixed.created, 1);
+    assert.equal(mixed.failed, 1);
+    assert.equal(mixed.failures[0]?.keyword, "fail-kw");
+    assert.equal(mixed.failures[0]?.error, "ClickUp API error: 500");
+
+    const ids = await sql.query<{ keyword: string; clickup_task_id: string }>(
+      "select keyword, clickup_task_id from keywords order by keyword",
+    );
+    assert.equal(ids.find((row) => row.keyword === "fail-kw")?.clickup_task_id, "");
+    assert.equal(ids.find((row) => row.keyword === "ok-kw")?.clickup_task_id, "cu-ok");
+
+    const allFailed = await executeClickUpKeywordSync(sql, {
+      keywords: [keywordRow({ id: "k2", keyword: "fail-kw", status: "briefed" })],
+      createTask: async () => {
+        throw new Error("ClickUp API error: 401");
+      },
+    });
+    assert.equal(allFailed.ok, false);
+    assert.equal(allFailed.created, 0);
+    assert.equal(allFailed.failed, 1);
+    assert.equal(allFailed.skipped, 0);
+  } finally {
+    await db.close();
+  }
+});
+
+test("concurrent ClickUp claims only dispatch one remote create", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into keywords(id,project_id,keyword,status,volume) values('k1','p1','alpha','new',10)",
+    );
+    const first = buildClickUpClaimQuery({ id: "k1", claimId: "pending:one" });
+    const second = buildClickUpClaimQuery({ id: "k1", claimId: "pending:two" });
+    const claimed = await sql.query<{ id: string }>(first.text, first.params);
+    const raced = await sql.query<{ id: string }>(second.text, second.params);
+    assert.equal(claimed.length, 1);
+    assert.equal(raced.length, 0);
+    const stored = await sql.query<{ clickup_task_id: string }>("select clickup_task_id from keywords where id='k1'");
+    assert.equal(stored[0].clickup_task_id, "pending:one");
   } finally {
     await db.close();
   }

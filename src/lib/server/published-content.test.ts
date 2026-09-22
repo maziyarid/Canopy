@@ -90,3 +90,26 @@ test("keywords schema has no last_published column and create path does not refe
     await db.close();
   }
 });
+
+test("published content endDate includes midday timestamptz on that calendar day", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into published_content(id,project_id,url,title,keyword,content_type,publish_date,status) values('c-mid','p1','https://example.com/mid','Mid','alpha','blog','2026-01-02 12:00:00+00','published'),('c-next','p1','https://example.com/next','Next','alpha','blog','2026-01-03 00:00:00+00','published')",
+    );
+    const list = buildPublishedContentListQuery({
+      projectId: "p1",
+      startDate: "2026-01-02",
+      endDate: "2026-01-02",
+      limit: 10,
+      offset: 0,
+    });
+    assert.match(list.text, /publish_date < \(\$\d+::date \+ interval '1 day'\)/);
+    const rows = await sql.query<{ title: string }>(list.text, list.params);
+    assert.deepEqual(rows.map((row) => row.title), ["Mid"]);
+  } finally {
+    await db.close();
+  }
+});

@@ -12,6 +12,38 @@ export type ClickUpSettingsRow = {
   list_id: string;
 };
 
+export type ClickUpKeywordRow = {
+  id: string;
+  keyword: string;
+  status: string;
+  volume: number;
+  clickup_task_id: string | null;
+};
+
+export type ClickUpSyncCreated = {
+  keyword: string;
+  clickUpId: string;
+  url: string;
+};
+
+export type ClickUpSyncFailure = {
+  keyword: string;
+  error: string;
+};
+
+export type ClickUpSyncSummary = {
+  ok: boolean;
+  created: number;
+  failed: number;
+  skipped: number;
+  totalTasks: number;
+  createdTasks: ClickUpSyncCreated[];
+  failures: ClickUpSyncFailure[];
+  error: string;
+};
+
+const MASKED_SECRET = "••••••••";
+
 export function toPublicClickUpSettings(row: ClickUpSettingsRow | null | undefined): PublicClickUpSettings {
   if (!row) {
     return { hasApiKey: false, teamId: "", folderId: "", listId: "" };
@@ -24,9 +56,28 @@ export function toPublicClickUpSettings(row: ClickUpSettingsRow | null | undefin
   };
 }
 
+export function mergeClickUpSettings(
+  existing: ClickUpSettingsRow | null | undefined,
+  incoming: { apiKey?: string; teamId?: string; folderId?: string; listId?: string },
+): ClickUpSettingsRow {
+  const nextKey = incoming.apiKey?.trim();
+  const apiKey =
+    nextKey && nextKey !== MASKED_SECRET ? nextKey : existing?.api_key?.trim() || "";
+  if (!apiKey) {
+    throw new Error("ClickUp is not configured");
+  }
+  return {
+    api_key: apiKey,
+    team_id: incoming.teamId?.trim() || existing?.team_id || "",
+    folder_id: incoming.folderId?.trim() || existing?.folder_id || "",
+    list_id: incoming.listId?.trim() || existing?.list_id || "",
+  };
+}
+
 export function buildProjectKeywordQuery(projectId: string, keywordFilter?: string) {
   const params: unknown[] = [projectId];
-  let text = "SELECT keyword, status, volume FROM keywords WHERE project_id = $1";
+  let text =
+    "SELECT id, keyword, status, volume, clickup_task_id FROM keywords WHERE project_id = $1";
   const filter = keywordFilter?.trim();
   if (filter) {
     params.push(filter);
@@ -34,6 +85,126 @@ export function buildProjectKeywordQuery(projectId: string, keywordFilter?: stri
   }
   text += " ORDER BY created_at DESC LIMIT 50";
   return { text, params };
+}
+
+export function hasClickUpTaskLink(taskId: string | null | undefined) {
+  return Boolean(taskId?.trim());
+}
+
+export function partitionClickUpSyncKeywords(rows: ClickUpKeywordRow[]) {
+  const skippedLinked: ClickUpKeywordRow[] = [];
+  const toCreate: ClickUpKeywordRow[] = [];
+  for (const row of rows) {
+    if (row.status !== "briefed" && row.status !== "new") continue;
+    if (hasClickUpTaskLink(row.clickup_task_id)) skippedLinked.push(row);
+    else toCreate.push(row);
+  }
+  return { toCreate, skippedLinked };
+}
+
+export function summarizeClickUpSync(input: {
+  created: ClickUpSyncCreated[];
+  failed: ClickUpSyncFailure[];
+  skipped: number;
+}): ClickUpSyncSummary {
+  const created = input.created.length;
+  const failed = input.failed.length;
+  const skipped = input.skipped;
+  return {
+    ok: failed === 0,
+    created,
+    failed,
+    skipped,
+    totalTasks: created + failed + skipped,
+    createdTasks: input.created,
+    failures: input.failed,
+    error: failed > 0 ? `${failed} ClickUp task(s) failed` : "",
+  };
+}
+
+export function buildClickUpClaimQuery(input: { id: string; claimId: string }) {
+  return {
+    text: `UPDATE keywords
+           SET clickup_task_id = $1
+           WHERE id = $2
+             AND coalesce(nullif(trim(clickup_task_id), ''), '') = ''
+           RETURNING id`,
+    params: [input.claimId, input.id],
+  };
+}
+
+export function buildClickUpLinkQuery(input: {
+  id: string;
+  claimId: string;
+  clickUpId: string;
+  url: string;
+}) {
+  return {
+    text: `UPDATE keywords
+           SET clickup_task_id = $1, clickup_task_url = $2
+           WHERE id = $3 AND clickup_task_id = $4`,
+    params: [input.clickUpId, input.url, input.id, input.claimId],
+  };
+}
+
+export function buildClickUpReleaseQuery(input: { id: string; claimId: string }) {
+  return {
+    text: `UPDATE keywords
+           SET clickup_task_id = ''
+           WHERE id = $1 AND clickup_task_id = $2`,
+    params: [input.id, input.claimId],
+  };
+}
+
+type QuerySql = {
+  query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
+};
+
+export async function executeClickUpKeywordSync(
+  sql: QuerySql,
+  input: {
+    keywords: ClickUpKeywordRow[];
+    createTask: (kw: ClickUpKeywordRow) => Promise<{ id: string; url: string }>;
+    newClaimId?: () => string;
+  },
+): Promise<ClickUpSyncSummary> {
+  const { toCreate, skippedLinked } = partitionClickUpSyncKeywords(input.keywords);
+  const created: ClickUpSyncCreated[] = [];
+  const failed: ClickUpSyncFailure[] = [];
+  let skipped = skippedLinked.length;
+
+  for (const kw of toCreate) {
+    const claimId = (input.newClaimId ?? (() => `pending:${crypto.randomUUID()}`))();
+    const claim = buildClickUpClaimQuery({ id: kw.id, claimId });
+    const claimed = await sql.query<{ id: string }>(claim.text, claim.params);
+    if (!claimed.length) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const task = await input.createTask(kw);
+      if (!task.id?.trim()) {
+        throw new Error("ClickUp did not return a task id");
+      }
+      const link = buildClickUpLinkQuery({
+        id: kw.id,
+        claimId,
+        clickUpId: task.id,
+        url: task.url || "",
+      });
+      await sql.query(link.text, link.params);
+      created.push({ keyword: kw.keyword, clickUpId: task.id, url: task.url || "" });
+    } catch (error) {
+      const release = buildClickUpReleaseQuery({ id: kw.id, claimId });
+      await sql.query(release.text, release.params);
+      failed.push({
+        keyword: kw.keyword,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  return summarizeClickUpSync({ created, failed, skipped });
 }
 
 export function buildSeoDataQuery(input: {
@@ -114,11 +285,11 @@ export function buildPublishedContentListQuery(input: {
   }
   if (input.startDate) {
     params.push(input.startDate);
-    text += ` AND publish_date >= $${params.length}`;
+    text += ` AND publish_date >= $${params.length}::date`;
   }
   if (input.endDate) {
     params.push(input.endDate);
-    text += ` AND publish_date <= $${params.length}`;
+    text += ` AND publish_date < ($${params.length}::date + interval '1 day')`;
   }
   params.push(input.limit, input.offset);
   text += ` ORDER BY publish_date DESC, created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
