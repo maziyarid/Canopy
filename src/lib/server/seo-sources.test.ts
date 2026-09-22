@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { buildSeoDataQuery, buildSeoTimelineQuery } from "./query-builders.ts";
+import { buildSeoCacheUpsertQuery, buildSeoDataQuery, buildSeoTimelineQuery } from "./query-builders.ts";
 import type { Sql } from "../db.ts";
 
 async function fixture() {
@@ -67,6 +67,55 @@ test("SEO data query executes without interpolating filter values into SQL", asy
     const found = await sql.query<{ keyword: string }>(matched.text, matched.params);
     assert.equal(found.length, 1);
     assert.equal(found[0].keyword, "alpha");
+  } finally {
+    await db.close();
+  }
+});
+
+test("repeated SEO cache writes upsert the same logical identity", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    const first = buildSeoCacheUpsertQuery({
+      id: "s1",
+      projectId: "p1",
+      dataSource: "manual",
+      keyword: "alpha",
+      url: "https://example.com",
+      metricName: "clicks",
+      metricValue: 4,
+      dataDate: "2026-01-02",
+    });
+    const second = buildSeoCacheUpsertQuery({
+      id: "s2",
+      projectId: "p1",
+      dataSource: "manual",
+      keyword: "alpha",
+      url: "https://example.com",
+      metricName: "clicks",
+      metricValue: 9,
+      dataDate: "2026-01-02",
+    });
+    await sql.query(first.text, first.params);
+    await sql.query(second.text, second.params);
+    await sql.query(second.text, second.params);
+    await Promise.all([
+      sql.query(second.text, second.params),
+      sql.query(first.text, first.params),
+    ]);
+    const raced = await sql.query<{ id: string; metric_value: number }>(
+      "select id, metric_value from seo_data_cache where project_id='p1'",
+    );
+    assert.equal(raced.length, 1);
+    assert.equal(raced[0].id, "s1");
+    await sql.query(second.text, second.params);
+    const rows = await sql.query<{ id: string; metric_value: number }>(
+      "select id, metric_value from seo_data_cache where project_id='p1'",
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(Number(rows[0].metric_value), 9);
+    assert.equal(rows[0].id, "s1");
   } finally {
     await db.close();
   }

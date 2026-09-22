@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { studioAuth } from "./studio-auth";
-import { buildSeoDataQuery, buildSeoTimelineQuery } from "./query-builders";
+import { buildSeoCacheUpsertQuery, buildSeoDataQuery, buildSeoTimelineQuery } from "./query-builders";
 
 const DataSourceSchema = z.enum([
   "google-search-console",
@@ -39,10 +39,17 @@ export const saveSEOData = createServerFn({ method: "POST" })
     const { resolveAccess } = await import("./access");
     await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
 
-    await sql`
-      INSERT INTO seo_data_cache (id, project_id, data_source, keyword, url, metric_name, metric_value, data_date, created_at)
-      VALUES (${crypto.randomUUID()}, ${data.projectId}, ${data.dataSource}, ${data.keyword || ""}, ${data.url || ""}, ${data.metricName}, ${data.metricValue}, ${data.dataDate}, NOW())
-    `;
+    const query = buildSeoCacheUpsertQuery({
+      id: crypto.randomUUID(),
+      projectId: data.projectId,
+      dataSource: data.dataSource,
+      keyword: data.keyword || "",
+      url: data.url || "",
+      metricName: data.metricName,
+      metricValue: data.metricValue,
+      dataDate: data.dataDate,
+    });
+    await sql.query(query.text, query.params);
 
     return { ok: true as const, message: "SEO data saved" };
   });

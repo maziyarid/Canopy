@@ -17,4 +17,6 @@ test("SEO dashboard Connect Sources modal wires to server-side save APIs", async
   assert.match(source, /clickUpSettings\?\.hasApiKey \? "••••••••"/);
   assert.doesNotMatch(source, /setClickUpSettings\([^)]*api_key/);
   assert.doesNotMatch(source, /setSourceForm\([^)]*api_key/);
+  assert.match(source, /Promise\.allSettled/);
+  assert.match(source, /Some settings saved/);
 });

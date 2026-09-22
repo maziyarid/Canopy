@@ -164,7 +164,7 @@ export function SEODashboard() {
         toast.error("Enter at least one data source setting");
         return;
       }
-      await Promise.all(jobs);
+      const results = await Promise.allSettled(jobs);
       const [nextClickUp, nextStudio] = await Promise.all([getClickUpSettings(), getSettings()]);
       setClickUpSettings(nextClickUp);
       setStudioSettings(nextStudio);
@@ -174,6 +174,22 @@ export function SEODashboard() {
         clickUpApiKey: "",
         clickUpListId: nextClickUp.listId,
       });
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      const saved = results.length - failures.length;
+      if (failures.length && !saved) {
+        const reason = failures[0]?.reason;
+        toast.error(reason instanceof Error ? reason.message : "Failed to save settings");
+        return;
+      }
+      if (failures.length) {
+        const reason = failures[0]?.reason;
+        toast.error(
+          reason instanceof Error
+            ? `Some settings saved. ${reason.message}`
+            : "Some settings saved, others failed",
+        );
+        return;
+      }
       toast.success("Settings saved");
       setShowSettings(false);
     } catch (error) {

@@ -18,6 +18,7 @@ export type ClickUpKeywordRow = {
   status: string;
   volume: number;
   clickup_task_id: string | null;
+  clickup_task_url?: string | null;
 };
 
 export type ClickUpSyncCreated = {
@@ -43,6 +44,8 @@ export type ClickUpSyncSummary = {
 };
 
 const MASKED_SECRET = "••••••••";
+export const CLICKUP_PENDING_PREFIX = "pending:";
+export const CLICKUP_CLAIM_TTL_MS = 5 * 60 * 1000;
 
 export function toPublicClickUpSettings(row: ClickUpSettingsRow | null | undefined): PublicClickUpSettings {
   if (!row) {
@@ -77,7 +80,7 @@ export function mergeClickUpSettings(
 export function buildProjectKeywordQuery(projectId: string, keywordFilter?: string) {
   const params: unknown[] = [projectId];
   let text =
-    "SELECT id, keyword, status, volume, clickup_task_id FROM keywords WHERE project_id = $1";
+    "SELECT id, keyword, status, volume, clickup_task_id, clickup_task_url FROM keywords WHERE project_id = $1";
   const filter = keywordFilter?.trim();
   if (filter) {
     params.push(filter);
@@ -88,16 +91,64 @@ export function buildProjectKeywordQuery(projectId: string, keywordFilter?: stri
 }
 
 export function hasClickUpTaskLink(taskId: string | null | undefined) {
-  return Boolean(taskId?.trim());
+  return isDurableClickUpLink(taskId);
 }
 
-export function partitionClickUpSyncKeywords(rows: ClickUpKeywordRow[]) {
+export function isPendingClickUpClaim(taskId: string | null | undefined) {
+  return Boolean(taskId?.startsWith(CLICKUP_PENDING_PREFIX));
+}
+
+export function isDurableClickUpLink(taskId: string | null | undefined) {
+  const value = taskId?.trim() ?? "";
+  return Boolean(value) && !value.startsWith(CLICKUP_PENDING_PREFIX);
+}
+
+export function pendingClaimAgeMs(taskId: string, now = Date.now()) {
+  const stamp = taskId.slice(CLICKUP_PENDING_PREFIX.length).split(":")[0];
+  const parsed = Number(stamp);
+  if (!Number.isFinite(parsed) || parsed < 1e12) return Number.POSITIVE_INFINITY;
+  return now - parsed;
+}
+
+export function isFreshPendingClaim(taskId: string | null | undefined, now = Date.now()) {
+  if (!isPendingClickUpClaim(taskId) || !taskId) return false;
+  return pendingClaimAgeMs(taskId, now) < CLICKUP_CLAIM_TTL_MS;
+}
+
+export function newClickUpClaimId(now = Date.now()) {
+  return `${CLICKUP_PENDING_PREFIX}${now}:${crypto.randomUUID()}`;
+}
+
+export function recoveredClickUpTaskId(row: ClickUpKeywordRow) {
+  if (!isPendingClickUpClaim(row.clickup_task_id)) return "";
+  const stored = row.clickup_task_url?.trim() ?? "";
+  if (!stored || stored.startsWith(CLICKUP_PENDING_PREFIX)) return "";
+  const fromUrl = stored.match(/\/t\/([^/?#]+)/i);
+  if (fromUrl?.[1]) return fromUrl[1];
+  if (stored.includes("://") || stored.startsWith("//") || stored.includes("/")) return "";
+  return stored;
+}
+
+export function recoveredClickUpTaskUrl(row: ClickUpKeywordRow, remoteId: string) {
+  const stored = row.clickup_task_url?.trim() ?? "";
+  if (stored.startsWith("https://") || stored.startsWith("http://")) return stored;
+  return remoteId ? `https://app.clickup.com/t/${remoteId}` : "";
+}
+
+export function partitionClickUpSyncKeywords(rows: ClickUpKeywordRow[], now = Date.now()) {
   const skippedLinked: ClickUpKeywordRow[] = [];
   const toCreate: ClickUpKeywordRow[] = [];
   for (const row of rows) {
     if (row.status !== "briefed" && row.status !== "new") continue;
-    if (hasClickUpTaskLink(row.clickup_task_id)) skippedLinked.push(row);
-    else toCreate.push(row);
+    if (isDurableClickUpLink(row.clickup_task_id)) {
+      skippedLinked.push(row);
+      continue;
+    }
+    if (isFreshPendingClaim(row.clickup_task_id, now) && !recoveredClickUpTaskId(row)) {
+      skippedLinked.push(row);
+      continue;
+    }
+    toCreate.push(row);
   }
   return { toCreate, skippedLinked };
 }
@@ -122,28 +173,48 @@ export function summarizeClickUpSync(input: {
   };
 }
 
-export function buildClickUpClaimQuery(input: { id: string; claimId: string }) {
+export function buildClickUpClaimQuery(input: { id: string; claimId: string; previous?: string }) {
   return {
     text: `UPDATE keywords
            SET clickup_task_id = $1
            WHERE id = $2
-             AND coalesce(nullif(trim(clickup_task_id), ''), '') = ''
+             AND (
+               coalesce(nullif(trim(clickup_task_id), ''), '') = ''
+               OR (
+                 clickup_task_id = $3
+                 AND clickup_task_id LIKE 'pending:%'
+               )
+             )
            RETURNING id`,
-    params: [input.claimId, input.id],
+    params: [input.claimId, input.id, input.previous ?? ""],
+  };
+}
+
+export function buildClickUpRecoveryQuery(input: { id: string; remoteId: string; url: string }) {
+  const recovery = input.url.trim() || input.remoteId;
+  return {
+    text: `UPDATE keywords
+           SET clickup_task_url = $1
+           WHERE id = $2
+             AND clickup_task_id LIKE 'pending:%'`,
+    params: [recovery, input.id],
   };
 }
 
 export function buildClickUpLinkQuery(input: {
   id: string;
-  claimId: string;
   clickUpId: string;
   url: string;
 }) {
   return {
     text: `UPDATE keywords
            SET clickup_task_id = $1, clickup_task_url = $2
-           WHERE id = $3 AND clickup_task_id = $4`,
-    params: [input.clickUpId, input.url, input.id, input.claimId],
+           WHERE id = $3
+             AND (
+               coalesce(nullif(trim(clickup_task_id), ''), '') = ''
+               OR clickup_task_id LIKE 'pending:%'
+             )`,
+    params: [input.clickUpId, input.url, input.id],
   };
 }
 
@@ -174,29 +245,58 @@ export async function executeClickUpKeywordSync(
   let skipped = skippedLinked.length;
 
   for (const kw of toCreate) {
-    const claimId = (input.newClaimId ?? (() => `pending:${crypto.randomUUID()}`))();
-    const claim = buildClickUpClaimQuery({ id: kw.id, claimId });
+    const recoveredId = recoveredClickUpTaskId(kw);
+    if (recoveredId) {
+      const url = recoveredClickUpTaskUrl(kw, recoveredId);
+      try {
+        const link = buildClickUpLinkQuery({ id: kw.id, clickUpId: recoveredId, url });
+        await sql.query(link.text, link.params);
+        created.push({ keyword: kw.keyword, clickUpId: recoveredId, url });
+      } catch (error) {
+        failed.push({
+          keyword: kw.keyword,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+      continue;
+    }
+
+    const previous = isPendingClickUpClaim(kw.clickup_task_id) ? kw.clickup_task_id ?? "" : "";
+    const claimId = (input.newClaimId ?? newClickUpClaimId)();
+    const claim = buildClickUpClaimQuery({ id: kw.id, claimId, previous });
     const claimed = await sql.query<{ id: string }>(claim.text, claim.params);
     if (!claimed.length) {
       skipped += 1;
       continue;
     }
+    let remote: { id: string; url: string } | null = null;
     try {
       const task = await input.createTask(kw);
       if (!task.id?.trim()) {
         throw new Error("ClickUp did not return a task id");
       }
+      remote = {
+        id: task.id.trim(),
+        url: task.url?.trim() || `https://app.clickup.com/t/${task.id.trim()}`,
+      };
+      const recovery = buildClickUpRecoveryQuery({
+        id: kw.id,
+        remoteId: remote.id,
+        url: remote.url,
+      });
+      await sql.query(recovery.text, recovery.params);
       const link = buildClickUpLinkQuery({
         id: kw.id,
-        claimId,
-        clickUpId: task.id,
-        url: task.url || "",
+        clickUpId: remote.id,
+        url: remote.url,
       });
       await sql.query(link.text, link.params);
-      created.push({ keyword: kw.keyword, clickUpId: task.id, url: task.url || "" });
+      created.push({ keyword: kw.keyword, clickUpId: remote.id, url: remote.url });
     } catch (error) {
-      const release = buildClickUpReleaseQuery({ id: kw.id, claimId });
-      await sql.query(release.text, release.params);
+      if (!remote) {
+        const release = buildClickUpReleaseQuery({ id: kw.id, claimId });
+        await sql.query(release.text, release.params);
+      }
       failed.push({
         keyword: kw.keyword,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -205,6 +305,36 @@ export async function executeClickUpKeywordSync(
   }
 
   return summarizeClickUpSync({ created, failed, skipped });
+}
+
+export function buildSeoCacheUpsertQuery(input: {
+  id: string;
+  projectId: string;
+  dataSource: string;
+  keyword: string;
+  url: string;
+  metricName: string;
+  metricValue: number;
+  dataDate: string;
+}) {
+  return {
+    text: `INSERT INTO seo_data_cache (
+             id, project_id, data_source, keyword, url, metric_name, metric_value, data_date, created_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+           ON CONFLICT (project_id, data_source, keyword, url, metric_name, data_date)
+           DO UPDATE SET metric_value = EXCLUDED.metric_value, created_at = NOW()`,
+    params: [
+      input.id,
+      input.projectId,
+      input.dataSource,
+      input.keyword,
+      input.url,
+      input.metricName,
+      input.metricValue,
+      input.dataDate,
+    ],
+  };
 }
 
 export function buildSeoDataQuery(input: {

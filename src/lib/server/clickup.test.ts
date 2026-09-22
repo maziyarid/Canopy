@@ -123,14 +123,30 @@ test("mergeClickUpSettings keeps the stored key when apiKey is omitted", () => {
   );
 });
 
-test("partitionClickUpSyncKeywords skips already-linked rows", () => {
-  const { toCreate, skippedLinked } = partitionClickUpSyncKeywords([
-    keywordRow({ id: "k1", keyword: "alpha", status: "new" }),
-    keywordRow({ id: "k2", keyword: "beta", status: "briefed", clickup_task_id: "cu-1" }),
-    keywordRow({ id: "k3", keyword: "gamma", status: "tracked" }),
-    keywordRow({ id: "k4", keyword: "delta", status: "new", clickup_task_id: "pending:abc" }),
-  ]);
-  assert.deepEqual(toCreate.map((row) => row.keyword), ["alpha"]);
+test("partitionClickUpSyncKeywords skips durable and fresh pending claims", () => {
+  const now = 1_800_000_000_000;
+  const fresh = `pending:${now}:abc`;
+  const stale = `pending:${now - 10 * 60 * 1000}:old`;
+  const recovered = `pending:${now}:rec`;
+  const { toCreate, skippedLinked } = partitionClickUpSyncKeywords(
+    [
+      keywordRow({ id: "k1", keyword: "alpha", status: "new" }),
+      keywordRow({ id: "k2", keyword: "beta", status: "briefed", clickup_task_id: "cu-1" }),
+      keywordRow({ id: "k3", keyword: "gamma", status: "tracked" }),
+      keywordRow({ id: "k4", keyword: "delta", status: "new", clickup_task_id: fresh }),
+      keywordRow({ id: "k5", keyword: "stale", status: "new", clickup_task_id: stale }),
+      keywordRow({ id: "k6", keyword: "legacy", status: "new", clickup_task_id: "pending:abc" }),
+      keywordRow({
+        id: "k7",
+        keyword: "recover",
+        status: "new",
+        clickup_task_id: recovered,
+        clickup_task_url: "https://app.clickup.com/t/cu-rec",
+      }),
+    ],
+    now,
+  );
+  assert.deepEqual(toCreate.map((row) => row.keyword), ["alpha", "stale", "legacy", "recover"]);
   assert.deepEqual(skippedLinked.map((row) => row.keyword), ["beta", "delta"]);
 });
 
@@ -270,6 +286,131 @@ test("concurrent ClickUp claims only dispatch one remote create", async () => {
     assert.equal(raced.length, 0);
     const stored = await sql.query<{ clickup_task_id: string }>("select clickup_task_id from keywords where id='k1'");
     assert.equal(stored[0].clickup_task_id, "pending:one");
+
+    const reclaim = buildClickUpClaimQuery({ id: "k1", claimId: "pending:stale-reclaim", previous: "pending:one" });
+    const reclaimed = await sql.query<{ id: string }>(reclaim.text, reclaim.params);
+    assert.equal(reclaimed.length, 1, "stale pending claims can be reclaimed");
+  } finally {
+    await db.close();
+  }
+});
+
+test("ClickUp sync recovers a created remote id without a second create", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into keywords(id,project_id,keyword,status,volume,clickup_task_id,clickup_task_url) values('k1','p1','alpha','new',10,'pending:1700000000000:abc','https://app.clickup.com/t/cu-recovered')",
+    );
+    let creates = 0;
+    const recovered = await executeClickUpKeywordSync(sql, {
+      keywords: [
+        keywordRow({
+          id: "k1",
+          keyword: "alpha",
+          clickup_task_id: "pending:1700000000000:abc",
+          clickup_task_url: "https://app.clickup.com/t/cu-recovered",
+        }),
+      ],
+      createTask: async () => {
+        creates += 1;
+        throw new Error("should not create again");
+      },
+    });
+    assert.equal(creates, 0);
+    assert.equal(recovered.ok, true);
+    assert.equal(recovered.created, 1);
+    assert.equal(recovered.createdTasks[0]?.clickUpId, "cu-recovered");
+    const row = await sql.query<{ clickup_task_id: string; clickup_task_url: string }>(
+      "select clickup_task_id, clickup_task_url from keywords where id='k1'",
+    );
+    assert.equal(row[0].clickup_task_id, "cu-recovered");
+    assert.equal(row[0].clickup_task_url, "https://app.clickup.com/t/cu-recovered");
+  } finally {
+    await db.close();
+  }
+});
+
+test("ClickUp create success is not released when the final link write fails", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into keywords(id,project_id,keyword,status,volume) values('k1','p1','alpha','new',10)",
+    );
+    const inner = sql.query.bind(sql);
+    let linkAttempts = 0;
+    sql.query = async <T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> => {
+      if (text.includes("SET clickup_task_id = $1, clickup_task_url = $2")) {
+        linkAttempts += 1;
+        if (linkAttempts === 1) throw new Error("link failed");
+      }
+      return inner<T>(text, params);
+    };
+    let creates = 0;
+    const first = await executeClickUpKeywordSync(sql, {
+      keywords: [keywordRow({ id: "k1", keyword: "alpha" })],
+      createTask: async () => {
+        creates += 1;
+        return { id: "cu-alpha", url: "https://app.clickup.com/t/cu-alpha" };
+      },
+    });
+    assert.equal(first.ok, false);
+    assert.equal(first.failed, 1);
+    assert.equal(creates, 1);
+    const pending = await sql.query<{ clickup_task_id: string; clickup_task_url: string }>(
+      "select clickup_task_id, clickup_task_url from keywords where id='k1'",
+    );
+    assert.equal(pending[0].clickup_task_id.startsWith("pending:"), true);
+    assert.equal(pending[0].clickup_task_url, "https://app.clickup.com/t/cu-alpha");
+
+    const retry = await executeClickUpKeywordSync(sql, {
+      keywords: [
+        keywordRow({
+          id: "k1",
+          keyword: "alpha",
+          clickup_task_id: pending[0].clickup_task_id,
+          clickup_task_url: pending[0].clickup_task_url,
+        }),
+      ],
+      createTask: async () => {
+        creates += 1;
+        throw new Error("should not create a duplicate");
+      },
+    });
+    assert.equal(creates, 1);
+    assert.equal(retry.ok, true);
+    assert.equal(retry.created, 1);
+    const linked = await sql.query<{ clickup_task_id: string }>("select clickup_task_id from keywords where id='k1'");
+    assert.equal(linked[0].clickup_task_id, "cu-alpha");
+  } finally {
+    await db.close();
+  }
+});
+
+test("stale pending ClickUp claims without a recovered id are reclaimed and created once", async () => {
+  const { db, sql } = await fixture();
+  try {
+    await sql.query("insert into tenants(id,owner_id,name) values('t1','u1','T')");
+    await sql.query("insert into projects(id,owner_id,tenant_id,name) values('p1','u1','t1','P')");
+    await sql.query(
+      "insert into keywords(id,project_id,keyword,status,volume,clickup_task_id) values('k1','p1','alpha','new',10,'pending:abc')",
+    );
+    let creates = 0;
+    const result = await executeClickUpKeywordSync(sql, {
+      keywords: [keywordRow({ id: "k1", keyword: "alpha", clickup_task_id: "pending:abc" })],
+      createTask: async () => {
+        creates += 1;
+        return { id: "cu-stale", url: "https://app.clickup.com/t/cu-stale" };
+      },
+    });
+    assert.equal(creates, 1);
+    assert.equal(result.ok, true);
+    assert.equal(result.created, 1);
+    const row = await sql.query<{ clickup_task_id: string }>("select clickup_task_id from keywords where id='k1'");
+    assert.equal(row[0].clickup_task_id, "cu-stale");
   } finally {
     await db.close();
   }
