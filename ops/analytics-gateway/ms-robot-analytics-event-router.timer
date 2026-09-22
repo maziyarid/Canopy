@@ -1,0 +1,12 @@
+[Unit]
+Description=Route queued Ms Robot analytics events into ADA every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=ms-robot-analytics-event-router.service
+
+[Install]
+WantedBy=timers.target

@@ -1,7 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getSql } from "@/lib/db";
+import { studioAuth } from "./studio-auth";
+import { canWrite, nid, resolveAccess } from "./access";
 
 const AgentSchema = z.object({
+  projectId: z.string().optional(),
   message: z.string().min(1).max(4000),
   domain: z.string().max(200).optional(),
   location: z.string().max(80).optional(),
@@ -9,14 +13,19 @@ const AgentSchema = z.object({
 });
 
 export const runResearchAgent = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
   .validator(AgentSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ context, data }) => {
+    if (data.projectId) {
+      const sql = await getSql();
+      await resolveAccess(sql, context.userId, context.email, data.projectId);
+    }
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
       return { ok: false as const, error: "AI is not available in this environment." };
     }
 
-    const system = `You are Canopy, an SEO operator that drives a Google Sheet wired to the Mangools API (KWFinder, SERPChecker, SERPWatcher).
+    const system = `You are Ms Robot, an SEO operator that drives a Google Sheet wired to the Mangools API (KWFinder, SERPChecker, SERPWatcher).
 You plan keyword research and emit a playbook the sheet's agent runner can execute.
 
 Always reply with compact JSON only, no markdown fences:
@@ -108,3 +117,52 @@ function extractJson(text: string) {
     return null;
   }
 }
+
+const BriefSchema = z.object({
+  projectId: z.string(),
+  keyword: z.string().min(1).max(200),
+});
+
+export const writeBrief = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
+  .validator(BriefSchema)
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const { project, role } = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+    );
+    if (!canWrite(role)) throw new Error("Forbidden");
+
+    const rows = await sql<{ volume: number; kd: number | null; cpc: number }>`
+      select volume, kd, cpc from keywords
+      where project_id = ${data.projectId}
+        and lower(keyword) = ${data.keyword.toLowerCase()}
+      limit 1
+    `;
+    const content = JSON.stringify(
+      {
+        kind: "qalam_brief",
+        status: "draft",
+        keyword: data.keyword,
+        site: project.domain,
+        evidence: rows[0] ?? null,
+        requirements: [
+          "Resolve the workspace Qalam profile before generating publishable copy.",
+          "Verify factual claims and preserve source/evidence provenance.",
+          "Keep search intent, audience and internal-link targets explicit.",
+        ],
+      },
+      null,
+      2,
+    );
+
+    await sql`
+      insert into briefs (id, project_id, keyword, content)
+      values (${nid()}, ${data.projectId}, ${data.keyword}, ${content})
+    `;
+
+    return { ok: true as const };
+  });

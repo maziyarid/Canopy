@@ -42,3 +42,33 @@ export function sparkPath(values: number[], width = 72, height = 22) {
     })
     .join(" ");
 }
+
+const CTR: Record<number, number> = {
+  1: 0.31,
+  2: 0.24,
+  3: 0.18,
+  4: 0.13,
+  5: 0.09,
+  6: 0.06,
+  7: 0.05,
+  8: 0.04,
+  9: 0.035,
+  10: 0.03,
+};
+
+export function estimatedCtr(rank: number | null) {
+  if (rank == null || rank < 1) return 0;
+  if (rank <= 10) return CTR[rank] ?? 0.03;
+  if (rank <= 20) return 0.012;
+  if (rank <= 30) return 0.004;
+  return 0;
+}
+
+export function visibilityScore(
+  rows: { rank: number | null; volume: number }[],
+) {
+  const total = rows.reduce((s, r) => s + r.volume, 0);
+  if (!total) return 0;
+  const captured = rows.reduce((s, r) => s + r.volume * estimatedCtr(r.rank), 0);
+  return Math.round((captured / total) * 1000) / 10;
+}

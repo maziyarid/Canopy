@@ -1,28 +1,31 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #12140f;
-  --color-surface: #1a1d16;
-  --color-raised: #22261c;
-  --color-fg: #eceae3;
-  --color-muted: #9a9a8c;
-  --color-subtle: #6e6e62;
-  --color-accent: #c5d4b0;
-  --color-accent-fg: #14160f;
-  --color-paper: #f3f0e7;
-  --color-ink: #1c1914;
-  --color-ink-muted: #6a655c;
-  --color-rule: #ddd8cc;
+  --color-bg: #0f1724;
+  --color-surface: #152033;
+  --color-raised: #1b2942;
+  --color-fg: #e6eef6;
+  --color-muted: #8fa3b8;
+  --color-subtle: #5d7188;
+  --color-primary: #0ea5ff;
+  --color-primary-dark: #0b6faf;
+  --color-primary-fg: #0f1724;
+  --color-accent: #a8ff4d;
+  --color-accent-fg: #0f1724;
   --color-border: color-mix(in oklab, var(--color-fg) 12%, transparent);
   --color-border-strong: color-mix(in oklab, var(--color-fg) 22%, transparent);
-  --color-good: #7d9a6a;
-  --color-warn: #c4a35a;
-  --color-bad: #b56a55;
-  --color-info: #7a8f9a;
+  --color-paper: #f7fbff;
+  --color-ink: #0f1724;
+  --color-ink-muted: #475569;
+  --color-rule: #d7e3ee;
+  --color-good: #7dce6a;
+  --color-warn: #e0c36a;
+  --color-bad: #e07a6a;
+  --color-info: #0ea5ff;
 
-  --font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", serif;
-  --font-sans: "Figtree", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
+  --font-display: "Poppins", "Vazirmatn", "Segoe UI", sans-serif;
+  --font-sans: "Inter", "Vazirmatn", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --radius-xs: 4px;
   --radius-sm: 8px;
@@ -31,12 +34,9 @@
   --radius-xl: 24px;
   --radius-2xl: 32px;
 
-  --shadow-border: 0 0 0 1px rgba(255, 255, 255, 0.08);
-  --shadow-border-hover: 0 0 0 1px rgba(255, 255, 255, 0.13);
-  --shadow-paper:
-    0 0 0 1px rgba(28, 25, 20, 0.06),
-    0 1px 2px -1px rgba(28, 25, 20, 0.08),
-    0 12px 32px -12px rgba(18, 20, 15, 0.35);
+  --shadow-border: 0 0 0 1px rgba(230, 238, 246, 0.08);
+  --shadow-border-hover: 0 0 0 1px rgba(14, 165, 255, 0.45);
+  --shadow-lift: 0 18px 40px -24px rgba(4, 10, 22, 0.7);
 }
 
 @layer base {
@@ -71,14 +71,25 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--color-accent) 45%, transparent);
+    background: color-mix(in oklab, var(--color-primary) 40%, transparent);
     color: var(--color-fg);
   }
+}
+
+html[dir="rtl"] body {
+  font-family: "Vazirmatn", var(--font-sans);
+}
+
+html[dir="rtl"] h1,
+html[dir="rtl"] h2,
+html[dir="rtl"] h3 {
+  font-family: "Vazirmatn", var(--font-display);
+  line-height: 1.55;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -99,6 +110,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
+  background: var(--color-paper);
 }
 
 .kd-bar {
@@ -114,22 +126,10 @@
   border-radius: inherit;
 }
 
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    color-mix(in oklab, var(--color-accent) 18%, transparent) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer-sweep 1.8s linear infinite;
-}
-
-@keyframes shimmer-sweep {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
+.maz-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--color-primary) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-primary) 7%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at 20% 0%, black 20%, transparent 70%);
 }
