@@ -1,6 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 import { BASE_URL } from "@/lib/api-catalog";
+import { getSql } from "@/lib/db";
+import { studioAuth } from "./studio-auth";
+import { ownerMangoolsKey } from "./access";
+import {
+  bindStoredMangoolsKey,
+  MangoolsFetchSchema,
+  PublicMangoolsRequestSchema,
+  type MangoolsRequestInput,
+} from "./mangools-bind";
+
+export {
+  bindStoredMangoolsKey,
+  PublicMangoolsRequestSchema,
+  type MangoolsRequestInput,
+  type PublicMangoolsRequestInput,
+} from "./mangools-bind";
 
 type Json =
   | string
@@ -10,28 +25,8 @@ type Json =
   | Json[]
   | { [key: string]: Json };
 
-const jsonSchema: z.ZodType<Json> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(jsonSchema),
-    z.record(z.string(), jsonSchema),
-  ]),
-);
-
-const RequestSchema = z.object({
-  apiKey: z.string().min(8),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
-  path: z.string().min(1),
-  query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
-  body: jsonSchema.optional(),
-});
-
-export type MangoolsRequestInput = z.input<typeof RequestSchema>;
 export async function mangoolsFetch(input: MangoolsRequestInput) {
-  const data = RequestSchema.parse(input);
+  const data = MangoolsFetchSchema.parse(input);
   const url = new URL(data.path.startsWith("http") ? data.path : `${BASE_URL}${data.path}`);
   if (data.query) {
     for (const [key, value] of Object.entries(data.query)) {
@@ -74,5 +69,11 @@ export async function mangoolsFetch(input: MangoolsRequestInput) {
 }
 
 export const mangoolsRequest = createServerFn({ method: "POST" })
-  .validator(RequestSchema)
-  .handler(async ({ data }) => mangoolsFetch(data));
+  .middleware([studioAuth])
+  .validator(PublicMangoolsRequestSchema)
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    if (!context.userId) throw new Error("Unauthorized");
+    const key = await ownerMangoolsKey(sql, context.userId);
+    return mangoolsFetch(bindStoredMangoolsKey(data, key));
+  });

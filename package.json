@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
     "maz:reconcile": "node --experimental-strip-types ops/maz-robot-worker/reconcile.ts",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/server/access.test.ts src/lib/server/clickup.test.ts src/lib/server/seo-sources.test.ts src/lib/server/published-content.test.ts src/lib/social/capabilities.test.ts src/lib/social/telegram.server.test.ts src/lib/social/credential-vault.server.test.ts src/lib/social/publication-engine.test.ts src/lib/social/publication-store.server.test.ts src/lib/social/vault-store.server.test.ts ops/maz-robot-worker/worker.test.ts ops/maz-robot-worker/reconcile.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/server/access.test.ts src/lib/server/clickup.test.ts src/lib/server/mangools.test.ts src/lib/server/seo-sources.test.ts src/lib/server/published-content.test.ts src/lib/social/capabilities.test.ts src/lib/social/telegram.server.test.ts src/lib/social/credential-vault.server.test.ts src/lib/social/publication-engine.test.ts src/lib/social/publication-store.server.test.ts src/lib/social/vault-store.server.test.ts ops/maz-robot-worker/worker.test.ts ops/maz-robot-worker/reconcile.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
