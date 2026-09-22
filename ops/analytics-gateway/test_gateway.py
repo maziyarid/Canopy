@@ -1,8 +1,11 @@
-import json, os, socket, sqlite3, subprocess, tempfile, threading, time, unittest, urllib.error, urllib.request
+import json, os, socket, sqlite3, subprocess, sys, tempfile, threading, time, unittest, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
+sys.path.insert(0,str(ROOT))
+from portfolio_gsc import project_site_map
+from monitor_dispatch import bridge_event
 GATEWAY=ROOT/'gateway.py'
 
 def free_port():
@@ -10,6 +13,7 @@ def free_port():
 
 class FakeGoogle(BaseHTTPRequestHandler):
     token='fake-google-token'
+    leak_authorization_error=False
     def log_message(self,*_): pass
     def sendj(self,code,obj):
         raw=json.dumps(obj).encode()
@@ -20,6 +24,8 @@ class FakeGoogle(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path=='/health':
             self.sendj(200,{'ok':True}); return
+        if self.path=='/v1/sites' and self.leak_authorization_error:
+            self.sendj(401,{'error':'Authorization: Bearer provider-secret-123'}); return
         if not self.authed():
             self.sendj(401,{'error':'unauthorised'}); return
         if self.path=='/v1/sites':
@@ -292,6 +298,37 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(status,200)
         self.assertEqual(len(body['investigations']),2)
 
+    def test_bearer_credentials_are_redacted_everywhere(self):
+        FakeGoogle.leak_authorization_error=True
+        try:
+            status,body=self.request(
+                '/v1/sites/example.com/refresh','POST',
+                {'sources':['gsc'],'window':'7d','idempotencyKey':'redact-bearer'},
+                project='project-a',
+            )
+            self.assertEqual(status,202)
+            run=body['runs'][0]
+            self.assertEqual(run['status'],'error')
+            self.assertNotIn('provider-secret-123',run['error_message_safe'])
+            self.assertIn('<redacted>',run['error_message_safe'])
+
+            _,ledger=self.request('/v1/sync-runs?limit=20',project='project-a')
+            persisted_run=next(r for r in ledger['runs'] if 'redact-bearer' in r['idempotency_key'])
+            self.assertNotIn('provider-secret-123',persisted_run['error_message_safe'])
+
+            _,providers=self.request('/v1/providers',project='project-a')
+            gsc=next(p for p in providers['providers'] if p['provider']=='gsc')
+            self.assertNotIn('provider-secret-123',gsc.get('last_error') or '')
+
+            with sqlite3.connect(self.db_path) as connection:
+                raw=connection.execute(
+                    "select error_message_safe from sync_run where project_id=? and idempotency_key like ?",
+                    ('project-a','%redact-bearer'),
+                ).fetchone()[0]
+            self.assertNotIn('provider-secret-123',raw)
+        finally:
+            FakeGoogle.leak_authorization_error=False
+
     def test_project_scope_is_required_for_authenticated_gateway_calls(self):
         status,body=self.request('/v1/providers',project=None)
         self.assertEqual(status,400)
@@ -376,5 +413,28 @@ class GatewayTest(unittest.TestCase):
         _,ledger=self.request('/v1/sync-runs?limit=20',project='project-a')
         matching=[r for r in ledger['runs'] if 'concurrent-same-key' in r['idempotency_key']]
         self.assertEqual(len(matching),1)
+
+    def test_portfolio_mapping_is_explicit_and_normalized(self):
+        mapping=project_site_map({
+            'MS_ROBOT_PROJECT_SITE_MAP_JSON':json.dumps({
+                'https://www.Example.com/':'project-a',
+                'sc-domain:second.example':'project-b',
+            })
+        })
+        self.assertEqual(mapping,{
+            'example.com':'project-a',
+            'second.example':'project-b',
+        })
+        with self.assertRaises(SystemExit):
+            project_site_map({})
+        with self.assertRaises(SystemExit):
+            project_site_map({'MS_ROBOT_PROJECT_SITE_MAP_JSON':'{"example.com":""}'})
+
+    def test_monitor_bridge_refuses_unscoped_signal(self):
+        with self.assertRaisesRegex(RuntimeError,'monitor_signal_missing_project_id'):
+            bridge_event(
+                {'site':'example.com','signalType':'traffic_click_drop','evidence':{}},
+                'open',
+            )
 
 if __name__=='__main__': unittest.main()

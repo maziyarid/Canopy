@@ -92,6 +92,13 @@ def init_db():
         ''')
         for name in ('provider_state','sync_run','provider_metric','provider_snapshot'):
             copy_legacy_scope(c,name)
+        c.execute(
+            'create index if not exists sync_run_project_started on sync_run(project_id,started_at desc)'
+        )
+        c.execute(
+            '''create index if not exists provider_metric_lookup
+               on provider_metric(project_id,provider,site,dataset,data_date)'''
+        )
         sync_columns=table_columns(c,'sync_run')
         additive_sync_columns={
             'requested_start':'text','requested_end':'text',
@@ -245,8 +252,20 @@ def connection_test_google_discovery(project_id,provider):
 
 def safe_error_message(error):
     message=str(error)
+    # Redact compound auth schemes first. A generic "authorization" pass would
+    # otherwise consume only the word "Bearer" and leave the credential behind.
+    message=re.sub(
+        r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s&,;]+",
+        r'\1<redacted>',
+        message,
+    )
+    message=re.sub(
+        r"(?i)(bearer\s+)[^\s&,;]+",
+        r'\1<redacted>',
+        message,
+    )
     secret_names=(
-        r'authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|'
+        r'authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|'
         r'id[_-]?token|client[_-]?secret|private[_-]?key|password|passwd|cookie|'
         r'set-cookie|session[_-]?(?:id|token)?'
     )
