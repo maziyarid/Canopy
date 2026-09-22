@@ -13,7 +13,7 @@ import {
   requestProviderRefresh,
 } from "@/lib/analytics/gateway.server";
 import { studioAuth } from "./studio-auth";
-import { canWrite, resolveAccess } from "./access";
+import { canAdminProviders, resolveAccess } from "./access";
 
 export type ProviderAdminProvider = ProviderState & {
   accountRef: string;
@@ -84,7 +84,13 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
   .validator(ProjectSchema)
   .handler(async ({ context, data }): Promise<ProviderAdminView> => {
     const sql = await getSql();
-    const { project } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role, filter } = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+    );
+    if (!canAdminProviders(role, filter)) throw new Error("Forbidden");
     const rows = await sql<ConnectionRow>`
       select provider, account_ref, permission_tier, scopes, status,
              last_success, last_attempt, freshness, last_error
@@ -145,13 +151,13 @@ export const requestProviderSync = createServerFn({ method: "POST" })
   .validator(RefreshSchema)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(
+    const { project, role, filter } = await resolveAccess(
       sql,
       context.userId,
       context.email,
       data.projectId,
     );
-    if (!canWrite(role)) throw new Error("Forbidden");
+    if (!canAdminProviders(role, filter)) throw new Error("Forbidden");
     if (!project.domain.trim()) throw new Error("Project domain is required before provider sync");
 
     return requestProviderRefresh(project.domain, data.providers, data.window);

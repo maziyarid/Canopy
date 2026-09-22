@@ -30,6 +30,10 @@ export function canWrite(role: Role) {
   return role === "owner" || role === "editor";
 }
 
+export function canAdminProviders(role: Role, keywordFilter: string) {
+  return canWrite(role) && !keywordFilter.trim();
+}
+
 export async function linkInvites(sql: Sql, userId: string, email: string) {
   if (!email) return;
   await sql`update project_access set user_id = ${userId} where email = ${email} and (user_id is null or user_id = '')`;
