@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 from gsc_monitor import ensure_schema as ensure_monitor_schema, list_investigations, run_monitor
+from sqlite_migrations import ensure_analytics_schema
 
 HOST=os.getenv('ANALYTICS_GATEWAY_HOST','127.0.0.1')
 PORT=int(os.getenv('ANALYTICS_GATEWAY_PORT','9120'))
@@ -22,96 +23,8 @@ def db():
     c.row_factory=sqlite3.Row
     return c
 
-def table_exists(c,name):
-    return c.execute("select 1 from sqlite_master where type='table' and name=?",(name,)).fetchone() is not None
-
-def table_columns(c,name):
-    return {row['name'] for row in c.execute(f'pragma table_info({name})')}
-
-def migrate_legacy_scope(c,name):
-    if not table_exists(c,name) or 'project_id' in table_columns(c,name):
-        return
-    legacy=name+'_legacy_scope'
-    if table_exists(c,legacy):
-        c.execute(f'drop table {legacy}')
-    c.execute(f'alter table {name} rename to {legacy}')
-
-def copy_legacy_scope(c,name):
-    legacy=name+'_legacy_scope'
-    if not table_exists(c,legacy):
-        return
-    source=table_columns(c,legacy)
-    target=table_columns(c,name)
-    common=[column for column in target if column!='project_id' and column in source]
-    columns=['project_id',*common]
-    select=["'legacy'",*common]
-    c.execute(
-        f"insert or ignore into {name} ({','.join(columns)}) select {','.join(select)} from {legacy}"
-    )
-    c.execute(f'drop table {legacy}')
-
 def init_db():
-    os.makedirs(os.path.dirname(DB),exist_ok=True)
-    with db() as c:
-        for name in ('provider_state','sync_run','provider_metric','provider_snapshot'):
-            migrate_legacy_scope(c,name)
-        c.executescript('''
-        create table if not exists provider_state(
-          project_id text not null, provider text not null, status text not null,
-          auth_type text not null default '', capability text not null default 'read',
-          last_success text, last_attempt text, last_error text, freshness text,
-          enabled integer not null default 1, updated_at text not null,
-          primary key(project_id,provider));
-        create table if not exists sync_run(
-          id text primary key, project_id text not null, provider text not null,
-          site text not null, window text not null, requested_start text, requested_end text,
-          cursor_before text not null default '', cursor_after text not null default '',
-          status text not null, retry_count integer not null default 0,
-          rows_received integer not null default 0, rows_inserted integer not null default 0,
-          rows_updated integer not null default 0, rows_skipped integer not null default 0,
-          rows_written integer not null default 0, rate_limit_state text not null default '',
-          quota_state text not null default '', error_class text, error_message_safe text,
-          data_freshness text, idempotency_key text not null,
-          code_version text not null default '', started_at text not null, finished_at text,
-          unique(project_id,idempotency_key));
-        create table if not exists provider_metric(
-          id text primary key, project_id text not null, provider text not null,
-          site text not null, dataset text not null, data_date text not null default '',
-          dimensions text not null default '{}', metrics text not null default '{}',
-          freshness text, sync_run_id text not null, updated_at text not null,
-          unique(project_id,provider,site,dataset,data_date,dimensions));
-        create table if not exists provider_snapshot(
-          project_id text not null, provider text not null, site text not null,
-          dataset text not null, payload text not null default '{}', freshness text,
-          sync_run_id text not null, updated_at text not null,
-          primary key(project_id,provider,site,dataset));
-        create index if not exists sync_run_project_started
-          on sync_run(project_id,started_at desc);
-        create index if not exists provider_metric_lookup
-          on provider_metric(project_id,provider,site,dataset,data_date);
-        ''')
-        for name in ('provider_state','sync_run','provider_metric','provider_snapshot'):
-            copy_legacy_scope(c,name)
-        c.execute(
-            'create index if not exists sync_run_project_started on sync_run(project_id,started_at desc)'
-        )
-        c.execute(
-            '''create index if not exists provider_metric_lookup
-               on provider_metric(project_id,provider,site,dataset,data_date)'''
-        )
-        sync_columns=table_columns(c,'sync_run')
-        additive_sync_columns={
-            'requested_start':'text','requested_end':'text',
-            'cursor_before':"text not null default ''",'cursor_after':"text not null default ''",
-            'rows_received':'integer not null default 0','rows_inserted':'integer not null default 0',
-            'rows_updated':'integer not null default 0','rows_skipped':'integer not null default 0',
-            'rate_limit_state':"text not null default ''",'quota_state':"text not null default ''",
-            'error_message_safe':'text','data_freshness':'text',
-            'code_version':"text not null default ''",
-        }
-        for name,definition in additive_sync_columns.items():
-            if name not in sync_columns:
-                c.execute(f'alter table sync_run add column {name} {definition}')
+    ensure_analytics_schema(DB)
 
 def ensure_project_provider_state(c,project_id):
     stamp=now()

@@ -6,6 +6,8 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
+from sqlite_migrations import ensure_analytics_schema
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -28,41 +30,7 @@ def connect(db_path):
 
 
 def ensure_schema(db_path):
-    with connect(db_path) as connection:
-        columns={row["name"] for row in connection.execute("pragma table_info(investigation)")}
-        if columns and "project_id" not in columns:
-            connection.execute("alter table investigation rename to investigation_legacy_scope")
-        connection.executescript("""
-        create table if not exists investigation(
-          id text primary key,
-          project_id text not null,
-          fingerprint text not null,
-          site text not null,
-          signal_type text not null,
-          severity text not null,
-          status text not null default 'open',
-          source text not null default 'gsc',
-          first_seen text not null,
-          last_seen text not null,
-          evidence text not null default '{}',
-          unique(project_id,fingerprint)
-        );
-        create index if not exists investigation_project_site_status
-          on investigation(project_id,site,status,last_seen);
-        """)
-        legacy=connection.execute(
-            "select 1 from sqlite_master where type='table' and name='investigation_legacy_scope'"
-        ).fetchone()
-        if legacy:
-            connection.execute(
-                """insert or ignore into investigation(
-                     id,project_id,fingerprint,site,signal_type,severity,status,source,
-                     first_seen,last_seen,evidence)
-                   select id,'legacy',fingerprint,site,signal_type,severity,status,source,
-                          first_seen,last_seen,evidence
-                   from investigation_legacy_scope"""
-            )
-            connection.execute("drop table investigation_legacy_scope")
+    ensure_analytics_schema(db_path)
 
 
 def fingerprint(project_id, site, signal_type):
