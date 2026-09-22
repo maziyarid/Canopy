@@ -114,6 +114,37 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual({r['window'] for r in matching},{'28d'})
         self.assertEqual({r['status'] for r in matching},{'blocked'})
 
+    def test_sync_ledger_schema_is_upgraded_additively(self):
+        with sqlite3.connect(self.db_path) as connection:
+            columns={row[1] for row in connection.execute('pragma table_info(sync_run)')}
+        expected={
+            'requested_start','requested_end','cursor_before','cursor_after',
+            'rows_received','rows_inserted','rows_updated','rows_skipped',
+            'rate_limit_state','quota_state','error_message_safe',
+            'data_freshness','code_version',
+        }
+        self.assertTrue(expected.issubset(columns))
+
+    def test_custom_window_does_not_invent_date_range(self):
+        payload={'sources':['semrush'],'window':'same-window','idempotencyKey':'dates-1'}
+        _,body=self.request('/v1/sites/example.com/refresh','POST',payload)
+        run=body['runs'][0]
+        self.assertIsNone(run['requested_start'])
+        self.assertIsNone(run['requested_end'])
+
+    def test_blocked_sync_has_safe_receipt_fields(self):
+        payload={'sources':['semrush'],'window':'28d','idempotencyKey':'safe-receipt-1'}
+        _,body=self.request('/v1/sites/example.com/refresh','POST',payload)
+        run=body['runs'][0]
+        self.assertEqual(run['status'],'blocked')
+        self.assertEqual(run['error_class'],'not_configured')
+        self.assertEqual(run['error_message_safe'],'not_configured')
+        self.assertIn('code_version',run)
+        self.assertIn('rows_received',run)
+        self.assertIn('rows_inserted',run)
+        self.assertIn('rows_updated',run)
+        self.assertIn('rows_skipped',run)
+
     def test_repeated_refresh_is_idempotent_with_caller_key(self):
         payload={'sources':['semrush'],'window':'same-window','idempotencyKey':'retry-1'}
         _,first=self.request('/v1/sites/example.com/refresh','POST',payload)

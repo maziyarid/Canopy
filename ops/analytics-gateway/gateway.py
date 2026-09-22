@@ -13,6 +13,7 @@ DB=os.getenv('ANALYTICS_GATEWAY_DB','/var/lib/ms-robot-analytics/state.sqlite3')
 TOKEN=os.getenv('ANALYTICS_GATEWAY_TOKEN','')
 GOOGLE_PROVIDER_URL=os.getenv('GOOGLE_PROVIDER_URL','').rstrip('/')
 GOOGLE_PROVIDER_TOKEN=os.getenv('GOOGLE_PROVIDER_TOKEN','')
+CODE_VERSION=os.getenv('MS_ROBOT_CODE_VERSION') or os.getenv('GIT_SHA') or 'unknown'
 PROVIDERS=['gsc','ga4','gtm','clarity','bing_webmaster','semrush','ubersuggest','mangools']
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -31,8 +32,15 @@ def init_db():
           last_error text, freshness text, enabled integer not null default 1, updated_at text not null);
         create table if not exists sync_run(
           id text primary key, provider text not null, site text not null, window text not null,
-          status text not null, retry_count integer not null default 0, rows_written integer not null default 0,
-          idempotency_key text not null unique, started_at text not null, finished_at text, error_class text);
+          requested_start text, requested_end text, cursor_before text not null default '',
+          cursor_after text not null default '', status text not null,
+          retry_count integer not null default 0, rows_received integer not null default 0,
+          rows_inserted integer not null default 0, rows_updated integer not null default 0,
+          rows_skipped integer not null default 0, rows_written integer not null default 0,
+          rate_limit_state text not null default '', quota_state text not null default '',
+          error_class text, error_message_safe text, data_freshness text,
+          idempotency_key text not null unique, code_version text not null default '',
+          started_at text not null, finished_at text);
         create table if not exists provider_metric(
           id text primary key, provider text not null, site text not null, dataset text not null,
           data_date text not null default '', dimensions text not null default '{}',
@@ -46,6 +54,19 @@ def init_db():
           payload text not null default '{}', freshness text, sync_run_id text not null,
           updated_at text not null, primary key(provider,site,dataset));
         ''')
+        sync_columns={row['name'] for row in c.execute('pragma table_info(sync_run)')}
+        additive_sync_columns={
+            'requested_start':'text','requested_end':'text',
+            'cursor_before':"text not null default ''",'cursor_after':"text not null default ''",
+            'rows_received':'integer not null default 0','rows_inserted':'integer not null default 0',
+            'rows_updated':'integer not null default 0','rows_skipped':'integer not null default 0',
+            'rate_limit_state':"text not null default ''",'quota_state':"text not null default ''",
+            'error_message_safe':'text','data_freshness':'text',
+            'code_version':"text not null default ''",
+        }
+        for name,definition in additive_sync_columns.items():
+            if name not in sync_columns:
+                c.execute(f'alter table sync_run add column {name} {definition}')
         for p in PROVIDERS:
             c.execute('insert or ignore into provider_state(provider,status,updated_at) values(?,?,?)',(p,'not_configured',now()))
 
@@ -110,6 +131,12 @@ def window_dates(window):
     start=end-timedelta(days=days-1)
     return start.isoformat(),end.isoformat()
 
+def ledger_window_dates(window):
+    match=re.fullmatch(r'(\d{1,3})d',str(window or ''))
+    if not match:
+        return None,None
+    return window_dates(window)
+
 def connection_test_gsc():
     checked=now()
     try:
@@ -156,9 +183,18 @@ def connection_test_google_discovery(provider):
         return (409 if blocked else 502),{
             'provider':provider,'ok':False,'checkedAt':checked,'error':message}
 
+def safe_error_message(error):
+    message=str(error)
+    message=re.sub(r"(?i)(authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)([\s:=\"']+)[^\s&,;]+",r'\1\2<redacted>',message)
+    message=re.sub(r'(?i)([?&](?:key|token|access_token|api_key)=)[^&\s]+',r'\1<redacted>',message)
+    return message[:500]
+
 def upsert_metric(c,provider,site,dataset,data_date,dimensions,metrics,freshness,run_id,stamp):
     dims=json.dumps(dimensions,separators=(',',':'),sort_keys=True)
     vals=json.dumps(metrics,separators=(',',':'),sort_keys=True)
+    existed=c.execute('''select 1 from provider_metric
+      where provider=? and site=? and dataset=? and data_date=? and dimensions=?''',
+      (provider,site,dataset,data_date,dims)).fetchone() is not None
     c.execute('''insert into provider_metric
       (id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
       values(?,?,?,?,?,?,?,?,?,?)
@@ -166,6 +202,7 @@ def upsert_metric(c,provider,site,dataset,data_date,dimensions,metrics,freshness
         metrics=excluded.metrics,freshness=excluded.freshness,
         sync_run_id=excluded.sync_run_id,updated_at=excluded.updated_at''',
       (str(uuid.uuid4()),provider,site,dataset,data_date,dims,vals,freshness,run_id,stamp))
+    return 'updated' if existed else 'inserted'
 
 def run_gsc_sync(site,window,run_id):
     start_date,end_date=window_dates(window)
@@ -178,21 +215,25 @@ def run_gsc_sync(site,window,run_id):
         'siteUrl':property_url,'startDate':start_date,'endDate':end_date,
         'dimensions':['query','page'],'rowLimit':1000,'type':'web'})
     sitemaps=google_request('/v1/gsc/sitemaps?siteUrl='+quote(property_url,safe=''))
-    stamp=now(); written=0
+    stamp=now(); received=len(daily.get('rows',[]))+len(query_page.get('rows',[])); inserted=0; updated=0; skipped=0
     with db() as c:
         for row in daily.get('rows',[]):
             keys=row.get('keys') or []
-            if not keys: continue
+            if not keys:
+                skipped+=1
+                continue
             metrics={k:row.get(k,0) for k in ('clicks','impressions','ctr','position')}
-            upsert_metric(c,'gsc',site,'site_daily',str(keys[0]),{'date':str(keys[0])},metrics,end_date,run_id,stamp)
-            written+=1
+            outcome=upsert_metric(c,'gsc',site,'site_daily',str(keys[0]),{'date':str(keys[0])},metrics,end_date,run_id,stamp)
+            inserted+=outcome=='inserted'; updated+=outcome=='updated'
         for row in query_page.get('rows',[]):
             keys=row.get('keys') or []
-            if len(keys)<2: continue
+            if len(keys)<2:
+                skipped+=1
+                continue
             metrics={k:row.get(k,0) for k in ('clicks','impressions','ctr','position')}
-            upsert_metric(c,'gsc',site,'query_page',end_date,
+            outcome=upsert_metric(c,'gsc',site,'query_page',end_date,
                           {'query':str(keys[0]),'page':str(keys[1])},metrics,end_date,run_id,stamp)
-            written+=1
+            inserted+=outcome=='inserted'; updated+=outcome=='updated'
         c.execute('''insert into provider_snapshot(provider,site,dataset,payload,freshness,sync_run_id,updated_at)
                      values('gsc',?,'sitemaps',?,?,?,?)
                      on conflict(provider,site,dataset) do update set payload=excluded.payload,
@@ -203,7 +244,13 @@ def run_gsc_sync(site,window,run_id):
                      on conflict(provider,site,dataset) do update set payload=excluded.payload,
                        freshness=excluded.freshness,sync_run_id=excluded.sync_run_id,updated_at=excluded.updated_at''',
                   (site,json.dumps({'siteUrl':property_url},separators=(',',':')),end_date,run_id,stamp))
-    return written,end_date,property_url
+    return {
+        'requested_start':start_date,'requested_end':end_date,
+        'rows_received':received,'rows_inserted':inserted,'rows_updated':updated,
+        'rows_skipped':skipped,'rows_written':inserted+updated,
+        'data_freshness':end_date,'resource_ref':property_url,
+        'cursor_before':'','cursor_after':'','rate_limit_state':'','quota_state':'',
+    }
 
 def sync_provider(provider,site,window,run_id):
     if provider=='gsc':
@@ -223,15 +270,31 @@ def create_or_run_sync(provider,site,window,started,request_key=None):
         existing=c.execute('select * from sync_run where idempotency_key=?',(key,)).fetchone()
         if existing: return dict(existing),False
         run_id=str(uuid.uuid4())
-        c.execute('''insert into sync_run(id,provider,site,window,status,idempotency_key,started_at)
-                     values(?,?,?,?,?,?,?)''',(run_id,provider,site,window,'running',key,started))
+        requested_start,requested_end=ledger_window_dates(window)
+        c.execute('''insert into sync_run(
+                     id,provider,site,window,requested_start,requested_end,status,
+                     idempotency_key,code_version,started_at)
+                     values(?,?,?,?,?,?,?,?,?,?)''',
+                  (run_id,provider,site,window,requested_start,requested_end,'running',
+                   key,CODE_VERSION,started))
         c.execute('update provider_state set last_attempt=?,updated_at=? where provider=?',(started,started,provider))
     try:
-        written,freshness,_=sync_provider(provider,site,window,run_id)
+        result=sync_provider(provider,site,window,run_id)
         finished=now()
+        freshness=result.get('data_freshness')
         with db() as c:
-            c.execute('''update sync_run set status='completed',rows_written=?,finished_at=?,error_class=null
-                         where id=?''',(written,finished,run_id))
+            c.execute('''update sync_run set status='completed',
+                         requested_start=?,requested_end=?,cursor_before=?,cursor_after=?,
+                         rows_received=?,rows_inserted=?,rows_updated=?,rows_skipped=?,rows_written=?,
+                         rate_limit_state=?,quota_state=?,data_freshness=?,
+                         finished_at=?,error_class=null,error_message_safe=null,code_version=?
+                         where id=?''',
+                      (result.get('requested_start'),result.get('requested_end'),
+                       result.get('cursor_before',''),result.get('cursor_after',''),
+                       int(result.get('rows_received',0)),int(result.get('rows_inserted',0)),
+                       int(result.get('rows_updated',0)),int(result.get('rows_skipped',0)),
+                       int(result.get('rows_written',0)),result.get('rate_limit_state',''),
+                       result.get('quota_state',''),freshness,finished,CODE_VERSION,run_id))
             c.execute('''update provider_state set status='ok',auth_type=?,
                          last_success=?,last_attempt=?,last_error=null,freshness=?,updated_at=?
                          where provider=?''',
@@ -239,14 +302,15 @@ def create_or_run_sync(provider,site,window,started,request_key=None):
             row=c.execute('select * from sync_run where id=?',(run_id,)).fetchone()
         return dict(row),True
     except Exception as e:
-        finished=now(); message=str(e)[:500]
+        finished=now(); message=safe_error_message(e)
         error_class='not_configured' if message=='not_configured' else (
             'adapter_not_implemented' if message=='adapter_not_implemented' else
             ('property_not_authorised' if message.startswith('gsc_property_not_authorised') else 'provider_error'))
         status='blocked' if error_class in ('not_configured','adapter_not_implemented') else 'error'
         with db() as c:
-            c.execute('''update sync_run set status=?,finished_at=?,error_class=? where id=?''',
-                      (status,finished,error_class,run_id))
+            c.execute('''update sync_run set status=?,finished_at=?,error_class=?,
+                         error_message_safe=?,code_version=? where id=?''',
+                      (status,finished,error_class,message,CODE_VERSION,run_id))
             if error_class=='not_configured':
                 c.execute('''update provider_state set status='not_configured',last_attempt=?,last_error=?,
                              updated_at=? where provider=?''',(started,message,finished,provider))
