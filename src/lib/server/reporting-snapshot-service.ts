@@ -301,10 +301,25 @@ export async function refreshReportingSnapshotRecord(opts: {
 }): Promise<{ replayed: boolean; snapshot: ReportingSnapshot }> {
   const access = await resolveSnapshotAccess(opts.resolveAccess, opts.sql, opts.userId, opts.email, opts.projectId);
   assertRefreshCapability(access);
-  const scopedKey = composeIdempotencyKey(access.project.id, opts.idempotencyKey);
+
+  // Scope replay identity to the canonical request shape. The same client
+  // Idempotency-Key may only replay a refresh for the same effective period
+  // and comparison; a different request must not receive the first snapshot.
+  const now = opts.now ?? new Date();
+  const requestedPeriod = periodFromLabel(opts.periodLabel, now);
+  const requestedComparison = opts.comparisonLabel === "" ? null : comparisonPeriod(requestedPeriod);
+  if (opts.comparisonLabel && requestedComparison) {
+    requestedComparison.label = opts.comparisonLabel;
+  }
+  const scopedKey = [
+    composeIdempotencyKey(access.project.id, opts.idempotencyKey),
+    requestedPeriod.label,
+    requestedComparison?.label ?? "-",
+  ].join("|");
+
   const result = await refreshReplays.runOnce(scopedKey, async () => {
     snapshotCache.clear();
-    return loadReportingSnapshot(opts);
+    return loadReportingSnapshot({ ...opts, now });
   });
   return { replayed: result.replayed, snapshot: result.value };
 }

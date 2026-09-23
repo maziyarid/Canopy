@@ -273,6 +273,61 @@ test("refresh is composite-scoped by projectId and replays the same payload", as
   assert.equal(composeIdempotencyKey("proj-1", "idem-12345678"), "proj-1:idem-12345678");
 });
 
+test("refresh replay identity is scoped to resolved period and comparison", async () => {
+  snapshotCache.clear();
+  const sql = makeSql({});
+  const key = "idem-scope-12345678";
+  const now = new Date("2026-09-23T00:00:00Z");
+
+  const first = await refreshReportingSnapshotRecord({
+    sql,
+    resolveAccess,
+    userId: "user-1",
+    email: "o@example.com",
+    projectId: "proj-1",
+    idempotencyKey: key,
+    periodLabel: "last_7d",
+    comparisonLabel: "baseline-a",
+    correlationId: "scope-a",
+    now,
+  });
+  const differentRequest = await refreshReportingSnapshotRecord({
+    sql,
+    resolveAccess,
+    userId: "user-1",
+    email: "o@example.com",
+    projectId: "proj-1",
+    idempotencyKey: key,
+    periodLabel: "last_28d",
+    comparisonLabel: "baseline-b",
+    correlationId: "scope-b",
+    now,
+  });
+  const replay = await refreshReportingSnapshotRecord({
+    sql,
+    resolveAccess,
+    userId: "user-1",
+    email: "o@example.com",
+    projectId: "proj-1",
+    idempotencyKey: key,
+    periodLabel: "last_28d",
+    comparisonLabel: "baseline-b",
+    correlationId: "scope-c",
+    now,
+  });
+
+  assert.equal(first.replayed, false);
+  assert.equal(first.snapshot.period.label, "last_7d");
+  assert.equal(first.snapshot.comparison?.label, "baseline-a");
+
+  assert.equal(differentRequest.replayed, false);
+  assert.equal(differentRequest.snapshot.period.label, "last_28d");
+  assert.equal(differentRequest.snapshot.comparison?.label, "baseline-b");
+
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.snapshot.etag, differentRequest.snapshot.etag);
+});
+
 test("forged client project header cannot override resolved access project id", async () => {
   snapshotCache.clear();
   const snapshot = await loadReportingSnapshot({
