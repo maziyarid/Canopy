@@ -13,6 +13,17 @@ export const SECTION_STATUSES = [
   "unknown",
 ] as const;
 
+/** Lower rank = higher severity when no ok provider remains. */
+export const SECTION_STATUS_RANK: Record<(typeof SECTION_STATUSES)[number], number> = {
+  degraded: 0,
+  partial: 1,
+  stale: 2,
+  unavailable: 3,
+  unknown: 4,
+  no_data: 5,
+  ok: 6,
+};
+
 export type SectionStatus = (typeof SECTION_STATUSES)[number];
 export type ProvenanceKind = "first_party" | "third_party_estimate";
 
@@ -70,6 +81,14 @@ export type LedgerRow = {
 const SECRET_RE =
   /(authorization|bearer|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|credential[_-]?ref)([\s:="']+)(?:bearer[\s]+)?[^\s&,;"']+/gi;
 
+const PERIOD_DAY_MAP: Record<string, number> = {
+  last_7d: 7,
+  last_14d: 14,
+  last_28d: 28,
+  last_30d: 30,
+  last_90d: 90,
+};
+
 export function normalizeSectionStatus(raw: unknown): SectionStatus {
   if (typeof raw !== "string") return "unknown";
   const value = raw.trim().toLowerCase();
@@ -97,7 +116,10 @@ export function composeIdempotencyKey(projectId: string, clientKey: string): str
   return `${projectId.trim()}:${clientKey.trim()}`;
 }
 
-export function stableSnapshotBody(snapshot: Omit<ReportingSnapshot, "etag" | "generatedAt" | "requestedAt">) {
+/** Stable body for ETag: excludes volatile timestamps and request-scoped correlationId. */
+export function stableSnapshotBody(
+  snapshot: Omit<ReportingSnapshot, "etag" | "generatedAt" | "requestedAt" | "correlationId">,
+) {
   return {
     schemaVersion: snapshot.schemaVersion,
     projectId: snapshot.projectId,
@@ -106,7 +128,6 @@ export function stableSnapshotBody(snapshot: Omit<ReportingSnapshot, "etag" | "g
     comparison: snapshot.comparison,
     sections: snapshot.sections,
     providerHealth: snapshot.providerHealth,
-    correlationId: snapshot.correlationId,
   };
 }
 
@@ -143,23 +164,29 @@ export function firstPartyProvider(provider: string): boolean {
   return provider === "gsc" || provider === "ga4" || provider === "clarity" || provider === "bing_webmaster";
 }
 
-export function deriveOverview(sections: SnapshotSection[]): SnapshotSection {
-  const statuses = sections.map((section) => section.status);
-  let status: SectionStatus = "no_data";
-  if (statuses.includes("ok") && statuses.some((item) => item !== "ok" && item !== "no_data")) {
-    status = "partial";
-  } else if (statuses.every((item) => item === "unavailable")) {
-    status = "unavailable";
-  } else if (statuses.includes("degraded")) {
-    status = "degraded";
-  } else if (statuses.includes("stale") && !statuses.includes("ok")) {
-    status = "stale";
-  } else if (statuses.includes("ok")) {
-    status = "ok";
-  } else if (statuses.includes("unknown")) {
-    status = "unknown";
+/** Deterministic multi-provider aggregate. Pure ok wins over no_data; mixed non-empty is partial. */
+export function aggregateSectionStatus(statuses: SectionStatus[]): SectionStatus {
+  if (!statuses.length) return "no_data";
+  const nonEmpty = statuses.filter((item) => item !== "no_data");
+  if (!nonEmpty.length) return "no_data";
+  if (nonEmpty.includes("ok") && nonEmpty.some((item) => item !== "ok")) {
+    return "partial";
   }
+  if (nonEmpty.every((item) => item === "ok")) return "ok";
+  let best: SectionStatus = nonEmpty[0]!;
+  let bestRank = SECTION_STATUS_RANK[best] ?? 99;
+  for (const status of nonEmpty) {
+    const rank = SECTION_STATUS_RANK[status] ?? 99;
+    if (rank < bestRank) {
+      best = status;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
 
+export function deriveOverview(sections: SnapshotSection[]): SnapshotSection {
+  const status = aggregateSectionStatus(sections.map((section) => section.status));
   return {
     key: "overview",
     status,
@@ -170,14 +197,21 @@ export function deriveOverview(sections: SnapshotSection[]): SnapshotSection {
   };
 }
 
-export function defaultPeriod(now = new Date()): SnapshotPeriod {
+export function periodFromLabel(label: string | undefined, now = new Date()): SnapshotPeriod {
+  const normalized = (label ?? "last_28d").trim().toLowerCase();
+  const days = PERIOD_DAY_MAP[normalized] ?? 28;
   const end = now.toISOString().slice(0, 10);
-  const startDate = new Date(now.getTime() - 27 * 24 * 60 * 60 * 1000);
+  const startDate = new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+  const resolvedLabel = PERIOD_DAY_MAP[normalized] !== undefined ? normalized : `last_${days}d`;
   return {
     start: startDate.toISOString().slice(0, 10),
     end,
-    label: "last_28d",
+    label: resolvedLabel,
   };
+}
+
+export function defaultPeriod(now = new Date()): SnapshotPeriod {
+  return periodFromLabel("last_28d", now);
 }
 
 export function comparisonPeriod(period: SnapshotPeriod): SnapshotPeriod {
@@ -193,6 +227,7 @@ export function comparisonPeriod(period: SnapshotPeriod): SnapshotPeriod {
   };
 }
 
+/** Include every snapshot-visible ledger field so late writes invalidate cache. */
 export function ledgerFingerprint(rows: LedgerRow[]): string {
   const tokens = rows
     .map((row) =>
@@ -200,10 +235,14 @@ export function ledgerFingerprint(rows: LedgerRow[]): string {
         row.provider,
         row.status,
         row.freshness ?? "",
+        row.lastSuccess ?? "",
+        row.lastAttempt ?? "",
+        row.lastError ?? "",
+        row.metricName ?? "",
+        String(row.metricValue ?? ""),
+        row.dataDate ?? "",
         row.updatedAt ?? "",
         row.finishedAt ?? "",
-        row.dataDate ?? "",
-        String(row.metricValue ?? ""),
       ].join(":"),
     )
     .sort();
@@ -211,7 +250,10 @@ export function ledgerFingerprint(rows: LedgerRow[]): string {
 }
 
 export class IdempotencyStore {
-  private readonly items = new Map<string, { expiresAt: number; payload: unknown }>();
+  private readonly items = new Map<
+    string,
+    { expiresAt: number; payload: unknown; inflight?: Promise<unknown> }
+  >();
 
   get(key: string): unknown | undefined {
     const item = this.items.get(key);
@@ -221,6 +263,34 @@ export class IdempotencyStore {
       return undefined;
     }
     return item.payload;
+  }
+
+  /** Claim or join an in-flight refresh so concurrent callers share one result. */
+  async runOnce<T>(
+    key: string,
+    factory: () => Promise<T>,
+    ttlMs = IDEMPOTENCY_TTL_MS,
+  ): Promise<{ replayed: boolean; value: T }> {
+    const existing = this.items.get(key);
+    if (existing && existing.expiresAt > Date.now()) {
+      if (existing.payload !== undefined) {
+        return { replayed: true, value: existing.payload as T };
+      }
+      if (existing.inflight) {
+        const value = (await existing.inflight) as T;
+        return { replayed: true, value };
+      }
+    }
+    const inflight = factory();
+    this.items.set(key, { expiresAt: Date.now() + ttlMs, payload: undefined, inflight });
+    try {
+      const value = await inflight;
+      this.items.set(key, { expiresAt: Date.now() + ttlMs, payload: value });
+      return { replayed: false, value };
+    } catch (error) {
+      this.items.delete(key);
+      throw error;
+    }
   }
 
   set(key: string, payload: unknown, ttlMs = IDEMPOTENCY_TTL_MS) {

@@ -6,10 +6,11 @@ import {
   type ReportingSnapshot,
   type SnapshotPeriod,
   type SnapshotSection,
+  aggregateSectionStatus,
   comparisonPeriod,
   composeIdempotencyKey,
   computeStableEtag,
-  defaultPeriod,
+  periodFromLabel,
   deriveOverview,
   firstPartyProvider,
   ledgerFingerprint,
@@ -37,8 +38,10 @@ export type SnapshotAccess = {
   project: { id: string; domain: string };
 };
 
+/** Compatible with repository Sql (tagged template + optional query). */
 export type SnapshotSql = {
   <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>;
+  query?: <T = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<T[]>;
 };
 
 export type AccessResolver = (
@@ -47,6 +50,8 @@ export type AccessResolver = (
   email: string,
   projectId: string,
 ) => Promise<SnapshotAccess>;
+
+const MISSING_LEDGER_RE = /relation .*does not exist|no such table|undefined_table|42P01/i;
 
 export async function resolveSnapshotAccess(
   resolver: AccessResolver,
@@ -72,7 +77,11 @@ export function assertRefreshCapability(access: SnapshotAccess) {
   }
 }
 
-async function readLedger(sql: SnapshotSql, projectId: string): Promise<{ rows: LedgerRow[]; available: boolean }> {
+async function readLedger(
+  sql: SnapshotSql,
+  projectId: string,
+  period: SnapshotPeriod,
+): Promise<{ rows: LedgerRow[]; available: boolean }> {
   try {
     const states = await sql<{
       provider: string;
@@ -86,6 +95,7 @@ async function readLedger(sql: SnapshotSql, projectId: string): Promise<{ rows: 
       select provider, status, last_success, last_attempt, freshness, last_error, updated_at
       from provider_state
       where project_id = ${projectId}
+      order by provider asc
     `;
     const metrics = await sql<{
       provider: string;
@@ -97,6 +107,8 @@ async function readLedger(sql: SnapshotSql, projectId: string): Promise<{ rows: 
       select provider, metric_name, metric_value, data_date, updated_at
       from provider_metric
       where project_id = ${projectId}
+        and (data_date is null or (data_date >= ${period.start} and data_date <= ${period.end}))
+      order by provider asc, metric_name asc, data_date asc
     `;
     const runs = await sql<{
       provider: string;
@@ -105,8 +117,14 @@ async function readLedger(sql: SnapshotSql, projectId: string): Promise<{ rows: 
       select provider, finished_at
       from sync_run
       where project_id = ${projectId}
+      order by finished_at desc nulls last
     `;
-    const runMap = new Map(runs.map((run) => [run.provider, run.finished_at]));
+    const runMap = new Map<string, string | null>();
+    for (const run of runs) {
+      if (!runMap.has(run.provider)) {
+        runMap.set(run.provider, run.finished_at);
+      }
+    }
     const rows: LedgerRow[] = [];
     for (const state of states) {
       const matchingMetrics = metrics.filter((metric) => metric.provider === state.provider);
@@ -140,42 +158,40 @@ async function readLedger(sql: SnapshotSql, projectId: string): Promise<{ rows: 
       }
     }
     return { rows, available: true };
-  } catch {
-    return { rows: [], available: false };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (MISSING_LEDGER_RE.test(message)) {
+      return { rows: [], available: false };
+    }
+    throw error;
   }
 }
 
-function sectionFromRows(key: string, providers: string[], rows: LedgerRow[], ledgerAvailable: boolean): SnapshotSection {
-  const subset = rows.filter((row) => providers.includes(row.provider));
+function sectionFromRows(
+  key: string,
+  providers: string[],
+  rows: LedgerRow[],
+  ledgerAvailable: boolean,
+): SnapshotSection {
+  const subset = rows
+    .filter((row) => providers.includes(row.provider))
+    .slice()
+    .sort((a, b) => a.provider.localeCompare(b.provider) || (a.metricName ?? "").localeCompare(b.metricName ?? ""));
   if (!ledgerAvailable) {
-    return {
-      key,
-      status: "unavailable",
-      freshness: null,
-      lastSyncAt: null,
-      warning: null,
-      metrics: [],
-    };
+    return { key, status: "unavailable", freshness: null, lastSyncAt: null, warning: null, metrics: [] };
   }
   if (!subset.length) {
-    return {
-      key,
-      status: "no_data",
-      freshness: null,
-      lastSyncAt: null,
-      warning: null,
-      metrics: [],
-    };
+    return { key, status: "no_data", freshness: null, lastSyncAt: null, warning: null, metrics: [] };
   }
-  const statuses = subset.map((row) => mapProviderStatus(row.status));
-  const status = statuses.includes("ok") && statuses.some((item) => item !== "ok")
-    ? "partial"
-    : statuses[0] ?? "unknown";
+  const status = aggregateSectionStatus(subset.map((row) => mapProviderStatus(row.status)));
   return {
     key,
     status,
     freshness: subset.find((row) => row.freshness)?.freshness ?? null,
-    lastSyncAt: subset.find((row) => row.lastSuccess)?.lastSuccess ?? subset.find((row) => row.finishedAt)?.finishedAt ?? null,
+    lastSyncAt:
+      subset.find((row) => row.lastSuccess)?.lastSuccess ??
+      subset.find((row) => row.finishedAt)?.finishedAt ??
+      null,
     warning: redactWarning(subset.find((row) => row.lastError)?.lastError),
     metrics: subset
       .filter((row) => row.metricName)
@@ -205,7 +221,7 @@ export function buildReportingSnapshot(input: {
   const conversions = sectionFromRows("conversions", ["ga4", "gsc"], input.rows, input.ledgerAvailable);
   const providerHealth = sectionFromRows(
     "providerHealth",
-    [...new Set(input.rows.map((row) => row.provider)), "gsc", "ga4"],
+    [...new Set([...input.rows.map((row) => row.provider), "gsc", "ga4"])].sort(),
     input.rows,
     input.ledgerAvailable,
   );
@@ -216,15 +232,15 @@ export function buildReportingSnapshot(input: {
     site: input.site,
     period: input.period,
     comparison: input.comparison,
-    correlationId: input.correlationId,
     sections: [overview, search, acquisition, conversions],
     providerHealth,
   };
   return {
     ...body,
+    correlationId: input.correlationId,
     generatedAt: input.generatedAt,
     requestedAt: input.requestedAt,
-    etag: computeStableEtag(stableSnapshotBody({ ...body, correlationId: input.correlationId })),
+    etag: computeStableEtag(stableSnapshotBody(body)),
   };
 }
 
@@ -240,12 +256,11 @@ export async function loadReportingSnapshot(opts: {
   now?: Date;
 }): Promise<ReportingSnapshot> {
   const access = await resolveSnapshotAccess(opts.resolveAccess, opts.sql, opts.userId, opts.email, opts.projectId);
-  const period = defaultPeriod(opts.now);
-  if (opts.periodLabel) period.label = opts.periodLabel;
+  const period = periodFromLabel(opts.periodLabel, opts.now);
   const comparison = opts.comparisonLabel === "" ? null : comparisonPeriod(period);
   if (opts.comparisonLabel && comparison) comparison.label = opts.comparisonLabel;
   const requestedAt = (opts.now ?? new Date()).toISOString();
-  const { rows, available } = await readLedger(opts.sql, access.project.id);
+  const { rows, available } = await readLedger(opts.sql, access.project.id, period);
   const fingerprint = ledgerFingerprint(rows);
   const cacheKey = snapshotCacheKey(access.project.id, period.label, comparison?.label ?? null);
   const cached = snapshotCache.get(cacheKey, fingerprint);
@@ -254,6 +269,7 @@ export async function loadReportingSnapshot(opts: {
       ...cached,
       requestedAt,
       generatedAt: (opts.now ?? new Date()).toISOString(),
+      correlationId: opts.correlationId?.trim() || cached.correlationId,
     };
   }
   const snapshot = buildReportingSnapshot({
@@ -286,10 +302,9 @@ export async function refreshReportingSnapshotRecord(opts: {
   const access = await resolveSnapshotAccess(opts.resolveAccess, opts.sql, opts.userId, opts.email, opts.projectId);
   assertRefreshCapability(access);
   const scopedKey = composeIdempotencyKey(access.project.id, opts.idempotencyKey);
-  const replay = refreshReplays.get(scopedKey) as ReportingSnapshot | undefined;
-  if (replay) return { replayed: true, snapshot: replay };
-  snapshotCache.clear();
-  const snapshot = await loadReportingSnapshot(opts);
-  refreshReplays.set(scopedKey, snapshot);
-  return { replayed: false, snapshot };
+  const result = await refreshReplays.runOnce(scopedKey, async () => {
+    snapshotCache.clear();
+    return loadReportingSnapshot(opts);
+  });
+  return { replayed: result.replayed, snapshot: result.value };
 }

@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SNAPSHOT_SCHEMA_VERSION,
+  aggregateSectionStatus,
   computeStableEtag,
   composeIdempotencyKey,
   defaultPeriod,
   deriveOverview,
   ledgerFingerprint,
   normalizeSectionStatus,
+  periodFromLabel,
   redactWarning,
   snapshotCacheKey,
   stableSnapshotBody,
@@ -84,7 +86,7 @@ test("cache keys isolate project period and schema", () => {
   assert.ok(snapshotCacheKey("p1", "last_28d", null).startsWith(SNAPSHOT_SCHEMA_VERSION));
 });
 
-test("etag is stable when only generatedAt/requestedAt change", () => {
+test("etag is stable when only generatedAt/requestedAt/correlationId change", () => {
   const period = defaultPeriod(new Date("2026-09-23T00:00:00Z"));
   const base = buildReportingSnapshot({
     projectId: "p1",
@@ -97,11 +99,24 @@ test("etag is stable when only generatedAt/requestedAt change", () => {
     rows: [],
     ledgerAvailable: true,
   });
-  const later = { ...base, requestedAt: "2026-09-23T02:00:00Z", generatedAt: "2026-09-23T02:00:00Z" };
+  const later = {
+    ...base,
+    requestedAt: "2026-09-23T02:00:00Z",
+    generatedAt: "2026-09-23T02:00:00Z",
+    correlationId: "corr-2",
+  };
   assert.equal(
     computeStableEtag(stableSnapshotBody(base)),
     computeStableEtag(stableSnapshotBody(later)),
   );
+  assert.equal(base.etag, later.etag);
+});
+
+test("periodFromLabel builds matching start/end dates for last_7d", () => {
+  const period = periodFromLabel("last_7d", new Date("2026-09-23T12:00:00Z"));
+  assert.equal(period.label, "last_7d");
+  assert.equal(period.end, "2026-09-23");
+  assert.equal(period.start, "2026-09-17");
 });
 
 test("late ledger writes change the fingerprint used for cache invalidation", () => {
@@ -283,5 +298,118 @@ test("entitlement is re-checked before a cached snapshot can be reused", async (
   await assert.rejects(
     () => loadReportingSnapshot({ sql, resolveAccess: revoked, userId: "editor-1", email: "e@example.com", projectId: "proj-1" }),
     (error: unknown) => error instanceof SnapshotAccessError && error.status === 404,
+  );
+});
+
+test("last_7d request returns matching period dates not default 28d window", async () => {
+  snapshotCache.clear();
+  const snapshot = await loadReportingSnapshot({
+    sql: makeSql({}),
+    resolveAccess,
+    userId: "user-1",
+    email: "o@example.com",
+    projectId: "proj-1",
+    periodLabel: "last_7d",
+    now: new Date("2026-09-23T00:00:00Z"),
+  });
+  assert.equal(snapshot.period.label, "last_7d");
+  assert.equal(snapshot.period.start, "2026-09-17");
+  assert.equal(snapshot.period.end, "2026-09-23");
+  assert.ok(snapshot.comparison);
+  assert.equal(snapshot.comparison!.label, "prev_7d");
+});
+
+test("aggregate status is deterministic for mixed degraded/unavailable providers", () => {
+  assert.equal(aggregateSectionStatus(["unavailable", "degraded"]), "degraded");
+  assert.equal(aggregateSectionStatus(["degraded", "unavailable"]), "degraded");
+  assert.equal(aggregateSectionStatus(["ok", "degraded"]), "partial");
+});
+
+test("fingerprint includes metricName and lastError so visible changes invalidate cache", () => {
+  const base = ledgerFingerprint([
+    {
+      provider: "gsc",
+      status: "ok",
+      lastSuccess: "t1",
+      lastAttempt: "t1",
+      freshness: "d1",
+      lastError: null,
+      metricName: "clicks",
+      metricValue: 1,
+      updatedAt: "t1",
+    },
+  ]);
+  const renamed = ledgerFingerprint([
+    {
+      provider: "gsc",
+      status: "ok",
+      lastSuccess: "t1",
+      lastAttempt: "t1",
+      freshness: "d1",
+      lastError: null,
+      metricName: "impressions",
+      metricValue: 1,
+      updatedAt: "t1",
+    },
+  ]);
+  const errored = ledgerFingerprint([
+    {
+      provider: "gsc",
+      status: "ok",
+      lastSuccess: "t1",
+      lastAttempt: "t1",
+      freshness: "d1",
+      lastError: "timeout",
+      metricName: "clicks",
+      metricValue: 1,
+      updatedAt: "t1",
+    },
+  ]);
+  assert.notEqual(base, renamed);
+  assert.notEqual(base, errored);
+});
+
+test("concurrent refresh with same idempotency key shares one result", async () => {
+  snapshotCache.clear();
+  const sql = makeSql({});
+  const [a, b] = await Promise.all([
+    refreshReportingSnapshotRecord({
+      sql,
+      resolveAccess,
+      userId: "user-1",
+      email: "o@example.com",
+      projectId: "proj-1",
+      idempotencyKey: "idem-concurrent-1",
+      correlationId: "a",
+    }),
+    refreshReportingSnapshotRecord({
+      sql,
+      resolveAccess,
+      userId: "user-1",
+      email: "o@example.com",
+      projectId: "proj-1",
+      idempotencyKey: "idem-concurrent-1",
+      correlationId: "b",
+    }),
+  ]);
+  assert.equal(a.snapshot.etag, b.snapshot.etag);
+  assert.equal(a.replayed || b.replayed, true);
+});
+
+test("unexpected ledger database errors propagate instead of silent unavailable", async () => {
+  snapshotCache.clear();
+  const sql = (async () => {
+    throw new Error("connection reset by peer");
+  }) as SnapshotSql;
+  await assert.rejects(
+    () =>
+      loadReportingSnapshot({
+        sql,
+        resolveAccess,
+        userId: "user-1",
+        email: "o@example.com",
+        projectId: "proj-1",
+      }),
+    /connection reset by peer/,
   );
 });
