@@ -38,10 +38,10 @@ export type SnapshotAccess = {
   project: { id: string; domain: string };
 };
 
-/** Compatible with repository Sql (tagged template + optional query). */
+/** Compatible with repository Sql (tagged template + query). */
 export type SnapshotSql = {
   <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>;
-  query?: <T = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<T[]>;
+  query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
 };
 
 export type AccessResolver = (

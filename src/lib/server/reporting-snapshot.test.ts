@@ -57,7 +57,7 @@ function makeSql(opts: {
     if (text.includes("from provider_metric")) return opts.metrics ?? [];
     if (text.includes("from sync_run")) return opts.runs ?? [];
     return [];
-  }) as SnapshotSql;
+  }) as unknown as SnapshotSql;
 }
 
 test("unknown enum values fail forward to unknown", () => {
@@ -400,7 +400,7 @@ test("unexpected ledger database errors propagate instead of silent unavailable"
   snapshotCache.clear();
   const sql = (async () => {
     throw new Error("connection reset by peer");
-  }) as SnapshotSql;
+  }) as unknown as SnapshotSql;
   await assert.rejects(
     () =>
       loadReportingSnapshot({
