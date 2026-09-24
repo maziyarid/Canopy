@@ -5,11 +5,14 @@ export function nid() {
   return crypto.randomUUID();
 }
 
+export type DataDomain = "medical" | "thesis" | "other";
+
 export type DbProject = {
   id: string;
   owner_id: string;
   name: string;
   domain: string;
+  data_domain: DataDomain;
   location_id: number;
   language_id: number;
   platform_id: number;
@@ -34,6 +37,19 @@ export function canAdminProviders(role: Role, keywordFilter: string) {
   return canWrite(role) && !keywordFilter.trim();
 }
 
+/** Hard deny when the authenticated principal's context project domain
+ *  does not match the requested project's data_domain. Structurally
+ *  identical to cross-project denial (indistinguishable Not found).
+ */
+export function assertSameDataDomain(
+  ctxDomain: DataDomain,
+  targetDomain: DataDomain,
+): void {
+  if (ctxDomain !== targetDomain) {
+    throw new Error("Project not found");
+  }
+}
+
 export async function linkInvites(sql: Sql, userId: string, email: string) {
   if (!email) return;
   await sql`update project_access set user_id = ${userId} where email = ${email} and (user_id is null or user_id = '')`;
@@ -48,8 +64,11 @@ export async function resolveAccess(
   const projects = await sql<DbProject>`select * from projects where id = ${projectId}`;
   const project = projects[0];
   if (!project) throw new Error("Project not found");
-  if (project.owner_id === userId) {
-    return { role: "owner", filter: "", project };
+  // Ensure data_domain is always a valid enum even on pre-migration rows.
+  const domain = (project.data_domain ?? "other") as DataDomain;
+  const normalized: DbProject = { ...project, data_domain: domain };
+  if (normalized.owner_id === userId) {
+    return { role: "owner", filter: "", project: normalized };
   }
   const rows = await sql<{ role: Role; keyword_filter: string }>`
     select role, keyword_filter from project_access
@@ -59,7 +78,7 @@ export async function resolveAccess(
   `;
   const row = rows[0];
   if (!row) throw new Error("Forbidden");
-  return { role: row.role, filter: row.keyword_filter ?? "", project };
+  return { role: row.role, filter: row.keyword_filter ?? "", project: normalized };
 }
 
 export function filterKeywords<T extends { keyword: string }>(rows: T[], filter: string) {
@@ -80,6 +99,7 @@ export function toProject(
     ownerId: p.owner_id,
     name: p.name,
     domain: p.domain,
+    dataDomain: p.data_domain ?? "other",
     locationId: Number(p.location_id),
     languageId: Number(p.language_id),
     platformId: Number(p.platform_id),
