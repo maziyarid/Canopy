@@ -46,7 +46,7 @@ describe("AAX-55 redactPii", () => {
     const raw = "contact patient@example.com for follow-up";
     const out = redactPii(raw);
     assert.doesNotMatch(out, /patient@example\.com/);
-    assert.match(out, /pii:[0-9a-f]+/);
+    assert.match(out, /pii:[0-9a-f]{16}/);
   });
 
   it("same email yields same hash", () => {
@@ -55,11 +55,24 @@ describe("AAX-55 redactPii", () => {
     assert.equal(a, b);
   });
 
+  it("different emails yield different hashes", () => {
+    const a = redactPii("a@test.org");
+    const b = redactPii("b@test.org");
+    assert.notEqual(a, b);
+  });
+
   it("replaces phone-like strings", () => {
     const raw = "call +1 555-123-4567";
     const out = redactPii(raw);
     assert.doesNotMatch(out, /555-123-4567/);
-    assert.match(out, /pii:[0-9a-f]+/);
+    assert.match(out, /pii:[0-9a-f]{16}/);
+  });
+
+  it("hash is longer than 32-bit and salted (not guessable offline with short brute)", () => {
+    const out = redactPii("secret@clinic.ir");
+    const m = out.match(/pii:([0-9a-f]+)/);
+    assert.ok(m);
+    assert.equal(m![1].length, 16); // 64-bit hex from SHA-256 slice
   });
 });
 
@@ -78,6 +91,14 @@ describe("AAX-55 redactForLog / redactForClient", () => {
     const out = redactForClient(raw);
     assert.doesNotMatch(out, /xyz/);
     assert.doesNotMatch(out, /admin@host\.com/);
+  });
+
+  it("redactForClient on provider-style error", () => {
+    const raw = "Mangools rejected: Bearer sk-live-leak for patient@clinic.com";
+    const out = redactForClient(raw);
+    assert.doesNotMatch(out, /sk-live-leak/);
+    assert.doesNotMatch(out, /patient@clinic\.com/);
+    assert.match(out, /\[REDACTED\]/);
   });
 });
 
