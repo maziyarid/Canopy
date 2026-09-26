@@ -84,7 +84,7 @@ export function Dashboard() {
               setForm({
                 name: "",
                 domain: "",
-                dataDomain: form.dataDomain,
+                dataDomain: "other",
                 locationId: form.locationId,
                 languageId: form.languageId,
               });
