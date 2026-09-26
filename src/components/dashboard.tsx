@@ -3,7 +3,7 @@ import { LANGUAGES, LOCATIONS, locationLabel } from "@/lib/locations";
 import { useLocale, useT } from "@/lib/locale";
 import { createProject, listProjects } from "@/lib/server/projects";
 import { seedSampleStudio } from "@/lib/server/seed";
-import type { Project } from "@/lib/types";
+import type { DataDomain, Project } from "@/lib/types";
 import { Link } from "@tanstack/react-router";
 import { FolderPlus, Globe, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,6 +18,7 @@ export function Dashboard() {
   const [form, setForm] = useState({
     name: "",
     domain: "",
+    dataDomain: "other" as DataDomain,
     locationId: 2840,
     languageId: 1000,
   });
@@ -80,7 +81,13 @@ export function Dashboard() {
             setBusy(true);
             try {
               await createProject({ data: form });
-              setForm({ name: "", domain: "", locationId: form.locationId, languageId: form.languageId });
+              setForm({
+                name: "",
+                domain: "",
+                dataDomain: "other",
+                locationId: form.locationId,
+                languageId: form.languageId,
+              });
               setOpen(false);
               await reload();
               toast.success(t("saved"));
@@ -101,6 +108,17 @@ export function Dashboard() {
               onChange={(e) => setForm({ ...form, domain: e.target.value })}
               placeholder="example.com"
             />
+          </Field>
+          <Field label="Data domain">
+            <select
+              className="h-10 w-full rounded-md bg-raised px-3 text-sm shadow-[var(--shadow-border)]"
+              value={form.dataDomain}
+              onChange={(e) => setForm({ ...form, dataDomain: e.target.value as DataDomain })}
+            >
+              <option value="medical">Medical</option>
+              <option value="thesis">Thesis</option>
+              <option value="other">Other</option>
+            </select>
           </Field>
           <Field label={t("location")}>
             <select

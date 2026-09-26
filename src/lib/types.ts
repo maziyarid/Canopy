@@ -2,6 +2,8 @@ export type Lang = "en" | "fa";
 
 export type Role = "owner" | "editor" | "client";
 
+export type DataDomain = "medical" | "thesis" | "other";
+
 export type KeywordStatus = "new" | "tracked" | "briefed" | "ignored";
 
 export type ProjectTab =
@@ -20,6 +22,7 @@ export type Project = {
   ownerId: string;
   name: string;
   domain: string;
+  dataDomain: DataDomain;
   locationId: number;
   languageId: number;
   platformId: number;
