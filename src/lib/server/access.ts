@@ -37,9 +37,18 @@ export function canAdminProviders(role: Role, keywordFilter: string) {
   return canWrite(role) && !keywordFilter.trim();
 }
 
-/** Hard deny when the authenticated principal's context project domain
- *  does not match the requested project's data_domain. Structurally
- *  identical to cross-project denial (indistinguishable Not found).
+/**
+ * Hard deny when a *context* project's data_domain does not match the
+ * *target* project's data_domain (e.g. cross-domain data-plane read).
+ * Structurally identical to cross-project denial (indistinguishable "Project not found").
+ *
+ * Policy (AAX-134 / AAX-55):
+ * - Multi-domain *membership* is allowed: a principal may own/edit both a
+ *   medical and a thesis project. resolveAccess does NOT call this helper.
+ * - Domain isolation is enforced at the data-plane boundary when a request
+ *   carries an ambient context domain that must match the target.
+ * - Call assertSameDataDomain only when such a context exists; do not use it
+ *   to forbid independent project grants.
  */
 export function assertSameDataDomain(
   ctxDomain: DataDomain,
