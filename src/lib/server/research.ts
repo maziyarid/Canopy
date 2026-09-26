@@ -7,7 +7,7 @@ import { studioAuth } from "./studio-auth";
 import { canWrite, nid, ownerMangoolsKey, resolveAccess } from "./access";
 import { mangoolsFetch } from "./mangools";
 import { mapKeyword } from "./mappers";
-import { notifyMonday } from "./monday";
+import { queueMonday } from "./monday";
 import { redactForClient, redactForLog } from "./redact";
 
 async function log(
@@ -73,7 +73,7 @@ export const updateKeywordStatus = createServerFn({ method: "POST" })
       update keywords set status = ${data.status} where id = ${data.id} and project_id = ${data.projectId}
     `;
     if (data.status === "briefed" && rows[0]) {
-      await notifyMonday(sql, project.owner_id, data.projectId, "keyword_briefed", {
+      await queueMonday(sql, project.owner_id, data.projectId, "keyword_briefed", {
         event: "keyword_briefed",
         project: project.name,
         domain: project.domain,
