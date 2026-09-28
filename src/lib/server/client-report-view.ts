@@ -66,9 +66,14 @@ export function staleAfterMs(provider: string): number {
   return STALE_AFTER_MS[provider] ?? DEFAULT_STALE_AFTER_MS;
 }
 
+/**
+ * Date-only values represent a reporting day, not midnight UTC.
+ * Treat them as the end of that UTC day so yesterday's GA4/GSC row
+ * stays current through today instead of going stale at 00:00Z.
+ */
 export function parseTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
-  const isoish = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value;
+  const isoish = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T23:59:59.999Z` : value;
   const ts = Date.parse(isoish);
   return Number.isFinite(ts) ? ts : null;
 }
@@ -84,19 +89,43 @@ export function freshnessStatus(
   return now - ts > staleAfterMs(provider) ? "stale" : "ok";
 }
 
-export function sectionMeasurementStamp(section: SnapshotSection): string | null {
-  const candidates = [
-    section.lastSyncAt,
-    section.freshness,
-    ...section.metrics.map((metric) => metric.dataDate),
-  ];
-  let oldest: { raw: string; ts: number } | null = null;
-  for (const raw of candidates) {
+/** Newest usable measurement date. Historical period rows must not drive stale. */
+export function newestMeasurementStamp(section: SnapshotSection): string | null {
+  let newest: { raw: string; ts: number } | null = null;
+  for (const raw of section.metrics.map((metric) => metric.dataDate)) {
     const ts = parseTimestamp(raw);
     if (ts === null || !raw) continue;
-    if (!oldest || ts < oldest.ts) oldest = { raw, ts };
+    if (!newest || ts > newest.ts) newest = { raw, ts };
   }
-  return oldest?.raw ?? null;
+  const freshnessTs = parseTimestamp(section.freshness);
+  if (section.freshness && freshnessTs !== null) {
+    if (!newest || freshnessTs > newest.ts) newest = { raw: section.freshness, ts: freshnessTs };
+  }
+  return newest?.raw ?? null;
+}
+
+export function sectionProviders(section: SnapshotSection, hint?: string): string[] {
+  const providers = section.metrics.map((metric) => metric.provider).filter(Boolean);
+  if (hint) providers.push(hint);
+  if (providers.length === 0 && section.key) providers.push(section.key);
+  return [...new Set(providers)];
+}
+
+export function mostRestrictiveProvider(providers: string[]): string {
+  if (providers.length === 0) return "unknown";
+  return providers.reduce((strictest, provider) =>
+    staleAfterMs(provider) < staleAfterMs(strictest) ? provider : strictest,
+  );
+}
+
+function worstFreshness(
+  statuses: Array<"ok" | "stale" | "unavailable">,
+): "ok" | "stale" | "unavailable" {
+  if (statuses.includes("stale")) return "stale";
+  if (statuses.length === 0 || statuses.every((status) => status === "unavailable")) {
+    return "unavailable";
+  }
+  return "ok";
 }
 
 export function applySectionFreshness(
@@ -107,9 +136,29 @@ export function applySectionFreshness(
   if (section.status === "unavailable" || section.status === "no_data") {
     return section;
   }
-  const provider = providerHint ?? section.metrics[0]?.provider ?? section.key;
-  const stamp = sectionMeasurementStamp(section);
-  const fresh = freshnessStatus(provider, stamp, now);
+  const providers = sectionProviders(section, providerHint);
+  const restrictive = mostRestrictiveProvider(providers);
+  const statuses: Array<"ok" | "stale" | "unavailable"> = [];
+  const newestByProvider = new Map<string, string>();
+  for (const metric of section.metrics) {
+    const ts = parseTimestamp(metric.dataDate);
+    if (!metric.dataDate || ts === null) continue;
+    const provider = metric.provider || restrictive;
+    const current = newestByProvider.get(provider);
+    const currentTs = parseTimestamp(current);
+    if (currentTs === null || ts > currentTs) newestByProvider.set(provider, metric.dataDate);
+  }
+  if (newestByProvider.size === 0 && section.freshness) {
+    newestByProvider.set(restrictive, section.freshness);
+  }
+  for (const [provider, stamp] of newestByProvider) {
+    statuses.push(freshnessStatus(provider, stamp, now));
+  }
+  if (section.lastSyncAt) {
+    statuses.push(freshnessStatus(restrictive, section.lastSyncAt, now));
+  }
+
+  const fresh = worstFreshness(statuses);
   if (fresh === "unavailable" && section.status === "ok") {
     return { ...section, status: "unavailable" };
   }

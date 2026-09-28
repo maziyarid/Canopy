@@ -8,7 +8,9 @@ import {
   clientLabelForStatus,
   freshnessStatus,
   groupAcquisitionChannels,
+  newestMeasurementStamp,
   normalizeClientStatus,
+  parseTimestamp,
   redactClientText,
   staleAfterMs,
   toClientSectionView,
@@ -45,6 +47,12 @@ describe("AAX-80 client report view", () => {
     assert.equal(freshnessStatus("ga4", "2026-09-26T15:30:00Z", NOW), "stale");
   });
 
+  it("treats date-only stamps as end of the UTC reporting day", () => {
+    const startOfToday = Date.parse("2026-09-28T00:00:01Z");
+    assert.equal(freshnessStatus("ga4", "2026-09-27", startOfToday), "ok");
+    assert.ok((parseTimestamp("2026-09-27") ?? 0) > Date.parse("2026-09-27T00:00:00Z"));
+  });
+
   it("does not mark unavailable sections stale", () => {
     const next = applySectionFreshness(
       section({ status: "unavailable", lastSyncAt: "2026-01-01T00:00:00Z" }),
@@ -63,7 +71,7 @@ describe("AAX-80 client report view", () => {
     assert.equal(next.status, "unavailable");
   });
 
-  it("marks recently synced sections stale when measurement dates exceed the window", () => {
+  it("marks recently synced sections stale when the newest measurement exceeds the window", () => {
     const next = applySectionFreshness(
       section({
         lastSyncAt: "2026-09-28T12:00:00Z",
@@ -71,6 +79,39 @@ describe("AAX-80 client report view", () => {
         metrics: [{ name: "clicks", value: 4, provenance: "first_party", provider: "gsc", dataDate: "2026-09-18" }],
       }),
       "gsc",
+      NOW,
+    );
+    assert.equal(next.status, "stale");
+  });
+
+  it("does not mark a completed 28-day GSC window stale because older rows exist", () => {
+    const next = applySectionFreshness(
+      section({
+        lastSyncAt: "2026-09-28T12:00:00Z",
+        freshness: "2026-09-27T00:00:00Z",
+        metrics: [
+          { name: "clicks", value: 1, provenance: "first_party", provider: "gsc", dataDate: "2026-08-31" },
+          { name: "clicks", value: 9, provenance: "first_party", provider: "gsc", dataDate: "2026-09-27" },
+        ],
+      }),
+      "gsc",
+      NOW,
+    );
+    assert.equal(newestMeasurementStamp(next), "2026-09-27");
+    assert.equal(next.status, "ok");
+  });
+
+  it("uses the stricter provider threshold when a section mixes GSC and GA4", () => {
+    const next = applySectionFreshness(
+      section({
+        lastSyncAt: "2026-09-27T12:00:00Z",
+        freshness: "2026-09-26T12:00:00Z",
+        metrics: [
+          { name: "clicks", value: 4, provenance: "first_party", provider: "gsc", dataDate: "2026-09-26" },
+          { name: "sessions", value: 8, provenance: "first_party", provider: "ga4", dataDate: "2026-09-26T12:00:00Z" },
+        ],
+      }),
+      undefined,
       NOW,
     );
     assert.equal(next.status, "stale");
