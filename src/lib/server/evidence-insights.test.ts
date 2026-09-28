@@ -116,6 +116,11 @@ describe("AAX-82 evidence-linked insights", () => {
     assert.equal(insight.provenance, "third_party_estimate");
   });
 
+  it("does not approve a rejected insight", () => {
+    const rejected = { ...createInsight(baseDraft()), reviewState: "rejected" as const };
+    assert.throws(() => approveForClient(rejected, "human:editor"), /rejected insights cannot be approved/);
+  });
+
   it("does not invent numeric facts inside the model", () => {
     const insight = createInsight(baseDraft());
     assert.equal(insight.evidenceRefs[0].value, 120);

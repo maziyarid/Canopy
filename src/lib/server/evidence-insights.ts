@@ -28,7 +28,7 @@ export interface InsightDraft {
   type: InsightKind;
   title: string;
   body: string;
-  evidenceRefs: EvidenceRef[];
+  evidenceRefs: readonly EvidenceRef[];
   confidence?: number;
   limitation?: string;
   recommendedAction?: string;
@@ -44,7 +44,7 @@ export interface InsightRecord {
   type: InsightKind;
   title: string;
   body: string;
-  evidenceRefs: EvidenceRef[];
+  evidenceRefs: readonly EvidenceRef[];
   provenance: InsightProvenance;
   confidence: number;
   limitation: string;
@@ -70,7 +70,7 @@ function hasText(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-export function cloneEvidenceRefs(refs: EvidenceRef[]): EvidenceRef[] {
+export function cloneEvidenceRefs(refs: readonly EvidenceRef[]): EvidenceRef[] {
   return refs.map((ref) => ({ ...ref }));
 }
 
@@ -109,7 +109,7 @@ export function assertIdentifiableEvidence(ref: EvidenceRef): void {
   }
 }
 
-export function classifyProvenance(refs: EvidenceRef[]): InsightProvenance {
+export function classifyProvenance(refs: readonly EvidenceRef[]): InsightProvenance {
   const kinds = new Set(refs.map((ref) => ref.provenance));
   if (kinds.has("first_party") && kinds.has("third_party_estimate")) {
     return "mixed_blocked";
@@ -118,7 +118,7 @@ export function classifyProvenance(refs: EvidenceRef[]): InsightProvenance {
   return "first_party";
 }
 
-export function assertCompatibleEvidence(refs: EvidenceRef[]): void {
+export function assertCompatibleEvidence(refs: readonly EvidenceRef[]): void {
   if (!refs.length) {
     throw new InsightValidationError("generated claims require at least one evidenceRef");
   }
@@ -191,6 +191,9 @@ export function createInsight(draft: InsightDraft, now = new Date()): InsightRec
 }
 
 export function approveForClient(insight: InsightRecord, reviewerId: string): InsightRecord {
+  if (insight.reviewState === "rejected") {
+    throw new InsightValidationError("rejected insights cannot be approved without a new draft");
+  }
   assertCompatibleEvidence(insight.evidenceRefs);
   return {
     ...insight,
