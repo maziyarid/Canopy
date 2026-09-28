@@ -101,6 +101,22 @@ describe("AAX-80 client report view", () => {
     assert.equal(next.status, "ok");
   });
 
+  it("does not mark mixed current measurements stale because header freshness uses GSC lag", () => {
+    const next = applySectionFreshness(
+      section({
+        lastSyncAt: "2026-09-28T12:00:00Z",
+        freshness: "2026-09-26T12:00:00Z",
+        metrics: [
+          { name: "clicks", value: 4, provenance: "first_party", provider: "gsc", dataDate: "2026-09-26" },
+          { name: "sessions", value: 8, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27T18:00:00Z" },
+        ],
+      }),
+      undefined,
+      NOW,
+    );
+    assert.equal(next.status, "ok");
+  });
+
   it("uses the stricter provider threshold when a section mixes GSC and GA4", () => {
     const next = applySectionFreshness(
       section({
