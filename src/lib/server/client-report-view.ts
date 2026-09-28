@@ -104,13 +104,18 @@ export function newestMeasurementStamp(section: SnapshotSection): string | null 
   return newest?.raw ?? null;
 }
 
-/** Oldest valid measurement/header stamp shown to the client. */
+/** Header + newest-per-provider stamps only; historical period rows are ignored. */
 export function oldestDisplayStamp(section: SnapshotSection): string | null {
+  const newestByProvider = new Map<string, string>();
+  for (const metric of section.metrics) {
+    const ts = parseTimestamp(metric.dataDate);
+    if (!metric.dataDate || ts === null) continue;
+    const provider = metric.provider || "unknown";
+    const currentTs = parseTimestamp(newestByProvider.get(provider));
+    if (currentTs === null || ts > currentTs) newestByProvider.set(provider, metric.dataDate);
+  }
   let oldest: { raw: string; ts: number } | null = null;
-  const candidates = [
-    section.freshness,
-    ...section.metrics.map((metric) => metric.dataDate),
-  ];
+  const candidates = [section.freshness, ...newestByProvider.values()];
   for (const raw of candidates) {
     const ts = parseTimestamp(raw);
     if (ts === null || !raw) continue;
@@ -166,8 +171,6 @@ export function applySectionFreshness(
   for (const [provider, stamp] of newestByProvider) {
     statuses.push(freshnessStatus(provider, stamp, now));
   }
-  // Authoritative header freshness must participate even when metrics exist,
-  // otherwise a 10-day displayed date can stay labeled ok beside a new metric.
   if (section.freshness) {
     for (const provider of providers.length > 0 ? providers : [restrictive]) {
       statuses.push(freshnessStatus(provider, section.freshness, now));
@@ -179,9 +182,8 @@ export function applySectionFreshness(
 
   const fresh = worstFreshness(statuses);
   const displayFreshness = oldestDisplayStamp(section) ?? section.freshness;
-  const next: SnapshotSection = displayFreshness === section.freshness
-    ? section
-    : { ...section, freshness: displayFreshness };
+  const next: SnapshotSection =
+    displayFreshness === section.freshness ? section : { ...section, freshness: displayFreshness };
   if (fresh === "unavailable" && section.status === "ok") {
     return { ...next, status: "unavailable" };
   }
