@@ -66,6 +66,49 @@ export class InsightValidationError extends Error {
 
 const FIRST_PARTY: ReadonlySet<EvidenceProvider> = new Set(["gsc", "ga4"]);
 
+function hasText(value: string | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+export function cloneEvidenceRefs(refs: EvidenceRef[]): EvidenceRef[] {
+  return refs.map((ref) => ({ ...ref }));
+}
+
+export function assertIdentifiableEvidence(ref: EvidenceRef): void {
+  const hasMetric = hasText(ref.metricName);
+  const hasQuery = hasText(ref.query);
+  const hasPage = hasText(ref.page);
+  const hasSnapshot = hasText(ref.snapshotId);
+  const hasSitePeriod = hasText(ref.site) && hasText(ref.periodStart) && hasText(ref.periodEnd);
+
+  switch (ref.kind) {
+    case "metric":
+      if (!hasMetric || !(hasSitePeriod || hasSnapshot || hasQuery || hasPage)) {
+        throw new InsightValidationError(
+          "metric evidence requires metricName plus a site/period, snapshot, query, or page identifier",
+        );
+      }
+      break;
+    case "query":
+      if (!hasQuery) {
+        throw new InsightValidationError("query evidence requires a query identifier");
+      }
+      break;
+    case "page":
+      if (!hasPage) {
+        throw new InsightValidationError("page evidence requires a page identifier");
+      }
+      break;
+    case "snapshot":
+      if (!hasSnapshot) {
+        throw new InsightValidationError("snapshot evidence requires snapshotId");
+      }
+      break;
+    default:
+      throw new InsightValidationError("unknown evidence kind");
+  }
+}
+
 export function classifyProvenance(refs: EvidenceRef[]): InsightProvenance {
   const kinds = new Set(refs.map((ref) => ref.provenance));
   if (kinds.has("first_party") && kinds.has("third_party_estimate")) {
@@ -80,6 +123,7 @@ export function assertCompatibleEvidence(refs: EvidenceRef[]): void {
     throw new InsightValidationError("generated claims require at least one evidenceRef");
   }
   for (const ref of refs) {
+    assertIdentifiableEvidence(ref);
     if (FIRST_PARTY.has(ref.provider) && ref.provenance !== "first_party") {
       throw new InsightValidationError(`${ref.provider} evidence must be first_party`);
     }
@@ -106,6 +150,7 @@ export function redactInsightForRole(insight: InsightRecord, role: InsightRole):
   return {
     ...insight,
     generatedBy: insight.generatedBy.startsWith("human:") ? "human" : "assistant",
+    reviewedBy: insight.reviewedBy ? "reviewer" : null,
     linkedTaskId: null,
   };
 }
@@ -120,6 +165,7 @@ export function createInsight(draft: InsightDraft, now = new Date()): InsightRec
   if (!draft.title.trim() || !draft.body.trim()) {
     throw new InsightValidationError("title and body are required");
   }
+  const evidenceRefs = Object.freeze(cloneEvidenceRefs(draft.evidenceRefs));
   const confidence = draft.confidence ?? (draft.type === "observation" ? 0.8 : 0.4);
   seq += 1;
   return {
@@ -130,8 +176,8 @@ export function createInsight(draft: InsightDraft, now = new Date()): InsightRec
     type: draft.type,
     title: draft.title,
     body: draft.body,
-    evidenceRefs: draft.evidenceRefs,
-    provenance: classifyProvenance(draft.evidenceRefs),
+    evidenceRefs,
+    provenance: classifyProvenance(evidenceRefs),
     confidence,
     limitation: draft.limitation ?? "Causality is not proven; treat as observed or likely.",
     recommendedAction: draft.recommendedAction ?? null,
@@ -145,11 +191,11 @@ export function createInsight(draft: InsightDraft, now = new Date()): InsightRec
 }
 
 export function approveForClient(insight: InsightRecord, reviewerId: string): InsightRecord {
-  if (!insight.evidenceRefs.length) {
-    throw new InsightValidationError("cannot approve an insight without evidence");
-  }
+  assertCompatibleEvidence(insight.evidenceRefs);
   return {
     ...insight,
+    evidenceRefs: Object.freeze(cloneEvidenceRefs(insight.evidenceRefs)),
+    provenance: classifyProvenance(insight.evidenceRefs),
     reviewedBy: reviewerId,
     reviewState: "approved",
     visibility: "client",

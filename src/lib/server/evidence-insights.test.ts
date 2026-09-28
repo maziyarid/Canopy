@@ -26,6 +26,9 @@ const mangoolsRef: EvidenceRef = {
   provenance: "third_party_estimate",
   kind: "metric",
   metricName: "kd",
+  site: "https://example.com/",
+  periodStart: "2026-09-01",
+  periodEnd: "2026-09-28",
   value: 38,
 };
 
@@ -55,6 +58,32 @@ describe("AAX-82 evidence-linked insights", () => {
     );
   });
 
+  it("rejects metric evidence that has no identifying details", () => {
+    assert.throws(
+      () =>
+        createInsight(
+          baseDraft({
+            evidenceRefs: [{ provider: "gsc", provenance: "first_party", kind: "metric" }],
+          }),
+        ),
+      /metric evidence requires/,
+    );
+  });
+
+  it("snapshots evidence so later draft mutation cannot change provenance", () => {
+    const mutable: EvidenceRef = { ...gscRef };
+    const insight = createInsight(baseDraft({ evidenceRefs: [mutable] }));
+    mutable.provider = "mangools";
+    mutable.provenance = "third_party_estimate";
+    mutable.kind = "metric";
+    mutable.metricName = "kd";
+    assert.equal(insight.provenance, "first_party");
+    assert.equal(insight.evidenceRefs[0].provider, "gsc");
+    const approved = approveForClient(insight, "human:editor");
+    assert.equal(approved.provenance, "first_party");
+    assert.equal(approved.evidenceRefs[0].provider, "gsc");
+  });
+
   it("keeps first-party observation client-hidden until approved", () => {
     const store = new InsightStore();
     const draft = store.put(createInsight(baseDraft()));
@@ -65,6 +94,7 @@ describe("AAX-82 evidence-linked insights", () => {
     assert.equal(visible[0].reviewState, "approved");
     assert.equal(visible[0].linkedTaskId, null);
     assert.equal(visible[0].generatedBy, "assistant");
+    assert.equal(visible[0].reviewedBy, "reviewer");
   });
 
   it("does not leak another project insight", () => {
