@@ -59,6 +59,20 @@ export function assertSameDataDomain(
   }
 }
 
+/**
+ * Apply assertSameDataDomain only when a caller has an ambient context domain
+ * (for example a source project when copying metrics, or a workspace context
+ * header on a data-plane call). Missing ambient context is a no-op so that
+ * ordinary project membership across domains remains valid.
+ */
+export function applyAmbientDataDomain(
+  ambient: DataDomain | null | undefined,
+  target: DataDomain,
+): void {
+  if (ambient == null) return;
+  assertSameDataDomain(ambient, target);
+}
+
 export async function linkInvites(sql: Sql, userId: string, email: string) {
   if (!email) return;
   await sql`update project_access set user_id = ${userId} where email = ${email} and (user_id is null or user_id = '')`;

@@ -10,7 +10,7 @@ import {
   redactForLog,
   redactForClient,
 } from "./redact.ts";
-import { assertSameDataDomain } from "./access.ts";
+import { applyAmbientDataDomain, assertSameDataDomain } from "./access.ts";
 import type { DataDomain } from "./access.ts";
 
 describe("AAX-55 redactCredentials", () => {
@@ -128,6 +128,31 @@ describe("AAX-55 assertSameDataDomain", () => {
   it("denies other vs medical", () => {
     assert.throws(
       () => assertSameDataDomain("other", "medical"),
+      (err: Error) => err.message === "Project not found",
+    );
+  });
+});
+
+describe("AAX-55 applyAmbientDataDomain", () => {
+  it("no-ops when ambient context is absent (multi-domain membership remains valid)", () => {
+    assert.doesNotThrow(() => applyAmbientDataDomain(undefined, "thesis"));
+    assert.doesNotThrow(() => applyAmbientDataDomain(null, "medical"));
+  });
+
+  it("allows ambient medical against medical target", () => {
+    assert.doesNotThrow(() => applyAmbientDataDomain("medical", "medical"));
+  });
+
+  it("denies ambient medical against thesis target with Project not found", () => {
+    assert.throws(
+      () => applyAmbientDataDomain("medical", "thesis"),
+      (err: Error) => err.message === "Project not found",
+    );
+  });
+
+  it("denies ambient other against medical target", () => {
+    assert.throws(
+      () => applyAmbientDataDomain("other", "medical"),
       (err: Error) => err.message === "Project not found",
     );
   });
