@@ -9,6 +9,8 @@ export type SectionStatus =
   | "no_data"
   | "unknown";
 
+export type ClientFacingStatus = Exclude<SectionStatus, "degraded" | "unknown">;
+
 export type ProvenanceKind = "first_party" | "third_party_estimate";
 
 export type SnapshotMetric = {
@@ -64,15 +66,37 @@ export function staleAfterMs(provider: string): number {
   return STALE_AFTER_MS[provider] ?? DEFAULT_STALE_AFTER_MS;
 }
 
+export function parseTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const isoish = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value;
+  const ts = Date.parse(isoish);
+  return Number.isFinite(ts) ? ts : null;
+}
+
 export function freshnessStatus(
   provider: string,
   lastSuccessAt: string | null | undefined,
   now = Date.now(),
 ): "ok" | "stale" | "unavailable" {
   if (!lastSuccessAt) return "unavailable";
-  const ts = Date.parse(lastSuccessAt);
-  if (!Number.isFinite(ts)) return "unavailable";
+  const ts = parseTimestamp(lastSuccessAt);
+  if (ts === null) return "unavailable";
   return now - ts > staleAfterMs(provider) ? "stale" : "ok";
+}
+
+export function sectionMeasurementStamp(section: SnapshotSection): string | null {
+  const candidates = [
+    section.lastSyncAt,
+    section.freshness,
+    ...section.metrics.map((metric) => metric.dataDate),
+  ];
+  let oldest: { raw: string; ts: number } | null = null;
+  for (const raw of candidates) {
+    const ts = parseTimestamp(raw);
+    if (ts === null || !raw) continue;
+    if (!oldest || ts < oldest.ts) oldest = { raw, ts };
+  }
+  return oldest?.raw ?? null;
 }
 
 export function applySectionFreshness(
@@ -84,24 +108,30 @@ export function applySectionFreshness(
     return section;
   }
   const provider = providerHint ?? section.metrics[0]?.provider ?? section.key;
-  const stamp = section.lastSyncAt ?? section.freshness;
+  const stamp = sectionMeasurementStamp(section);
   const fresh = freshnessStatus(provider, stamp, now);
-  if (fresh === "stale" && section.status === "ok") {
+  if (fresh === "unavailable" && section.status === "ok") {
+    return { ...section, status: "unavailable" };
+  }
+  if (fresh === "stale" && (section.status === "ok" || section.status === "partial")) {
     return { ...section, status: "stale" };
   }
   return section;
 }
 
+export function normalizeClientStatus(status: SectionStatus): ClientFacingStatus {
+  if (status === "degraded" || status === "unknown") return "unavailable";
+  return status;
+}
+
 export function clientLabelForStatus(status: SectionStatus): string {
-  switch (status) {
+  switch (normalizeClientStatus(status)) {
     case "ok":
       return "ok";
     case "stale":
       return "stale";
     case "partial":
       return "partial";
-    case "degraded":
-      return "unavailable";
     case "unavailable":
       return "unavailable";
     case "no_data":
@@ -126,9 +156,10 @@ export function toClientSectionView(
   role: ReportRole,
 ): ClientSectionView {
   const showReason = role === "owner" || role === "editor";
+  const status = role === "client" ? normalizeClientStatus(section.status) : section.status;
   return {
     key: section.key,
-    status: section.status,
+    status,
     clientLabel: clientLabelForStatus(section.status),
     freshness: section.freshness,
     warning: redactClientText(section.warning),
@@ -172,6 +203,19 @@ export function groupAcquisitionChannels(
   return grouped;
 }
 
+/** Sum measured channel values; null when every value is missing so UI can show "—" not 0. */
+export function channelMeasuredTotal(rows: SnapshotMetric[]): number | null {
+  let total = 0;
+  let seen = false;
+  for (const row of rows) {
+    if (typeof row.value === "number" && Number.isFinite(row.value)) {
+      total += row.value;
+      seen = true;
+    }
+  }
+  return seen ? total : null;
+}
+
 export const DEFAULT_CLIENT_SECTIONS = ["overview", "search", "acquisition", "conversions"] as const;
 
 export function visibleSectionKeys(
@@ -197,6 +241,7 @@ export type ClientReportView = {
   comparisonLabel: string | null;
   sections: ClientSectionView[];
   channels: Record<ChannelKey, SnapshotMetric[]>;
+  acquisitionStatus: SectionStatus | null;
 };
 
 export function buildClientReportView(input: {
@@ -214,6 +259,7 @@ export function buildClientReportView(input: {
   );
   const views = visible.map((section) => toClientSectionView(section, input.role));
   const acquisition = visible.find((section) => section.key === "acquisition");
+  const acquisitionView = views.find((section) => section.key === "acquisition");
   return {
     projectId: input.projectId,
     site: input.site,
@@ -221,5 +267,6 @@ export function buildClientReportView(input: {
     comparisonLabel: input.comparisonLabel ?? null,
     sections: views,
     channels: groupAcquisitionChannels(acquisition?.metrics ?? []),
+    acquisitionStatus: acquisitionView?.status ?? null,
   };
 }

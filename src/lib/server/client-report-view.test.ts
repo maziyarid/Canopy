@@ -3,10 +3,12 @@ import { describe, it } from "node:test";
 import {
   applySectionFreshness,
   buildClientReportView,
+  channelMeasuredTotal,
   classifyChannel,
   clientLabelForStatus,
   freshnessStatus,
   groupAcquisitionChannels,
+  normalizeClientStatus,
   redactClientText,
   staleAfterMs,
   toClientSectionView,
@@ -52,6 +54,28 @@ describe("AAX-80 client report view", () => {
     assert.equal(next.status, "unavailable");
   });
 
+  it("treats missing timestamps on otherwise-ok sections as unavailable", () => {
+    const next = applySectionFreshness(
+      section({ lastSyncAt: null, freshness: null, metrics: [{ name: "clicks", value: 1, provenance: "first_party", provider: "gsc", dataDate: null }] }),
+      "gsc",
+      NOW,
+    );
+    assert.equal(next.status, "unavailable");
+  });
+
+  it("marks recently synced sections stale when measurement dates exceed the window", () => {
+    const next = applySectionFreshness(
+      section({
+        lastSyncAt: "2026-09-28T12:00:00Z",
+        freshness: "2026-09-28T12:00:00Z",
+        metrics: [{ name: "clicks", value: 4, provenance: "first_party", provider: "gsc", dataDate: "2026-09-18" }],
+      }),
+      "gsc",
+      NOW,
+    );
+    assert.equal(next.status, "stale");
+  });
+
   it("hides reason codes from client role and keeps them for owners", () => {
     const raw = section({ reasonCode: "gsc_quota_exhausted", warning: "Bearer abc.def leaked" });
     const client = toClientSectionView(raw, "client");
@@ -62,8 +86,14 @@ describe("AAX-80 client report view", () => {
     assert.equal(client.clientLabel, "ok");
   });
 
-  it("maps degraded internals to a plain unavailable client label", () => {
+  it("maps degraded internals to a plain unavailable client label and status", () => {
     assert.equal(clientLabelForStatus("degraded"), "unavailable");
+    assert.equal(normalizeClientStatus("unknown"), "unavailable");
+    const client = toClientSectionView(section({ status: "degraded" }), "client");
+    assert.equal(client.status, "unavailable");
+    assert.equal(client.clientLabel, "unavailable");
+    const owner = toClientSectionView(section({ status: "degraded" }), "owner");
+    assert.equal(owner.status, "degraded");
   });
 
   it("separates acquisition channels instead of collapsing into search", () => {
@@ -78,6 +108,20 @@ describe("AAX-80 client report view", () => {
     assert.equal(grouped.paid[0]?.value, 5);
     assert.equal(grouped.referral[0]?.value, 3);
     assert.equal(classifyChannel("mystery-source"), "other");
+  });
+
+  it("does not treat missing channel values as measured zero", () => {
+    assert.equal(
+      channelMeasuredTotal([{ name: "organic", value: null, provenance: "first_party", provider: "ga4", dataDate: null }]),
+      null,
+    );
+    assert.equal(
+      channelMeasuredTotal([
+        { name: "organic", value: null, provenance: "first_party", provider: "ga4", dataDate: null },
+        { name: "organic", value: 4, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" },
+      ]),
+      4,
+    );
   });
 
   it("lets clients see only granted sections and never providerHealth by default", () => {
@@ -108,6 +152,8 @@ describe("AAX-80 client report view", () => {
     assert.deepEqual(keys.includes("providerHealth"), false);
     assert.equal(view.sections.find((item) => item.key === "search")?.status, "ok");
     assert.equal(view.sections.find((item) => item.key === "acquisition")?.clientLabel, "unavailable");
+    assert.equal(view.acquisitionStatus, "unavailable");
+    assert.equal(channelMeasuredTotal(view.channels.organic), null);
     assert.equal(view.projectId, "proj_a");
   });
 

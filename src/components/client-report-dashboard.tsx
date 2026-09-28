@@ -1,10 +1,23 @@
 import type { ClientReportView } from "@/lib/server/client-report-view";
-import { CHANNEL_KEYS } from "@/lib/server/client-report-view";
+import { CHANNEL_KEYS, channelMeasuredTotal } from "@/lib/server/client-report-view";
 
 function tone(status: string) {
   if (status === "ok") return "text-emerald-700";
   if (status === "stale" || status === "partial") return "text-amber-700";
   return "text-stone-500";
+}
+
+function formatChannelTotal(view: ClientReportView, channel: (typeof CHANNEL_KEYS)[number]) {
+  if (
+    view.acquisitionStatus === "unavailable" ||
+    view.acquisitionStatus === "no_data" ||
+    view.acquisitionStatus === "degraded" ||
+    view.acquisitionStatus === "unknown"
+  ) {
+    return "—";
+  }
+  const total = channelMeasuredTotal(view.channels[channel]);
+  return total === null ? "—" : total;
 }
 
 export function ClientReportDashboard({
@@ -60,12 +73,10 @@ export function ClientReportDashboard({
         <h2 className="text-sm font-medium">Acquisition channels</h2>
         <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
           {CHANNEL_KEYS.map((channel) => {
-            const rows = view.channels[channel];
-            const total = rows.reduce((sum, row) => sum + (row.value ?? 0), 0);
             return (
               <li key={channel} className="rounded-xl bg-raised px-3 py-2">
                 <p className="text-xs capitalize text-subtle">{channel}</p>
-                <p className="font-medium tabular-nums">{rows.length ? total : "—"}</p>
+                <p className="font-medium tabular-nums">{formatChannelTotal(view, channel)}</p>
               </li>
             );
           })}
