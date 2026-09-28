@@ -117,6 +117,20 @@ describe("AAX-80 client report view", () => {
     assert.equal(next.status, "stale");
   });
 
+  it("marks stale when header freshness is ten days old even if one metric is recent", () => {
+    const next = applySectionFreshness(
+      section({
+        lastSyncAt: "2026-09-28T12:00:00Z",
+        freshness: "2026-09-18T00:00:00Z",
+        metrics: [{ name: "clicks", value: 4, provenance: "first_party", provider: "gsc", dataDate: "2026-09-27" }],
+      }),
+      undefined,
+      NOW,
+    );
+    assert.equal(next.status, "stale");
+    assert.equal(next.freshness, "2026-09-18T00:00:00Z");
+  });
+
   it("hides reason codes from client role and keeps them for owners", () => {
     const raw = section({ reasonCode: "gsc_quota_exhausted", warning: "Bearer abc.def leaked" });
     const client = toClientSectionView(raw, "client");

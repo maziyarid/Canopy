@@ -104,6 +104,21 @@ export function newestMeasurementStamp(section: SnapshotSection): string | null 
   return newest?.raw ?? null;
 }
 
+/** Oldest valid measurement/header stamp shown to the client. */
+export function oldestDisplayStamp(section: SnapshotSection): string | null {
+  let oldest: { raw: string; ts: number } | null = null;
+  const candidates = [
+    section.freshness,
+    ...section.metrics.map((metric) => metric.dataDate),
+  ];
+  for (const raw of candidates) {
+    const ts = parseTimestamp(raw);
+    if (ts === null || !raw) continue;
+    if (!oldest || ts < oldest.ts) oldest = { raw, ts };
+  }
+  return oldest?.raw ?? null;
+}
+
 export function sectionProviders(section: SnapshotSection, hint?: string): string[] {
   const providers = section.metrics.map((metric) => metric.provider).filter(Boolean);
   if (hint) providers.push(hint);
@@ -148,24 +163,32 @@ export function applySectionFreshness(
     const currentTs = parseTimestamp(current);
     if (currentTs === null || ts > currentTs) newestByProvider.set(provider, metric.dataDate);
   }
-  if (newestByProvider.size === 0 && section.freshness) {
-    newestByProvider.set(restrictive, section.freshness);
-  }
   for (const [provider, stamp] of newestByProvider) {
     statuses.push(freshnessStatus(provider, stamp, now));
+  }
+  // Authoritative header freshness must participate even when metrics exist,
+  // otherwise a 10-day displayed date can stay labeled ok beside a new metric.
+  if (section.freshness) {
+    for (const provider of providers.length > 0 ? providers : [restrictive]) {
+      statuses.push(freshnessStatus(provider, section.freshness, now));
+    }
   }
   if (section.lastSyncAt) {
     statuses.push(freshnessStatus(restrictive, section.lastSyncAt, now));
   }
 
   const fresh = worstFreshness(statuses);
+  const displayFreshness = oldestDisplayStamp(section) ?? section.freshness;
+  const next: SnapshotSection = displayFreshness === section.freshness
+    ? section
+    : { ...section, freshness: displayFreshness };
   if (fresh === "unavailable" && section.status === "ok") {
-    return { ...section, status: "unavailable" };
+    return { ...next, status: "unavailable" };
   }
   if (fresh === "stale" && (section.status === "ok" || section.status === "partial")) {
-    return { ...section, status: "stale" };
+    return { ...next, status: "stale" };
   }
-  return section;
+  return next;
 }
 
 export function normalizeClientStatus(status: SectionStatus): ClientFacingStatus {
