@@ -69,12 +69,10 @@ function metricPeriod(
   metric: SnapshotMetricLike,
   snapshot: ReportingSnapshotLike,
 ): { start: string; end: string } | null {
-  if (metric.dataDate) {
-    if (!dateInPeriod(metric.dataDate, snapshot.period.start, snapshot.period.end)) {
-      return null;
-    }
-    return { start: metric.dataDate, end: metric.dataDate };
+  if (metric.dataDate && !dateInPeriod(metric.dataDate, snapshot.period.start, snapshot.period.end)) {
+    return null;
   }
+  // Keep the reporting window so journal placement can match full-period metrics.
   return { start: snapshot.period.start, end: snapshot.period.end };
 }
 
@@ -208,7 +206,18 @@ export function draftsFromSnapshot(
     });
   } else if (hasGa4Section(snapshot)) {
     const ga4Status = availability.ga4 ?? "unavailable";
-    if (ga4Status === "unavailable" || ga4Status === "unknown" || ga4Status === "degraded") {
+    const adverseWithoutMetrics =
+      ga4Status === "unavailable" ||
+      ga4Status === "unknown" ||
+      ga4Status === "degraded" ||
+      ga4Status === "no_data" ||
+      snapshot.sections.some((section) => {
+        const status = sectionStatus(section.status);
+        if (!(status === "unavailable" || status === "unknown" || status === "degraded")) return false;
+        const key = section.key.trim().toLowerCase();
+        return key === "acquisition" || section.metrics.some((metric) => metric.provider.trim().toLowerCase() === "ga4");
+      });
+    if (adverseWithoutMetrics) {
       drafts.push({
         projectId: snapshot.projectId,
         periodStart: snapshot.period.start,

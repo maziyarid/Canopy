@@ -76,11 +76,11 @@ describe("AAX-82 snapshot-to-insight adapter", () => {
     assert.equal(drafts.some((draft) => draft.evidenceRefs.some((ref) => ref.provider === "mangools")), false);
   });
 
-  it("stamps in-period metric evidence with dataDate, not the requested window", () => {
+  it("keeps in-period metric evidence on the reporting window so journal placement matches", () => {
     const insights = insightsFromSnapshot(gscOnlyUnavailableGa4());
     const gsc = insights.find((row) => row.title.includes("Search Console"));
     assert.equal(gsc?.evidenceRefs[0]?.site, "https://example.com/");
-    assert.equal(gsc?.evidenceRefs[0]?.periodStart, "2026-09-28");
+    assert.equal(gsc?.evidenceRefs[0]?.periodStart, "2026-09-01");
     assert.equal(gsc?.evidenceRefs[0]?.periodEnd, "2026-09-28");
   });
 
@@ -117,7 +117,25 @@ describe("AAX-82 snapshot-to-insight adapter", () => {
     const ga4Obs = insights.find((row) => row.title.includes("Observed GA4"));
     assert.ok(ga4Obs);
     assert.equal(ga4Obs.evidenceRefs[0]?.value, 44);
-    assert.equal(ga4Obs.evidenceRefs[0]?.periodStart, "2026-09-12");
+    assert.equal(ga4Obs.evidenceRefs[0]?.periodStart, "2026-09-01");
+    assert.equal(ga4Obs.evidenceRefs[0]?.periodEnd, "2026-09-28");
     assert.equal(insights.some((row) => row.title === "GA4 section unavailable"), false);
+  });
+
+  it("emits a GA4 unavailable warning when acquisition is unavailable and another GA4 section is empty no_data", () => {
+    const insights = insightsFromSnapshot({
+      projectId: "proj_a",
+      site: "https://example.com/",
+      period: { start: "2026-09-01", end: "2026-09-28" },
+      sections: [
+        { key: "acquisition", status: "unavailable", metrics: [] },
+        { key: "engagement", status: "no_data", metrics: [] },
+      ],
+    });
+    assert.equal(insights.some((row) => row.title === "GA4 section unavailable"), true);
+    assert.equal(insights.some((row) => row.title.includes("Observed GA4")), false);
+    const warning = insights.find((row) => row.title === "GA4 section unavailable");
+    assert.equal(warning?.evidenceRefs[0]?.provider, "ga4");
+    assert.equal(warning?.evidenceRefs[0]?.kind, "snapshot");
   });
 });
