@@ -183,4 +183,51 @@ describe("AAX-82 evidence-linked insights", () => {
       /human-authored/,
     );
   });
+
+  it("revokes client approval when an approved manual note is edited", () => {
+    const store = new InsightStore();
+    const original = store.put(
+      approveForClient(
+        createInsight(
+          baseDraft({
+            generatedBy: "human:client-admin",
+            title: "Approved note",
+            body: "Reviewed body.",
+            visibility: "client",
+          }),
+        ),
+        "human:editor",
+      ),
+    );
+    assert.equal(store.listForProject("proj_a", "client").length, 1);
+    const edited = store.put(
+      editManualInsight(original, { body: "Unreviewed replacement." }, "human:client-admin"),
+    );
+    assert.equal(edited.reviewState, "pending_review");
+    assert.equal(edited.reviewedBy, null);
+    assert.equal(edited.visibility, "internal");
+    assert.equal(store.listForProject("proj_a", "client").length, 0);
+    assert.equal(store.listForProject("proj_a", "editor")[0].body, "Unreviewed replacement.");
+  });
+
+  it("does not expose pre-approval draft text in the client listing", () => {
+    const store = new InsightStore();
+    const draft = store.put(
+      createInsight(
+        baseDraft({
+          generatedBy: "human:client-admin",
+          title: "Draft title",
+          body: "Unapproved draft body.",
+        }),
+      ),
+    );
+    const edited = store.put(editManualInsight(draft, { title: "Final title", body: "Final body." }, "human:client-admin"));
+    store.put(approveForClient(edited, "human:editor"));
+    const visible = store.listForProject("proj_a", "client");
+    assert.equal(visible.length, 1);
+    assert.equal(visible[0].title, "Final title");
+    assert.equal(visible[0].body, "Final body.");
+    assert.equal(visible[0].editHistory.length, 0);
+    assert.equal(store.listForProject("proj_a", "editor")[0].editHistory[0].previousBody, "Unapproved draft body.");
+  });
 });

@@ -165,10 +165,8 @@ export function redactInsightForRole(insight: InsightRecord, role: InsightRole):
     generatedBy: insight.generatedBy.startsWith("human:") ? "human" : "assistant",
     reviewedBy: insight.reviewedBy ? "reviewer" : null,
     linkedTaskId: null,
-    editHistory: insight.editHistory.map((entry) => ({
-      ...entry,
-      editedBy: "editor",
-    })),
+    // Draft/previous text is operator audit only. Clients see the approved body.
+    editHistory: Object.freeze([]),
   };
 }
 
@@ -238,11 +236,15 @@ export function editManualInsight(
     previousTitle: insight.title,
     previousBody: insight.body,
   };
+  const needsReReview = insight.reviewState === "approved" || insight.visibility === "client";
   return {
     ...insight,
     title,
     body,
     editHistory: Object.freeze([...insight.editHistory, entry]),
+    reviewState: needsReReview ? "pending_review" : insight.reviewState,
+    reviewedBy: needsReReview ? null : insight.reviewedBy,
+    visibility: needsReReview && insight.visibility === "client" ? "internal" : insight.visibility,
   };
 }
 
