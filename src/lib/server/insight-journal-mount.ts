@@ -12,6 +12,7 @@ import {
   type InsightJournalView,
 } from "./insight-journal-view.ts";
 import {
+  evidenceFromSnapshot,
   insightsFromSnapshot,
   type ReportingSnapshotLike,
 } from "./snapshot-insight-adapter.ts";
@@ -73,20 +74,13 @@ function snapshotHasAdverseGa4Section(snapshot: ReportingSnapshotLike): boolean 
   });
 }
 
-function snapshotHasUsableGa4Metric(snapshot: ReportingSnapshotLike): boolean {
-  return snapshot.sections.some((section) => {
-    const status = section.status.trim().toLowerCase();
-    if (ADVERSE.has(status)) return false;
-    return section.metrics.some(
-      (metric) =>
-        metric.provider.trim().toLowerCase() === "ga4" && metricHasUsableValue(metric.value),
-    );
-  });
+function snapshotHasEligibleGa4JournalMetric(snapshot: ReportingSnapshotLike): boolean {
+  return evidenceFromSnapshot(snapshot).some((ref) => ref.provider === "ga4" && ref.kind === "metric");
 }
 
 function ga4JournalWarnings(snapshot: ReportingSnapshotLike): string[] {
   if (!snapshotHasAdverseGa4Section(snapshot)) return [];
-  if (snapshotHasUsableGa4Metric(snapshot)) {
+  if (snapshotHasEligibleGa4JournalMetric(snapshot)) {
     const names = snapshot.sections
       .filter((section) => ADVERSE.has(section.status.trim().toLowerCase()) && isGa4Section(section))
       .map((section) => section.key.trim() || "GA4")

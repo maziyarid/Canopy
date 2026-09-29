@@ -218,4 +218,64 @@ describe("AAX-82 insight journal mount", () => {
     assert.equal(model.warnings.some((warning) => /GA4 is unavailable for this period/i.test(warning)), false);
     assert.ok(model.warnings.some((warning) => /acquisition is unavailable/i.test(warning)));
   });
+
+  it("does not promise other GA4 metrics when the only valued GA4 metric is ineligible for the journal", () => {
+    const estimated: ReportingSnapshotLike = {
+      ...snapshot,
+      sections: [
+        snapshot.sections[0],
+        {
+          key: "acquisition",
+          status: "unavailable",
+          metrics: [{ name: "sessions", value: null, provenance: "first_party", provider: "ga4", dataDate: null }],
+        },
+        {
+          key: "engagement",
+          status: "ok",
+          metrics: [
+            {
+              name: "engagedSessions",
+              value: 48,
+              provenance: "third_party_estimate",
+              provider: "ga4",
+              dataDate: "2026-09-27",
+            },
+          ],
+        },
+      ],
+    };
+    const outsidePeriod: ReportingSnapshotLike = {
+      ...estimated,
+      sections: [
+        estimated.sections[0],
+        estimated.sections[1],
+        {
+          key: "engagement",
+          status: "ok",
+          metrics: [
+            {
+              name: "engagedSessions",
+              value: 48,
+              provenance: "first_party",
+              provider: "ga4",
+              dataDate: "2026-08-15",
+            },
+          ],
+        },
+      ],
+    };
+
+    for (const variant of [estimated, outsidePeriod]) {
+      const model = mountInsightJournal({
+        snapshot: variant,
+        role: "editor",
+        now: new Date("2026-09-28T12:00:00Z"),
+      });
+      const cards = model.journal.days.flatMap((day) => day.cards);
+      assert.equal(cards.some((card) => /engagedSessions=48/i.test(`${card.title} ${card.body}`)), false);
+      assert.equal(model.beside.some((row) => row.metricName === "engagedSessions"), false);
+      assert.equal(model.warnings.some((warning) => /other GA4 metrics for this period/i.test(warning)), false);
+      assert.match(model.warnings[0] ?? "", /GA4 is unavailable for this period/);
+    }
+  });
 });
