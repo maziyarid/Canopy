@@ -6,6 +6,8 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
+from sqlite_migrations import ensure_analytics_schema
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -28,27 +30,11 @@ def connect(db_path):
 
 
 def ensure_schema(db_path):
-    with connect(db_path) as connection:
-        connection.executescript("""
-        create table if not exists investigation(
-          id text primary key,
-          fingerprint text not null unique,
-          site text not null,
-          signal_type text not null,
-          severity text not null,
-          status text not null default 'open',
-          source text not null default 'gsc',
-          first_seen text not null,
-          last_seen text not null,
-          evidence text not null default '{}'
-        );
-        create index if not exists investigation_site_status
-          on investigation(site,status,last_seen);
-        """)
+    ensure_analytics_schema(db_path)
 
 
-def fingerprint(site, signal_type):
-    raw = f"gsc:{site}:{signal_type}".encode()
+def fingerprint(project_id, site, signal_type):
+    raw = f"gsc:{project_id}:{site}:{signal_type}".encode()
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -62,21 +48,21 @@ def _totals(rows):
     return clicks, impressions
 
 
-def site_signals(db_path, site):
+def site_signals(db_path, project_id, site):
     thresholds = thresholds_from_env()
     with connect(db_path) as connection:
         daily = connection.execute(
             """select data_date,metrics,freshness
                from provider_metric
-               where provider='gsc' and site=? and dataset='site_daily'
+               where project_id=? and provider='gsc' and site=? and dataset='site_daily'
                order by data_date desc limit 14""",
-            (site,),
+            (project_id,site),
         ).fetchall()
         sitemap = connection.execute(
             """select payload,freshness
                from provider_snapshot
-               where provider='gsc' and site=? and dataset='sitemaps'""",
-            (site,),
+               where project_id=? and provider='gsc' and site=? and dataset='sitemaps'""",
+            (project_id,site),
         ).fetchone()
 
     ordered = list(reversed(daily))
@@ -182,7 +168,7 @@ def site_signals(db_path, site):
     return signals
 
 
-def run_monitor(db_path):
+def run_monitor(db_path, project_id):
     ensure_schema(db_path)
     observed = now()
     with connect(db_path) as connection:
@@ -190,8 +176,9 @@ def run_monitor(db_path):
             row["site"]
             for row in connection.execute(
                 """select distinct site from provider_metric
-                   where provider='gsc' and dataset='site_daily'
-                   order by site"""
+                   where project_id=? and provider='gsc' and dataset='site_daily'
+                   order by site""",
+                (project_id,),
             )
         ]
 
@@ -202,21 +189,22 @@ def run_monitor(db_path):
     resolved_items = []
 
     for site in sites:
-        signals = site_signals(db_path, site)
+        signals = site_signals(db_path, project_id, site)
         current = set()
 
         with connect(db_path) as connection:
             for signal_type, severity, evidence in signals:
-                fp = fingerprint(site, signal_type)
+                fp = fingerprint(project_id, site, signal_type)
                 current.add(fp)
                 payload = json.dumps(evidence, separators=(",", ":"), sort_keys=True)
                 inserted = connection.execute(
                     """insert or ignore into investigation
-                       (id,fingerprint,site,signal_type,severity,status,source,
+                       (id,project_id,fingerprint,site,signal_type,severity,status,source,
                         first_seen,last_seen,evidence)
-                       values(?,?,?,?,?,'open','gsc',?,?,?)""",
+                       values(?,?,?,?,?,?,'open','gsc',?,?,?)""",
                     (
                         str(uuid.uuid4()),
+                        project_id,
                         fp,
                         site,
                         signal_type,
@@ -232,13 +220,14 @@ def run_monitor(db_path):
                     connection.execute(
                         """update investigation
                            set severity=?,status='open',last_seen=?,evidence=?
-                           where fingerprint=?""",
-                        (severity, observed, payload, fp),
+                           where project_id=? and fingerprint=?""",
+                        (severity, observed, payload, project_id, fp),
                     )
                     updated += 1
 
                 active.append(
                     {
+                        "projectId": project_id,
                         "site": site,
                         "signalType": signal_type,
                         "severity": severity,
@@ -248,19 +237,20 @@ def run_monitor(db_path):
 
             open_rows = connection.execute(
                 """select fingerprint,signal_type,severity,evidence from investigation
-                   where source='gsc' and site=? and status='open'""",
-                (site,),
+                   where project_id=? and source='gsc' and site=? and status='open'""",
+                (project_id,site),
             ).fetchall()
             for row in open_rows:
                 if row["fingerprint"] not in current:
                     connection.execute(
                         """update investigation
                            set status='resolved',last_seen=?
-                           where fingerprint=?""",
-                        (observed, row["fingerprint"]),
+                           where project_id=? and fingerprint=?""",
+                        (observed, project_id, row["fingerprint"]),
                     )
                     resolved += 1
                     resolved_items.append({
+                        "projectId": project_id,
                         "site": site,
                         "signalType": row["signal_type"],
                         "severity": row["severity"],
@@ -279,13 +269,13 @@ def run_monitor(db_path):
     }
 
 
-def list_investigations(db_path, site="", status="", limit=100):
+def list_investigations(db_path, project_id, site="", status="", limit=100):
     ensure_schema(db_path)
     query = (
         "select id,fingerprint,site,signal_type,severity,status,source,"
-        "first_seen,last_seen,evidence from investigation where 1=1"
+        "first_seen,last_seen,evidence from investigation where project_id=?"
     )
-    params = []
+    params = [project_id]
     if site:
         query += " and site=?"
         params.append(site)
