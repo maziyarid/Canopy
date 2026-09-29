@@ -190,4 +190,32 @@ describe("AAX-82 insight journal mount", () => {
     assert.ok(titles.some((title) => /GA4 section unavailable/i.test(title)));
     assert.match(model.warnings[0] ?? "", /GA4 is unavailable/);
   });
+
+  it("does not claim period-wide GA4 unavailability when another GA4 metric is usable", () => {
+    const mixed: ReportingSnapshotLike = {
+      ...snapshot,
+      sections: [
+        snapshot.sections[0],
+        {
+          key: "acquisition",
+          status: "unavailable",
+          metrics: [{ name: "sessions", value: null, provenance: "first_party", provider: "ga4", dataDate: null }],
+        },
+        {
+          key: "engagement",
+          status: "ok",
+          metrics: [{ name: "engagedSessions", value: 48, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" }],
+        },
+      ],
+    };
+    const model = mountInsightJournal({
+      snapshot: mixed,
+      role: "editor",
+      now: new Date("2026-09-28T12:00:00Z"),
+    });
+    const cards = model.journal.days.flatMap((day) => day.cards);
+    assert.ok(cards.some((card) => /engagedSessions=48/i.test(`${card.title} ${card.body}`)));
+    assert.equal(model.warnings.some((warning) => /GA4 is unavailable for this period/i.test(warning)), false);
+    assert.ok(model.warnings.some((warning) => /acquisition is unavailable/i.test(warning)));
+  });
 });

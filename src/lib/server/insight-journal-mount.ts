@@ -59,14 +59,43 @@ function metricHasUsableValue(value: unknown): boolean {
   return value !== null && value !== undefined && !(typeof value === "number" && Number.isNaN(value));
 }
 
+function isGa4Section(section: ReportingSnapshotLike["sections"][number]): boolean {
+  const key = section.key.trim().toLowerCase();
+  if (key === "acquisition" || key === "engagement" || key === "ga4") return true;
+  return section.metrics.some((metric) => metric.provider.trim().toLowerCase() === "ga4");
+}
+
 function snapshotHasAdverseGa4Section(snapshot: ReportingSnapshotLike): boolean {
   return snapshot.sections.some((section) => {
     const status = section.status.trim().toLowerCase();
     if (!ADVERSE.has(status)) return false;
-    const key = section.key.trim().toLowerCase();
-    if (key === "acquisition") return true;
-    return section.metrics.some((metric) => metric.provider.trim().toLowerCase() === "ga4");
+    return isGa4Section(section);
   });
+}
+
+function snapshotHasUsableGa4Metric(snapshot: ReportingSnapshotLike): boolean {
+  return snapshot.sections.some((section) => {
+    const status = section.status.trim().toLowerCase();
+    if (ADVERSE.has(status)) return false;
+    return section.metrics.some(
+      (metric) =>
+        metric.provider.trim().toLowerCase() === "ga4" && metricHasUsableValue(metric.value),
+    );
+  });
+}
+
+function ga4JournalWarnings(snapshot: ReportingSnapshotLike): string[] {
+  if (!snapshotHasAdverseGa4Section(snapshot)) return [];
+  if (snapshotHasUsableGa4Metric(snapshot)) {
+    const names = snapshot.sections
+      .filter((section) => ADVERSE.has(section.status.trim().toLowerCase()) && isGa4Section(section))
+      .map((section) => section.key.trim() || "GA4")
+      .filter((name, index, all) => all.indexOf(name) === index);
+    return names.map(
+      (name) => `${name} is unavailable; other GA4 metrics for this period are shown independently.`,
+    );
+  }
+  return ["GA4 is unavailable for this period; Search metrics are shown independently."];
 }
 
 export function mountInsightJournal(options: {
@@ -87,9 +116,7 @@ export function mountInsightJournal(options: {
   const beside: InsightJournalMountModel["beside"] = [];
   const warnings: string[] = [];
   if (options.snapshot) {
-    if (snapshotHasAdverseGa4Section(options.snapshot)) {
-      warnings.push("GA4 is unavailable for this period; Search metrics are shown independently.");
-    }
+    warnings.push(...ga4JournalWarnings(options.snapshot));
     const seen = new Set<string>();
     for (const section of options.snapshot.sections) {
       for (const metric of section.metrics) {
