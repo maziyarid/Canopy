@@ -5,6 +5,7 @@ import {
   InsightValidationError,
   approveForClient,
   createInsight,
+  editManualInsight,
   type EvidenceRef,
   type InsightDraft,
 } from "./evidence-insights.ts";
@@ -153,5 +154,33 @@ describe("AAX-82 evidence-linked insights", () => {
       ["Newer note"],
     );
     assert.equal(journal[1].insights[0].title, "Older note");
+  });
+
+  it("preserves audit metadata when editing a manual note", () => {
+    const store = new InsightStore();
+    const original = store.put(
+      createInsight(
+        baseDraft({
+          generatedBy: "human:client-admin",
+          title: "Manual note",
+          body: "First draft body.",
+        }),
+      ),
+    );
+    assert.equal(original.editHistory.length, 0);
+    const edited = store.put(
+      editManualInsight(original, { body: "Revised body." }, "human:client-admin", new Date("2026-09-29T01:00:00Z")),
+    );
+    assert.equal(edited.id, original.id);
+    assert.equal(edited.generatedBy, "human:client-admin");
+    assert.equal(edited.generatedAt, original.generatedAt);
+    assert.equal(edited.body, "Revised body.");
+    assert.equal(edited.editHistory.length, 1);
+    assert.equal(edited.editHistory[0].previousBody, "First draft body.");
+    assert.equal(edited.editHistory[0].editedBy, "human:client-admin");
+    assert.throws(
+      () => editManualInsight(createInsight(baseDraft()), { body: "nope" }, "human:editor"),
+      /human-authored/,
+    );
   });
 });
