@@ -13,7 +13,6 @@ import {
 } from "./insight-journal-view.ts";
 import {
   insightsFromSnapshot,
-  providerAvailability,
   type ReportingSnapshotLike,
 } from "./snapshot-insight-adapter.ts";
 
@@ -22,6 +21,16 @@ export type InsightJournalMountModel = {
   beside: Array<{ metricName: string; site: string; periodStart: string; periodEnd: string; cards: InsightCardView[] }>;
   warnings: string[];
 };
+
+const ADVERSE = new Set(["unavailable", "unknown", "degraded"]);
+
+function scopedInsights(
+  insights: readonly InsightRecord[],
+  projectId: string | undefined,
+): InsightRecord[] {
+  if (!projectId) return [...insights];
+  return insights.filter((insight) => insight.projectId === projectId);
+}
 
 function visibleInsights(insights: readonly InsightRecord[], role: InsightRole): InsightRecord[] {
   return insights
@@ -46,30 +55,46 @@ function journalDays(insights: readonly InsightRecord[]): InsightJournalView {
   return buildInsightJournalView(days);
 }
 
+function metricHasUsableValue(value: unknown): boolean {
+  return value !== null && value !== undefined && !(typeof value === "number" && Number.isNaN(value));
+}
+
+function snapshotHasAdverseGa4Section(snapshot: ReportingSnapshotLike): boolean {
+  return snapshot.sections.some((section) => {
+    const status = section.status.trim().toLowerCase();
+    if (!ADVERSE.has(status)) return false;
+    const key = section.key.trim().toLowerCase();
+    if (key === "acquisition") return true;
+    return section.metrics.some((metric) => metric.provider.trim().toLowerCase() === "ga4");
+  });
+}
+
 export function mountInsightJournal(options: {
   insights?: readonly InsightRecord[];
   snapshot?: ReportingSnapshotLike;
+  projectId?: string;
   role: InsightRole;
   now?: Date;
 }): InsightJournalMountModel {
   const generated = options.snapshot
     ? insightsFromSnapshot(options.snapshot, "assistant:snapshot", options.now ?? new Date())
     : [];
-  const combined = [...(options.insights ?? []), ...generated];
+  const projectId = options.snapshot?.projectId ?? options.projectId;
+  const combined = scopedInsights([...(options.insights ?? []), ...generated], projectId);
   const visible = visibleInsights(combined, options.role);
   const journal = journalDays(visible);
 
   const beside: InsightJournalMountModel["beside"] = [];
   const warnings: string[] = [];
   if (options.snapshot) {
-    const availability = providerAvailability(options.snapshot);
-    if (availability.ga4 === "unavailable" || availability.ga4 === "degraded" || availability.ga4 === "unknown") {
+    if (snapshotHasAdverseGa4Section(options.snapshot)) {
       warnings.push("GA4 is unavailable for this period; Search metrics are shown independently.");
     }
     const seen = new Set<string>();
     for (const section of options.snapshot.sections) {
       for (const metric of section.metrics) {
         if (!metric.name.trim()) continue;
+        if (!metricHasUsableValue(metric.value)) continue;
         const key = `${metric.name}|${options.snapshot.site}|${options.snapshot.period.start}|${options.snapshot.period.end}`;
         if (seen.has(key)) continue;
         seen.add(key);

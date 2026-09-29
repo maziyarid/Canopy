@@ -117,4 +117,77 @@ describe("AAX-82 insight journal mount", () => {
     });
     assert.equal(model.beside.length, 0);
   });
+
+  it("drops approved notes from a different project before journal or beside placement", () => {
+    const foreign = approveForClient(
+      createInsight(
+        draft({
+          projectId: "proj_b",
+          title: "Foreign project clicks",
+          body: "Must not appear on project A journal.",
+        }),
+        new Date("2026-09-20T10:00:00Z"),
+      ),
+      "human:editor",
+    );
+    const local = approveForClient(
+      createInsight(draft({ title: "Local clicks" }), new Date("2026-09-20T11:00:00Z")),
+      "human:editor",
+    );
+    const model = mountInsightJournal({
+      insights: [foreign, local],
+      snapshot,
+      role: "client",
+    });
+    const titles = model.journal.days.flatMap((day) => day.cards.map((card) => card.title));
+    assert.deepEqual(titles, ["Local clicks"]);
+    assert.equal(model.beside.every((row) => row.cards.every((card) => card.title !== "Foreign project clicks")), true);
+  });
+
+  it("does not place a note beside a named metric with a null value", () => {
+    const approved = approveForClient(
+      createInsight(
+        draft({
+          title: "Sessions note",
+          evidenceRefs: [{ ...clicks, metricName: "sessions", value: 40 }],
+        }),
+      ),
+      "human:editor",
+    );
+    const model = mountInsightJournal({
+      insights: [approved],
+      snapshot,
+      role: "client",
+    });
+    assert.equal(model.beside.some((row) => row.metricName === "sessions"), false);
+    const titles = model.journal.days.flatMap((day) => day.cards.map((card) => card.title));
+    assert.ok(titles.includes("Sessions note"));
+  });
+
+  it("keeps the GA4 warning when one GA4 section is unavailable even if another is ok with a null metric", () => {
+    const mixed: ReportingSnapshotLike = {
+      ...snapshot,
+      sections: [
+        snapshot.sections[0],
+        {
+          key: "acquisition",
+          status: "unavailable",
+          metrics: [{ name: "sessions", value: null, provenance: "first_party", provider: "ga4", dataDate: null }],
+        },
+        {
+          key: "engagement",
+          status: "ok",
+          metrics: [{ name: "engagedSessions", value: null, provenance: "first_party", provider: "ga4", dataDate: null }],
+        },
+      ],
+    };
+    const model = mountInsightJournal({
+      snapshot: mixed,
+      role: "editor",
+      now: new Date("2026-09-28T12:00:00Z"),
+    });
+    const titles = model.journal.days.flatMap((day) => day.cards.map((card) => card.title));
+    assert.ok(titles.some((title) => /GA4 section unavailable/i.test(title)));
+    assert.match(model.warnings[0] ?? "", /GA4 is unavailable/);
+  });
 });
