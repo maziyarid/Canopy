@@ -28,10 +28,13 @@ function norm(value: string | undefined | null): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function sameOptional(left: string | undefined | null, right: string | undefined | null): boolean {
+/** Fail closed: both sides must agree when either side carries a dimension. */
+function sameDimension(left: string | undefined | null, right: string | undefined | null): boolean {
+  const evidence = norm(left);
   const wanted = norm(right);
-  if (!wanted) return true;
-  return norm(left) === wanted;
+  if (!evidence && !wanted) return true;
+  if (!evidence || !wanted) return false;
+  return evidence === wanted;
 }
 
 export function metricNamesForInsight(insight: InsightRecord): string[] {
@@ -52,9 +55,9 @@ export function insightsBesideMetric(
     insight.evidenceRefs.some(
       (ref) =>
         norm(ref.metricName) === wantedName &&
-        sameOptional(ref.site, placement.site) &&
-        sameOptional(ref.periodStart, placement.periodStart) &&
-        sameOptional(ref.periodEnd, placement.periodEnd),
+        sameDimension(ref.site, placement.site) &&
+        sameDimension(ref.periodStart, placement.periodStart) &&
+        sameDimension(ref.periodEnd, placement.periodEnd),
     ),
   );
 }

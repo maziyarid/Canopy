@@ -20,6 +20,13 @@ const clicks: EvidenceRef = {
   value: 120,
 };
 
+const thisPlacement = {
+  metricName: "clicks",
+  site: "https://example.com/",
+  periodStart: "2026-09-01",
+  periodEnd: "2026-09-28",
+} as const;
+
 function draft(over: Partial<InsightDraft> = {}): InsightDraft {
   return {
     projectId: "proj_a",
@@ -57,7 +64,7 @@ describe("AAX-82 insight journal view-model", () => {
     );
 
     const listed = store.listForProject("proj_a", "client");
-    const besideClicks = insightsBesideMetric(listed, "clicks");
+    const besideClicks = insightsBesideMetric(listed, thisPlacement);
     assert.equal(besideClicks.length, 1);
     assert.equal(besideClicks[0].id, first.id);
 
@@ -76,7 +83,7 @@ describe("AAX-82 insight journal view-model", () => {
     const store = new InsightStore();
     store.put(approveForClient(createInsight(draft({ projectId: "proj_b" })), "human:editor"));
     const listed = store.listForProject("proj_a", "owner");
-    assert.equal(insightsBesideMetric(listed, "clicks").length, 0);
+    assert.equal(insightsBesideMetric(listed, thisPlacement).length, 0);
     assert.equal(buildInsightJournalView(store.journalForProject("proj_a", "owner")).days.length, 0);
   });
 
@@ -109,14 +116,20 @@ describe("AAX-82 insight journal view-model", () => {
     );
 
     const listed = store.listForProject("proj_a", "client");
-    const beside = insightsBesideMetric(listed, {
-      metricName: "clicks",
-      site: "https://example.com/",
-      periodStart: "2026-09-01",
-      periodEnd: "2026-09-28",
-    });
+    const beside = insightsBesideMetric(listed, thisPlacement);
     assert.equal(beside.length, 1);
     assert.equal(beside[0].id, matching.id);
     assert.equal(beside[0].title, "This site period");
+  });
+
+  it("does not attach a site-scoped note when the measurement omits site or period", () => {
+    const store = new InsightStore();
+    store.put(approveForClient(createInsight(draft({ title: "Scoped clicks" })), "human:editor"));
+    const listed = store.listForProject("proj_a", "client");
+    assert.equal(insightsBesideMetric(listed, "clicks").length, 0);
+    assert.equal(
+      insightsBesideMetric(listed, { metricName: "clicks", site: "https://example.com/" }).length,
+      0,
+    );
   });
 });
