@@ -61,6 +61,23 @@ function sectionStatus(raw: string | undefined): SnapshotSectionStatus {
   }
 }
 
+function dateInPeriod(date: string, start: string, end: string): boolean {
+  return date >= start && date <= end;
+}
+
+function metricPeriod(
+  metric: SnapshotMetricLike,
+  snapshot: ReportingSnapshotLike,
+): { start: string; end: string } | null {
+  if (metric.dataDate) {
+    if (!dateInPeriod(metric.dataDate, snapshot.period.start, snapshot.period.end)) {
+      return null;
+    }
+    return { start: metric.dataDate, end: metric.dataDate };
+  }
+  return { start: snapshot.period.start, end: snapshot.period.end };
+}
+
 function usableFirstPartyMetric(metric: SnapshotMetricLike, status: SnapshotSectionStatus): boolean {
   if (status === "unavailable" || status === "unknown" || status === "degraded") return false;
   if (metric.value == null) return false;
@@ -74,20 +91,36 @@ export function evidenceFromSnapshot(snapshot: ReportingSnapshotLike): EvidenceR
     const status = sectionStatus(section.status);
     for (const metric of section.metrics) {
       if (!usableFirstPartyMetric(metric, status)) continue;
+      const period = metricPeriod(metric, snapshot);
+      if (!period) continue;
       refs.push({
         provider: asProvider(metric.provider),
         provenance: "first_party",
         kind: "metric",
         metricName: metric.name,
         site: snapshot.site,
-        periodStart: snapshot.period.start,
-        periodEnd: snapshot.period.end,
+        periodStart: period.start,
+        periodEnd: period.end,
         snapshotId: `${snapshot.projectId}:${snapshot.period.start}:${snapshot.period.end}`,
         value: metric.value,
       });
     }
   }
   return refs;
+}
+
+const ADVERSE = new Set<SnapshotSectionStatus>(["unavailable", "unknown", "degraded"]);
+const USABLE = new Set<SnapshotSectionStatus>(["ok", "partial", "stale", "no_data"]);
+
+function mergeProviderStatus(
+  current: SnapshotSectionStatus | undefined,
+  next: SnapshotSectionStatus,
+): SnapshotSectionStatus {
+  if (!current) return next;
+  if (USABLE.has(current) && ADVERSE.has(next)) return current;
+  if (ADVERSE.has(current) && USABLE.has(next)) return next;
+  if (current === "ok") return current;
+  return next;
 }
 
 export function providerAvailability(snapshot: ReportingSnapshotLike): Record<string, SnapshotSectionStatus> {
@@ -97,18 +130,37 @@ export function providerAvailability(snapshot: ReportingSnapshotLike): Record<st
     for (const metric of section.metrics) {
       const provider = metric.provider.trim().toLowerCase();
       if (!provider) continue;
-      const current = out[provider];
-      if (!current || current === "ok") out[provider] = status;
+      out[provider] = mergeProviderStatus(out[provider], status);
     }
     const key = section.key.trim().toLowerCase();
     if (key === "acquisition") {
-      out.ga4 = out.ga4 ?? status;
+      out.ga4 = mergeProviderStatus(out.ga4, status);
     }
     if (key === "search") {
-      out.gsc = out.gsc ?? status;
+      out.gsc = mergeProviderStatus(out.gsc, status);
     }
   }
   return out;
+}
+
+function hasGa4Section(snapshot: ReportingSnapshotLike): boolean {
+  return snapshot.sections.some((section) => {
+    const key = section.key.trim().toLowerCase();
+    if (key === "acquisition") return true;
+    return section.metrics.some((metric) => metric.provider.trim().toLowerCase() === "ga4");
+  });
+}
+
+function ga4SnapshotEvidence(snapshot: ReportingSnapshotLike): EvidenceRef {
+  return {
+    provider: "ga4",
+    provenance: "first_party",
+    kind: "snapshot",
+    snapshotId: `${snapshot.projectId}:ga4:${snapshot.period.start}:${snapshot.period.end}`,
+    site: snapshot.site,
+    periodStart: snapshot.period.start,
+    periodEnd: snapshot.period.end,
+  };
 }
 
 export function draftsFromSnapshot(
@@ -139,46 +191,34 @@ export function draftsFromSnapshot(
     });
   }
 
-  const ga4Status = availability.ga4 ?? "unavailable";
-  if (ga4Status === "unavailable" || ga4Status === "unknown" || ga4Status === "degraded") {
+  const ga4Refs = refs.filter((ref) => ref.provider === "ga4");
+  if (ga4Refs.length) {
     drafts.push({
       projectId: snapshot.projectId,
       periodStart: snapshot.period.start,
       periodEnd: snapshot.period.end,
       type: "observation",
-      title: "GA4 section unavailable",
-      body: "GA4 is marked unavailable for this period. Search metrics remain usable without blending an estimate.",
-      evidenceRefs: gscRefs.length
-        ? gscRefs.slice(0, 1)
-        : [
-            {
-              provider: "gsc",
-              provenance: "first_party",
-              kind: "snapshot",
-              snapshotId: `${snapshot.projectId}:${snapshot.period.start}:${snapshot.period.end}`,
-              site: snapshot.site,
-              periodStart: snapshot.period.start,
-              periodEnd: snapshot.period.end,
-            },
-          ],
+      title: "Observed GA4 first-party metrics",
+      body: `Observed first-party GA4 metrics for ${snapshot.site}: ${ga4Refs
+        .map((ref) => `${ref.metricName}=${ref.value}`)
+        .join(", ")}.`,
+      evidenceRefs: ga4Refs,
       generatedBy,
-      limitation: "GA4 live path is not enabled; reports must degrade this section independently.",
+      limitation: "Causality is not proven; treat as observed GA4 facts only.",
     });
-  } else {
-    const ga4Refs = refs.filter((ref) => ref.provider === "ga4");
-    if (ga4Refs.length) {
+  } else if (hasGa4Section(snapshot)) {
+    const ga4Status = availability.ga4 ?? "unavailable";
+    if (ga4Status === "unavailable" || ga4Status === "unknown" || ga4Status === "degraded") {
       drafts.push({
         projectId: snapshot.projectId,
         periodStart: snapshot.period.start,
         periodEnd: snapshot.period.end,
         type: "observation",
-        title: "Observed GA4 first-party metrics",
-        body: `Observed first-party GA4 metrics for ${snapshot.site}: ${ga4Refs
-          .map((ref) => `${ref.metricName}=${ref.value}`)
-          .join(", ")}.`,
-        evidenceRefs: ga4Refs,
+        title: "GA4 section unavailable",
+        body: "GA4 is marked unavailable for this period. Search metrics remain usable without blending an estimate.",
+        evidenceRefs: [ga4SnapshotEvidence(snapshot)],
         generatedBy,
-        limitation: "Causality is not proven; treat as observed GA4 facts only.",
+        limitation: "GA4 live path is not enabled; reports must degrade this section independently.",
       });
     }
   }
