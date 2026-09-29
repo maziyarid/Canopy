@@ -17,6 +17,23 @@ export type InsightJournalView = {
   days: Array<{ date: string; cards: InsightCardView[] }>;
 };
 
+export type MetricPlacement = {
+  metricName: string;
+  site?: string;
+  periodStart?: string;
+  periodEnd?: string;
+};
+
+function norm(value: string | undefined | null): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function sameOptional(left: string | undefined | null, right: string | undefined | null): boolean {
+  const wanted = norm(right);
+  if (!wanted) return true;
+  return norm(left) === wanted;
+}
+
 export function metricNamesForInsight(insight: InsightRecord): string[] {
   const names = insight.evidenceRefs
     .map((ref) => ref.metricName?.trim())
@@ -26,12 +43,19 @@ export function metricNamesForInsight(insight: InsightRecord): string[] {
 
 export function insightsBesideMetric(
   insights: readonly InsightRecord[],
-  metricName: string,
+  metric: string | MetricPlacement,
 ): InsightRecord[] {
-  const wanted = metricName.trim().toLowerCase();
-  if (!wanted) return [];
+  const placement: MetricPlacement = typeof metric === "string" ? { metricName: metric } : metric;
+  const wantedName = norm(placement.metricName);
+  if (!wantedName) return [];
   return insights.filter((insight) =>
-    insight.evidenceRefs.some((ref) => (ref.metricName ?? "").trim().toLowerCase() === wanted),
+    insight.evidenceRefs.some(
+      (ref) =>
+        norm(ref.metricName) === wantedName &&
+        sameOptional(ref.site, placement.site) &&
+        sameOptional(ref.periodStart, placement.periodStart) &&
+        sameOptional(ref.periodEnd, placement.periodEnd),
+    ),
   );
 }
 

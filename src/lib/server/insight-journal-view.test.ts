@@ -79,4 +79,44 @@ describe("AAX-82 insight journal view-model", () => {
     assert.equal(insightsBesideMetric(listed, "clicks").length, 0);
     assert.equal(buildInsightJournalView(store.journalForProject("proj_a", "owner")).days.length, 0);
   });
+
+  it("does not place a note beside a same-named metric from another site or period", () => {
+    const store = new InsightStore();
+    store.put(
+      approveForClient(
+        createInsight(
+          draft({
+            title: "Other site clicks",
+            evidenceRefs: [{ ...clicks, site: "https://other.example/" }],
+          }),
+        ),
+        "human:editor",
+      ),
+    );
+    store.put(
+      approveForClient(
+        createInsight(
+          draft({
+            title: "Other period clicks",
+            evidenceRefs: [{ ...clicks, periodStart: "2026-08-01", periodEnd: "2026-08-31" }],
+          }),
+        ),
+        "human:editor",
+      ),
+    );
+    const matching = store.put(
+      approveForClient(createInsight(draft({ title: "This site period" })), "human:editor"),
+    );
+
+    const listed = store.listForProject("proj_a", "client");
+    const beside = insightsBesideMetric(listed, {
+      metricName: "clicks",
+      site: "https://example.com/",
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-28",
+    });
+    assert.equal(beside.length, 1);
+    assert.equal(beside[0].id, matching.id);
+    assert.equal(beside[0].title, "This site period");
+  });
 });
