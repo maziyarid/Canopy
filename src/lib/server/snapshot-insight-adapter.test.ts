@@ -76,12 +76,35 @@ describe("AAX-82 snapshot-to-insight adapter", () => {
     assert.equal(drafts.some((draft) => draft.evidenceRefs.some((ref) => ref.provider === "mangools")), false);
   });
 
-  it("keeps in-period metric evidence on the reporting window so journal placement matches", () => {
+  it("keeps the reporting window for journal placement and preserves metric dataDate", () => {
     const insights = insightsFromSnapshot(gscOnlyUnavailableGa4());
     const gsc = insights.find((row) => row.title.includes("Search Console"));
     assert.equal(gsc?.evidenceRefs[0]?.site, "https://example.com/");
     assert.equal(gsc?.evidenceRefs[0]?.periodStart, "2026-09-01");
     assert.equal(gsc?.evidenceRefs[0]?.periodEnd, "2026-09-28");
+    assert.equal(gsc?.evidenceRefs[0]?.dataDate, "2026-09-28");
+  });
+
+  it("preserves distinct in-window measurement dates on same-named metrics", () => {
+    const insights = insightsFromSnapshot({
+      projectId: "proj_a",
+      site: "https://example.com/",
+      period: { start: "2026-09-01", end: "2026-09-28" },
+      sections: [
+        {
+          key: "search",
+          status: "ok",
+          metrics: [
+            { name: "clicks", value: 10, provenance: "first_party", provider: "gsc", dataDate: "2026-09-12" },
+            { name: "clicks", value: 20, provenance: "first_party", provider: "gsc", dataDate: "2026-09-27" },
+          ],
+        },
+      ],
+    });
+    const gsc = insights.find((row) => row.title.includes("Search Console"));
+    const dates = gsc?.evidenceRefs.map((ref) => ref.dataDate);
+    assert.deepEqual(dates, ["2026-09-12", "2026-09-27"]);
+    assert.equal(gsc?.evidenceRefs.every((ref) => ref.periodStart === "2026-09-01" && ref.periodEnd === "2026-09-28"), true);
   });
 
   it("drops metrics whose dataDate is outside the requested period", () => {
@@ -119,7 +142,21 @@ describe("AAX-82 snapshot-to-insight adapter", () => {
     assert.equal(ga4Obs.evidenceRefs[0]?.value, 44);
     assert.equal(ga4Obs.evidenceRefs[0]?.periodStart, "2026-09-01");
     assert.equal(ga4Obs.evidenceRefs[0]?.periodEnd, "2026-09-28");
+    assert.equal(ga4Obs.evidenceRefs[0]?.dataDate, "2026-09-12");
     assert.equal(insights.some((row) => row.title === "GA4 section unavailable"), false);
+  });
+
+  it("does not treat empty GA4 no_data as unavailable", () => {
+    const insights = insightsFromSnapshot({
+      projectId: "proj_a",
+      site: "https://example.com/",
+      period: { start: "2026-09-01", end: "2026-09-28" },
+      sections: [
+        { key: "acquisition", status: "no_data", metrics: [] },
+      ],
+    });
+    assert.equal(insights.some((row) => row.title === "GA4 section unavailable"), false);
+    assert.equal(insights.some((row) => /unavailable/i.test(row.body ?? "")), false);
   });
 
   it("emits a GA4 unavailable warning when acquisition is unavailable and another GA4 section is empty no_data", () => {

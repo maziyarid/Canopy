@@ -19,6 +19,8 @@ export interface EvidenceRef {
   periodEnd?: string;
   snapshotId?: string;
   value?: number | string | null;
+  /** Measurement date when distinct from the reporting window periodStart/periodEnd. */
+  dataDate?: string;
 }
 
 export interface InsightDraft {

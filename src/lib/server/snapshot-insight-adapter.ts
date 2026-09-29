@@ -68,12 +68,17 @@ function dateInPeriod(date: string, start: string, end: string): boolean {
 function metricPeriod(
   metric: SnapshotMetricLike,
   snapshot: ReportingSnapshotLike,
-): { start: string; end: string } | null {
+): { start: string; end: string; dataDate?: string } | null {
   if (metric.dataDate && !dateInPeriod(metric.dataDate, snapshot.period.start, snapshot.period.end)) {
     return null;
   }
-  // Keep the reporting window so journal placement can match full-period metrics.
-  return { start: snapshot.period.start, end: snapshot.period.end };
+  // Reporting window stays on periodStart/periodEnd for journal placement.
+  // dataDate keeps the measurement date when the snapshot supplies one.
+  return {
+    start: snapshot.period.start,
+    end: snapshot.period.end,
+    dataDate: metric.dataDate ?? undefined,
+  };
 }
 
 function usableFirstPartyMetric(metric: SnapshotMetricLike, status: SnapshotSectionStatus): boolean {
@@ -99,6 +104,7 @@ export function evidenceFromSnapshot(snapshot: ReportingSnapshotLike): EvidenceR
         site: snapshot.site,
         periodStart: period.start,
         periodEnd: period.end,
+        dataDate: period.dataDate,
         snapshotId: `${snapshot.projectId}:${snapshot.period.start}:${snapshot.period.end}`,
         value: metric.value,
       });
@@ -210,7 +216,6 @@ export function draftsFromSnapshot(
       ga4Status === "unavailable" ||
       ga4Status === "unknown" ||
       ga4Status === "degraded" ||
-      ga4Status === "no_data" ||
       snapshot.sections.some((section) => {
         const status = sectionStatus(section.status);
         if (!(status === "unavailable" || status === "unknown" || status === "degraded")) return false;
