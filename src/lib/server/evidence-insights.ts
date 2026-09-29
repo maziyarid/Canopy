@@ -57,6 +57,11 @@ export interface InsightRecord {
   linkedTaskId: string | null;
 }
 
+export interface InsightJournalDay {
+  date: string;
+  insights: InsightRecord[];
+}
+
 export class InsightValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -217,6 +222,20 @@ export class InsightStore {
     return [...this.byId.values()]
       .filter((row) => row.projectId === projectId)
       .map((row) => redactInsightForRole(row, role))
-      .filter((row): row is InsightRecord => row !== null);
+      .filter((row): row is InsightRecord => row !== null)
+      .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
+  }
+
+  journalForProject(projectId: string, role: InsightRole): InsightJournalDay[] {
+    const byDay = new Map<string, InsightRecord[]>();
+    for (const insight of this.listForProject(projectId, role)) {
+      const day = insight.generatedAt.slice(0, 10);
+      const bucket = byDay.get(day) ?? [];
+      bucket.push(insight);
+      byDay.set(day, bucket);
+    }
+    return [...byDay.entries()]
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, insights]) => ({ date, insights }));
   }
 }

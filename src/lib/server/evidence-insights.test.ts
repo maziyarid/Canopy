@@ -126,4 +126,32 @@ describe("AAX-82 evidence-linked insights", () => {
     assert.equal(insight.evidenceRefs[0].value, 120);
     assert.match(insight.limitation, /not proven/i);
   });
+
+  it("groups visible insights into a dated journal newest first", () => {
+    const store = new InsightStore();
+    const older = store.put(
+      createInsight(baseDraft({ title: "Older note" }), new Date("2026-09-20T10:00:00Z")),
+    );
+    store.put(approveForClient(older, "human:editor"));
+    const newer = store.put(
+      createInsight(baseDraft({ title: "Newer note" }), new Date("2026-09-28T08:00:00Z")),
+    );
+    store.put(approveForClient(newer, "human:editor"));
+    store.put(
+      createInsight(
+        baseDraft({ title: "Internal only", visibility: "internal" }),
+        new Date("2026-09-28T12:00:00Z"),
+      ),
+    );
+    const journal = store.journalForProject("proj_a", "client");
+    assert.deepEqual(
+      journal.map((day) => day.date),
+      ["2026-09-28", "2026-09-20"],
+    );
+    assert.deepEqual(
+      journal[0].insights.map((row) => row.title),
+      ["Newer note"],
+    );
+    assert.equal(journal[1].insights[0].title, "Older note");
+  });
 });
