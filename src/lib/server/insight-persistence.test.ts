@@ -40,3 +40,23 @@ test("notes persist independently, cannot cross projects, require review and kee
     assert.equal(snapshot.sections.find(row => row.key === "search")?.metrics[0].value, 12);
   } finally { await db.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test("client note page is not exhausted by hidden newer notes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "insight-page-"));
+  const db = new PGlite(directory);
+  const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((out, part, i) => out + (i ? `$${i}` : "") + part, ""), values)).rows) as SnapshotSql;
+  try {
+    await db.exec(`create table report_insights(id text primary key, project_id text not null, site text not null, period_start date not null, period_end date not null, generated_at timestamptz not null, revision integer not null default 0, payload text not null);`);
+    const evidence = [{ provider: "gsc", provenance: "first_party", kind: "metric", metricName: "clicks", site: "example.com", periodStart: "2026-09-01", periodEnd: "2026-09-28", value: 12 }];
+    const base = { projectId: "p1", periodStart: "2026-09-01", periodEnd: "2026-09-28", type: "observation", body: "body", evidenceRefs: evidence, provenance: "first_party", confidence: 0.8, limitation: "", recommendedAction: null, generatedBy: "test", reviewedBy: null, linkedTaskId: null, editHistory: [] };
+    for (let i = 0; i < 100; i += 1) {
+      const payload = { ...base, id: `hidden_${i}`, title: `Hidden ${i}`, generatedAt: new Date(Date.UTC(2026, 8, 29, 12, 0, i)).toISOString(), reviewState: "draft", visibility: "internal" };
+      await sql`insert into report_insights(id,project_id,site,period_start,period_end,generated_at,payload) values (${payload.id},${"p1"},${"example.com"},${"2026-09-01"},${"2026-09-28"},${payload.generatedAt},${JSON.stringify(payload)})`;
+    }
+    const visible = { ...base, id: "approved_old", title: "Approved older note", generatedAt: "2026-09-01T00:00:00.000Z", reviewState: "approved", visibility: "client", reviewedBy: "owner-1" };
+    await sql`insert into report_insights(id,project_id,site,period_start,period_end,generated_at,payload) values (${visible.id},${"p1"},${"example.com"},${"2026-09-01"},${"2026-09-28"},${visible.generatedAt},${JSON.stringify(visible)})`;
+    const notes = await readPeriodNotes(sql, { ...access, role: "client", reportSections: ["search"] }, snapshot.period);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].id, "approved_old");
+  } finally { await db.close(); await rm(directory, { recursive: true, force: true }); }
+});

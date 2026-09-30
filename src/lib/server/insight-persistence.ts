@@ -34,25 +34,40 @@ export async function persistSnapshotInsights(sql: SnapshotSql, access: Snapshot
 
 export async function readPeriodNotes(sql: SnapshotSql, access: SnapshotAccess, period: SnapshotPeriod): Promise<Array<InsightRecord & { revision: number }>> {
   if (access.filter.trim()) throw new SnapshotAccessError(403, "Forbidden");
-  const rows = await sql<{ payload: string; revision: number }>`select payload,revision from report_insights
-    where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
-    order by generated_at desc,id asc limit 100`;
   const out: Array<InsightRecord & { revision: number }> = [];
-  for (const row of rows) {
-    const stored = safeStoredNote(row.payload, access);
-    if (!stored) continue;
-    if (access.role === "client") {
-      const grants = new Set(parseReportSections(access.reportSections));
-      if (!stored.evidenceRefs.length || !stored.evidenceRefs.every(ref => ref.provider === "gsc" ? grants.has("search") : ref.provider === "ga4" ? grants.has(ref.metricName === "conversions" || ref.metricName === "keyEvents" ? "conversions" : "acquisition") : false)) continue;
+  const grants = new Set(parseReportSections(access.reportSections));
+  const pageSize = 100;
+  let cursorGeneratedAt: string | null = null;
+  let cursorId: string | null = null;
+  while (out.length < 100) {
+    const rows = cursorGeneratedAt == null || cursorId == null
+      ? await sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
+        where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
+        order by generated_at desc,id asc limit ${pageSize}`
+      : await sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
+        where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
+          and (generated_at < ${cursorGeneratedAt} or (generated_at = ${cursorGeneratedAt} and id > ${cursorId}))
+        order by generated_at desc,id asc limit ${pageSize}`;
+    if (!rows.length) break;
+    for (const row of rows) {
+      cursorGeneratedAt = row.generated_at;
+      cursorId = row.id;
+      const stored = safeStoredNote(row.payload, access);
+      if (!stored) continue;
+      if (access.role === "client") {
+        if (!stored.evidenceRefs.length || !stored.evidenceRefs.every(ref => ref.provider === "gsc" ? grants.has("search") : ref.provider === "ga4" ? grants.has(ref.metricName === "conversions" || ref.metricName === "keyEvents" ? "conversions" : "acquisition") : false)) continue;
+      }
+      const note = redactInsightForRole(stored, access.role);
+      if (!note) continue;
+      if (access.role === "client") {
+        note.title = redactForClient(note.title); note.body = redactForClient(note.body);
+        note.limitation = redactForClient(note.limitation);
+        note.recommendedAction = note.recommendedAction ? redactForClient(note.recommendedAction) : null;
+      }
+      out.push({ ...note, revision: row.revision });
+      if (out.length >= 100) break;
     }
-    const note = redactInsightForRole(stored, access.role);
-    if (!note) continue;
-    if (access.role === "client") {
-      note.title = redactForClient(note.title); note.body = redactForClient(note.body);
-      note.limitation = redactForClient(note.limitation);
-      note.recommendedAction = note.recommendedAction ? redactForClient(note.recommendedAction) : null;
-    }
-    out.push({ ...note, revision: row.revision });
+    if (rows.length < pageSize) break;
   }
   return out;
 }
