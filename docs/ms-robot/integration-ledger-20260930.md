@@ -103,3 +103,25 @@ Evidence screenshots contain synthetic data only, under
 `docs/ms-robot/staging-evidence-20260930/`. The production database and services
 were not promoted. This evidence closes the integration verification work,
 not all AAX-80/81/82 acceptance criteria or the AAX-128 launch gates.
+
+## Disposition of items the reviewer declined to judge
+
+Remaining provider adapters, queue stages, comparison/export/retention and brand
+acceptance are product launch blockers, as retained in the reporting-reader and
+review-checkpoint rulings. They are not silently waived by the integration plan.
+Canonical legacy ownership and provider-account authorisation remain unverified;
+the legacy-scope and checkpoint rulings prohibit guessed assignment or a
+connected-provider claim. Multi-process PGLite remains unsupported under the
+single-writer ruling; using it across writers risks inconsistent data.
+
+The reviewer did not independently run browser/auth/secrets/production checks.
+The implementer subsequently verified real local signup and owner/client
+desktop/mobile flows on the built staging app. Shared MaziyarID login and
+production promotion are still open under the auth and checkpoint rulings;
+conflating local staging with production acceptance could bypass identity gates.
+
+Ruling: accept the copied SQLite migration as staging preservation evidence,
+not production migration approval — four concurrent starts preserved counts,
+legacy scope and integrity, while the reviewer did not independently rerun it —
+if that proof is insufficient for the production environment, promotion must
+wait for its own backup, migration and rollback verification to avoid data loss.
