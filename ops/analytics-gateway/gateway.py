@@ -349,13 +349,17 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
             ).fetchone()
         return dict(row),True
 
-def metric_rows(project_id,provider,site,dataset,limit=500):
+def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
     sql='''select provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at
            from provider_metric where project_id=?'''
     params=[project_id]
     for column,value in [('provider',provider),('site',site),('dataset',dataset)]:
         if value:
             sql+=f' and {column}=?'; params.append(value)
+    if start:
+        sql+=' and data_date>=?'; params.append(start)
+    if end:
+        sql+=' and data_date<=?'; params.append(end)
     sql+=' order by data_date desc,updated_at desc limit ?'; params.append(limit)
     with db() as c:
         rows=c.execute(sql,params).fetchall()
@@ -366,6 +370,24 @@ def metric_rows(project_id,provider,site,dataset,limit=500):
         item['metrics']=json.loads(item['metrics'] or '{}')
         out.append(item)
     return out
+
+def metric_coverage(project_id,provider,site,dataset,start,end):
+    if provider!='gsc' or dataset!='site_daily' or not site or not start or not end:
+        return {'ranges':[]}
+    with db() as c:
+        rows=c.execute('''select distinct requested_start,requested_end from sync_run
+                          where project_id=? and provider=? and site=? and status='completed'
+                            and rows_skipped=0 and requested_start<=? and requested_end>=?
+                          order by requested_start,requested_end''',(project_id,provider,site,end,start)).fetchall()
+    ranges=[]
+    for row in rows:
+        try:
+            first=date.fromisoformat(row['requested_start'][:10]).isoformat()
+            last=date.fromisoformat(row['requested_end'][:10]).isoformat()
+            if first<=last: ranges.append({'start':max(start,first),'end':min(end,last)})
+        except (ValueError,TypeError):
+            continue
+    return {'ranges':ranges}
 
 def gsc_summary(project_id,site,window):
     start_date,end_date=window_dates(window)
@@ -431,10 +453,20 @@ class H(BaseHTTPRequestHandler):
             self.sendj(200,{'runs':rows}); return
         if u.path=='/v1/metrics':
             q=parse_qs(u.query)
+            start=q.get('start',[None])[0]; end=q.get('end',[None])[0]
+            if start is not None or end is not None:
+                try:
+                    if not start or not end or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',start) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',end):
+                        raise ValueError('invalid_date_range')
+                    if date.fromisoformat(start)>date.fromisoformat(end):
+                        raise ValueError('invalid_date_range')
+                except (TypeError,ValueError):
+                    self.sendj(400,{'error':'invalid_date_range'}); return
             try: limit=max(1,min(2000,int(q.get('limit',['500'])[0])))
             except Exception: limit=500
-            rows=metric_rows(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],limit)
-            self.sendj(200,{'rows':rows,'generatedAt':now()}); return
+            rows=metric_rows(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],limit,start,end)
+            coverage=metric_coverage(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],start,end)
+            self.sendj(200,{'rows':rows,'coverage':coverage,'generatedAt':now()}); return
         if u.path=='/v1/investigations':
             q=parse_qs(u.query)
             try: limit=max(1,min(500,int(q.get('limit',['100'])[0])))

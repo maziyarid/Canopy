@@ -1,15 +1,19 @@
 import type { Sql } from "@/lib/db";
 import type { Project, Role } from "@/lib/types";
+import { parseReportSections } from "./report-sections.ts";
 
 export function nid() {
   return crypto.randomUUID();
 }
+
+export type DataDomain = "medical" | "thesis" | "other";
 
 export type DbProject = {
   id: string;
   owner_id: string;
   name: string;
   domain: string;
+  data_domain: DataDomain;
   location_id: number;
   language_id: number;
   platform_id: number;
@@ -23,6 +27,7 @@ export type DbProject = {
 export type AccessCtx = {
   role: Role;
   filter: string;
+  reportSections?: string[];
   project: DbProject;
 };
 
@@ -32,6 +37,42 @@ export function canWrite(role: Role) {
 
 export function canAdminProviders(role: Role, keywordFilter: string) {
   return canWrite(role) && !keywordFilter.trim();
+}
+
+/**
+ * Hard deny when a *context* project's data_domain does not match the
+ * *target* project's data_domain (e.g. cross-domain data-plane read).
+ * Structurally identical to cross-project denial (indistinguishable "Project not found").
+ *
+ * Policy (AAX-134 / AAX-55):
+ * - Multi-domain *membership* is allowed: a principal may own/edit both a
+ *   medical and a thesis project. resolveAccess does NOT call this helper.
+ * - Domain isolation is enforced at the data-plane boundary when a request
+ *   carries an ambient context domain that must match the target.
+ * - Call assertSameDataDomain only when such a context exists; do not use it
+ *   to forbid independent project grants.
+ */
+export function assertSameDataDomain(
+  ctxDomain: DataDomain,
+  targetDomain: DataDomain,
+): void {
+  if (ctxDomain !== targetDomain) {
+    throw new Error("Project not found");
+  }
+}
+
+/**
+ * Apply assertSameDataDomain only when a caller has an ambient context domain
+ * (for example a source project when copying metrics, or a workspace context
+ * header on a data-plane call). Missing ambient context is a no-op so that
+ * ordinary project membership across domains remains valid.
+ */
+export function applyAmbientDataDomain(
+  ambient: DataDomain | null | undefined,
+  target: DataDomain,
+): void {
+  if (ambient == null) return;
+  assertSameDataDomain(ambient, target);
 }
 
 export async function linkInvites(sql: Sql, userId: string, email: string) {
@@ -48,18 +89,21 @@ export async function resolveAccess(
   const projects = await sql<DbProject>`select * from projects where id = ${projectId}`;
   const project = projects[0];
   if (!project) throw new Error("Project not found");
-  if (project.owner_id === userId) {
-    return { role: "owner", filter: "", project };
+  // Ensure data_domain is always a valid enum even on pre-migration rows.
+  const domain = (project.data_domain ?? "other") as DataDomain;
+  const normalized: DbProject = { ...project, data_domain: domain };
+  if (normalized.owner_id === userId) {
+    return { role: "owner", filter: "", project: normalized };
   }
-  const rows = await sql<{ role: Role; keyword_filter: string }>`
-    select role, keyword_filter from project_access
+  const rows = await sql<{ role: Role; keyword_filter: string; report_sections: string }>`
+    select role, keyword_filter, report_sections from project_access
     where project_id = ${projectId}
       and (user_id = ${userId} or (${email} <> '' and email = ${email}))
     limit 1
   `;
   const row = rows[0];
   if (!row) throw new Error("Forbidden");
-  return { role: row.role, filter: row.keyword_filter ?? "", project };
+  return { role: row.role, filter: row.keyword_filter ?? "", reportSections: parseReportSections(row.report_sections), project: normalized };
 }
 
 export function filterKeywords<T extends { keyword: string }>(rows: T[], filter: string) {
@@ -80,6 +124,7 @@ export function toProject(
     ownerId: p.owner_id,
     name: p.name,
     domain: p.domain,
+    dataDomain: p.data_domain ?? "other",
     locationId: Number(p.location_id),
     languageId: Number(p.language_id),
     platformId: Number(p.platform_id),

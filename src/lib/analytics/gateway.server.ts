@@ -7,6 +7,7 @@ import type {
   ProviderRefreshResult,
   ProviderSyncRunsResponse,
 } from "./contracts";
+import type { GatewayMetricResponse } from "../server/reporting-ledger";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -42,15 +43,17 @@ async function gatewayFetch<T>(
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(
-        `Analytics gateway request failed (${response.status} ${response.statusText})${body ? `: ${body.slice(0, 500)}` : ""}`,
-      );
+      throw new Error(`Analytics gateway request failed (${response.status})`);
     }
     return (await response.json()) as T;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function getProviderMetricRows(projectId: string, provider: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse> {
+  const query = new URLSearchParams({ provider, site, dataset, start, end, limit: "367" });
+  return gatewayFetch(`/v1/metrics?${query}`, { headers: { "X-Ms-Robot-Project-Id": projectId } });
 }
 
 export async function getAnalyticsSnapshot(

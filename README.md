@@ -93,8 +93,8 @@ npm install
 # Database
 DATABASE_URL=postgresql://user:password@localhost:5432/canopy
 
-# Auth
-AUTH_SECRET=your-secret-key
+# Auth — stable, private, at least 32 characters
+BETTER_AUTH_SECRET=replace-with-a-generated-private-secret
 
 # Optional: Mangools API
 MANGOOLS_API_KEY=your-mangools-key
@@ -122,11 +122,15 @@ npm run dev
 1. Connect your repository to Vercel
 2. Set environment variables in Vercel dashboard:
    - `DATABASE_URL`: Your Neon PostgreSQL connection string
-   - `AUTH_SECRET`: Random secret for authentication
+   - `BETTER_AUTH_SECRET`: Stable private authentication secret (at least 32 characters)
    - `MANGOOLS_API_KEY`: (Optional) Your Mangools API key
    - `CLICKUP_API_KEY`: (Optional) Your ClickUp API key
 
-3. Deploy!
+3. Build and verify authenticated access before promotion. Production requires
+   `DATABASE_URL`; a single-process self-hosted installation may instead use an
+   absolute `PGLITE_DATA_DIR` on a durable private volume. Do not use local
+   PGLite storage across multiple writers or on an ephemeral serverless volume.
+   See [the Ms Robot integration runbook](docs/ms-robot/integration-runbook-20260930.md).
 
 ### Subdomain Setup
 

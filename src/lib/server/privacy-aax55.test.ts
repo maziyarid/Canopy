@@ -1,0 +1,162 @@
+/**
+ * AAX-55 focused unit tests — redaction helpers and data-domain hard deny.
+ * Medical inquiry retention is intentionally not activated (policy-blocked).
+ */
+import { before, after, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  redactCredentials,
+  redactPii,
+  redactForLog,
+  redactForClient,
+} from "./redact.ts";
+import { applyAmbientDataDomain, assertSameDataDomain } from "./access.ts";
+import type { DataDomain } from "./access.ts";
+
+describe("AAX-55 redactCredentials", () => {
+  it("redacts Bearer tokens", () => {
+    const raw = "Authorization: Bearer sk-live-abc123xyz";
+    const out = redactCredentials(raw);
+    assert.match(out, /\[REDACTED\]/);
+    assert.doesNotMatch(out, /sk-live/);
+  });
+
+  it("redacts api_key patterns", () => {
+    const raw = 'api_key="super-secret-key-99"';
+    const out = redactCredentials(raw);
+    assert.match(out, /\[REDACTED\]/);
+    assert.doesNotMatch(out, /super-secret/);
+  });
+
+  it("redacts x-access-token", () => {
+    const raw = "X-Access-Token: tok_abcdef";
+    const out = redactCredentials(raw);
+    assert.match(out, /\[REDACTED\]/);
+    assert.doesNotMatch(out, /tok_abcdef/);
+  });
+
+  it("leaves non-credential text intact", () => {
+    const raw = "sync completed with 42 rows";
+    assert.equal(redactCredentials(raw), raw);
+  });
+});
+
+describe("AAX-55 redactPii", () => {
+  const oldKey = process.env.PII_REDACTION_KEY;
+  before(() => { process.env.PII_REDACTION_KEY = "test-only-redaction-key-at-least-32-characters"; });
+  after(() => { if (oldKey === undefined) delete process.env.PII_REDACTION_KEY; else process.env.PII_REDACTION_KEY = oldKey; });
+  it("replaces email with stable hash ref", () => {
+    const raw = "contact patient@example.com for follow-up";
+    const out = redactPii(raw);
+    assert.doesNotMatch(out, /patient@example\.com/);
+    assert.match(out, /pii:[0-9a-f]{64}/);
+  });
+
+  it("same email yields same hash", () => {
+    const a = redactPii("user@test.org");
+    const b = redactPii("user@test.org");
+    assert.equal(a, b);
+  });
+
+  it("different emails yield different hashes", () => {
+    const a = redactPii("a@test.org");
+    const b = redactPii("b@test.org");
+    assert.notEqual(a, b);
+  });
+
+  it("replaces phone-like strings", () => {
+    const raw = "call +1 555-123-4567";
+    const out = redactPii(raw);
+    assert.doesNotMatch(out, /555-123-4567/);
+    assert.match(out, /pii:[0-9a-f]{64}/);
+  });
+
+  it("uses the complete keyed SHA-256 digest", () => {
+    const out = redactPii("secret@clinic.ir");
+    const m = out.match(/pii:([0-9a-f]+)/);
+    assert.ok(m);
+    assert.equal(m![1].length, 64);
+  });
+});
+
+describe("AAX-55 redactForLog / redactForClient", () => {
+  it("applies both credential and PII redaction", () => {
+    const raw = "Bearer abc123 failed for user@clinic.ir phone 09121234567";
+    const out = redactForLog(raw);
+    assert.match(out, /\[REDACTED\]/);
+    assert.doesNotMatch(out, /abc123/);
+    assert.doesNotMatch(out, /user@clinic\.ir/);
+    assert.doesNotMatch(out, /09121234567/);
+  });
+
+  it("redactForClient never returns plaintext credentials or PII", () => {
+    const raw = "api_key=xyz email=admin@host.com";
+    const out = redactForClient(raw);
+    assert.doesNotMatch(out, /xyz/);
+    assert.doesNotMatch(out, /admin@host\.com/);
+  });
+
+  it("redactForClient on provider-style error", () => {
+    const raw = "Mangools rejected: Bearer sk-live-leak for patient@clinic.com";
+    const out = redactForClient(raw);
+    assert.doesNotMatch(out, /sk-live-leak/);
+    assert.doesNotMatch(out, /patient@clinic\.com/);
+    assert.match(out, /\[REDACTED\]/);
+  });
+});
+
+describe("AAX-55 assertSameDataDomain", () => {
+  const domains: DataDomain[] = ["medical", "thesis", "other"];
+
+  for (const d of domains) {
+    it(`allows same domain ${d}`, () => {
+      assert.doesNotThrow(() => assertSameDataDomain(d, d));
+    });
+  }
+
+  it("denies medical vs thesis with Project not found", () => {
+    assert.throws(
+      () => assertSameDataDomain("medical", "thesis"),
+      (err: Error) => err.message === "Project not found",
+    );
+  });
+
+  it("denies thesis vs other", () => {
+    assert.throws(
+      () => assertSameDataDomain("thesis", "other"),
+      (err: Error) => err.message === "Project not found",
+    );
+  });
+
+  it("denies other vs medical", () => {
+    assert.throws(
+      () => assertSameDataDomain("other", "medical"),
+      (err: Error) => err.message === "Project not found",
+    );
+  });
+});
+
+describe("AAX-55 applyAmbientDataDomain", () => {
+  it("no-ops when ambient context is absent (multi-domain membership remains valid)", () => {
+    assert.doesNotThrow(() => applyAmbientDataDomain(undefined, "thesis"));
+    assert.doesNotThrow(() => applyAmbientDataDomain(null, "medical"));
+  });
+
+  it("allows ambient medical against medical target", () => {
+    assert.doesNotThrow(() => applyAmbientDataDomain("medical", "medical"));
+  });
+
+  it("denies ambient medical against thesis target with Project not found", () => {
+    assert.throws(
+      () => applyAmbientDataDomain("medical", "thesis"),
+      (err: Error) => err.message === "Project not found",
+    );
+  });
+
+  it("denies ambient other against medical target", () => {
+    assert.throws(
+      () => applyAmbientDataDomain("other", "medical"),
+      (err: Error) => err.message === "Project not found",
+    );
+  });
+});

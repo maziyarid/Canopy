@@ -137,6 +137,30 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(len(metrics_a['rows']),2)
         self.assertEqual(metrics_b['rows'],[])
 
+    def test_metric_date_range_is_applied_before_limit_and_rejects_invalid_ranges(self):
+        self.request('/v1/sites/example.com/refresh','POST',{'sources':['gsc'],'window':'7d'})
+        newest=(date.today()-timedelta(days=2)).isoformat()
+        _,body=self.request(f'/v1/metrics?provider=gsc&site=example.com&dataset=site_daily&start={newest}&end={newest}&limit=1')
+        self.assertEqual(len(body['rows']),1)
+        self.assertEqual(body['rows'][0]['data_date'],newest)
+        oldest=(date.today()-timedelta(days=3)).isoformat()
+        _,body=self.request(f'/v1/metrics?provider=gsc&site=example.com&dataset=site_daily&start={oldest}&end={oldest}&limit=1')
+        self.assertEqual(body['rows'][0]['data_date'],oldest)
+        status,body=self.request('/v1/metrics?start=invalid&end=2026-09-30')
+        self.assertEqual(status,400)
+        self.assertEqual(body['error'],'invalid_date_range')
+        status,_=self.request('/v1/metrics?start=2026-09-30&end=2026-09-01')
+        self.assertEqual(status,400)
+
+    def test_metric_coverage_comes_from_successful_scoped_sync_ranges(self):
+        self.request('/v1/sites/example.com/refresh','POST',{'sources':['gsc'],'window':'7d'})
+        end=(date.today()-timedelta(days=2)).isoformat()
+        start=(date.today()-timedelta(days=8)).isoformat()
+        _,body=self.request(f'/v1/metrics?provider=gsc&site=example.com&dataset=site_daily&start={start}&end={end}')
+        self.assertEqual(body.get('coverage',{}).get('ranges'),[{'start':start,'end':end}])
+        _,other=self.request(f'/v1/metrics?provider=gsc&site=example.com&dataset=site_daily&start={start}&end={end}',project='project-b')
+        self.assertEqual(other.get('coverage',{}).get('ranges'),[])
+
     def test_gsc_monitor_concurrent_requests_do_not_race_investigation_insert(self):
         with sqlite3.connect(self.db_path) as connection:
             for day in range(1,15):

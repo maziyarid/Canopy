@@ -8,6 +8,7 @@ import { canWrite, nid, ownerMangoolsKey, resolveAccess } from "./access";
 import { mangoolsFetch } from "./mangools";
 import { mapKeyword } from "./mappers";
 import { queueMonday } from "./monday";
+import { redactForClient, redactForLog } from "./redact";
 
 async function log(
   sql: Awaited<ReturnType<typeof getSql>>,
@@ -18,9 +19,10 @@ async function log(
   credits = 0,
   level: "info" | "warn" | "error" = "info",
 ) {
+  const safeDetail = redactForLog(detail);
   await sql`
     insert into activity_log (id, project_id, user_id, level, action, detail, credits)
-    values (${nid()}, ${projectId}, ${userId}, ${level}, ${action}, ${detail}, ${credits})
+    values (${nid()}, ${projectId}, ${userId}, ${level}, ${action}, ${safeDetail}, ${credits})
   `;
 }
 
@@ -103,7 +105,7 @@ export const scoreKeywords = createServerFn({ method: "POST" })
       path: "/kwfinder/keyword-imports",
       body: { keywords: list, location_id: project.location_id, language_id: project.language_id },
     });
-    if (!res.ok) throw new Error(res.error);
+    if (!res.ok) throw new Error(redactForClient(res.error ?? "provider error"));
     const mapped = mapKeywords(
       res.data,
       list[0] ?? "",
@@ -156,7 +158,7 @@ export const expandRelated = createServerFn({ method: "POST" })
       path: "/kwfinder/related-keywords",
       query: { kw: data.seed, location_id: Number(project.location_id), language_id: Number(project.language_id) },
     });
-    if (!res.ok) throw new Error(res.error);
+    if (!res.ok) throw new Error(redactForClient(res.error ?? "provider error"));
     const mapped = mapKeywords(
       res.data,
       data.seed,
@@ -199,7 +201,7 @@ export const pullCompetitor = createServerFn({ method: "POST" })
       path: "/kwfinder/competitor-keywords",
       query: { url: data.url, location_id: Number(project.location_id) },
     });
-    if (!res.ok) throw new Error(res.error);
+    if (!res.ok) throw new Error(redactForClient(res.error ?? "provider error"));
     await sql`delete from competitors where project_id = ${data.projectId} and domain = ${data.url}`;
     const mapped = mapCompetitors(res.data, data.url, data.projectId);
     for (const row of mapped.slice(0, 200)) {
@@ -233,7 +235,7 @@ export const runGap = createServerFn({ method: "POST" })
       path: "/kwfinder/gap-analysis",
       body: { domain: project.domain, competitors: list, location_id: Number(project.location_id) },
     });
-    if (!res.ok) throw new Error(res.error);
+    if (!res.ok) throw new Error(redactForClient(res.error ?? "provider error"));
     await sql`delete from gaps where project_id = ${data.projectId}`;
     const mapped = mapGaps(res.data, data.projectId);
     for (const row of mapped.slice(0, 300)) {

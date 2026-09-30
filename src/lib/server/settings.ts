@@ -4,6 +4,7 @@ import { getSql } from "@/lib/db";
 import { mapQuota } from "@/lib/map-api";
 import { studioAuth } from "./studio-auth";
 import { mangoolsFetch } from "./mangools";
+import { commitMangoolsKey } from "./mangools-bind";
 import type { QuotaState, StudioSettings } from "@/lib/types";
 
 export const getSettings = createServerFn({ method: "GET" })
@@ -40,10 +41,14 @@ export const saveSettings = createServerFn({ method: "POST" })
     const existing = await sql<{ mangools_key: string; monday_webhook: string }>`
       select mangools_key, monday_webhook from studio_settings where user_id = ${context.userId}
     `;
-    const key =
-      data.mangoolsKey && data.mangoolsKey !== "••••••••"
-        ? data.mangoolsKey.trim()
-        : (existing[0]?.mangools_key ?? "");
+    const key = await commitMangoolsKey({
+      existingKey: existing[0]?.mangools_key ?? "",
+      candidateKey: data.mangoolsKey,
+      validate: async (candidate) => {
+        const res = await mangoolsFetch({ apiKey: candidate, path: "/kwfinder/limits" });
+        return res.ok ? true : { ok: false, error: res.error };
+      },
+    });
     const hook = data.mondayWebhook ?? existing[0]?.monday_webhook ?? "";
     const loc = data.defaultLocationId ?? 2840;
     const lang = data.defaultLanguageId ?? 1000;
