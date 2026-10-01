@@ -36,7 +36,9 @@ def project_site_map(env=os.environ):
     output={}
     for raw_site,raw_project in parsed.items():
         site=site_key(raw_site)
-        project_id=str(raw_project or "").strip()
+        if not isinstance(raw_project, str):
+            raise SystemExit(f"invalid project id for mapped site {site or raw_site}")
+        project_id=raw_project.strip()
         if not site:
             raise SystemExit("MS_ROBOT_PROJECT_SITE_MAP_JSON contains an empty site")
         if not PROJECT_ID_PATTERN.fullmatch(project_id):
