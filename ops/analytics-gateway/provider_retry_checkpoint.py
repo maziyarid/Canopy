@@ -20,6 +20,7 @@ FAIL_CLOSED = frozenset({
     "not_configured",
     "adapter_not_implemented",
     "site_map_missing",
+    "site_map_invalid",
     "gsc_property_not_authorised",
     "ambiguous_schema",
     "unknown",
@@ -75,6 +76,15 @@ def sync_error_class(message: str | None) -> str:
         return raw
     if "site_map_missing" in lowered or "ms_robot_project_site_map_json is required" in lowered:
         return "site_map_missing"
+    if (
+        "must be valid json" in lowered
+        or "non-empty object" in lowered
+        or "empty site" in lowered
+        or "invalid project id" in lowered
+        or "more than one project" in lowered
+        or "site_map_invalid" in lowered
+    ):
+        return "site_map_invalid"
     if raw.startswith("gsc_property_not_authorised") or "gsc_property_not_authorised" in lowered:
         return "gsc_property_not_authorised"
     if ("rate" in lowered and "limit" in lowered) or "429" in lowered or "quota" in lowered:

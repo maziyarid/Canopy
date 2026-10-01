@@ -21,7 +21,7 @@ class ProviderRetryCheckpointTest(unittest.TestCase):
         self.assertFalse(exhausted["retryable"])
 
     def test_unmapped_and_unauthorised_never_retry(self):
-        for error_class in ("site_map_missing", "gsc_property_not_authorised", "not_configured"):
+        for error_class in ("site_map_missing", "site_map_invalid", "gsc_property_not_authorised", "not_configured"):
             result = next_checkpoint("running", error_class, 1)
             self.assertEqual(result["stage"], "failed_closed")
             self.assertFalse(result["retryable"])

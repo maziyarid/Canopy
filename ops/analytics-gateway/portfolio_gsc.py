@@ -54,10 +54,10 @@ def main():
         mapping=project_site_map()
     except SystemExit as exc:
         checkpoint=checkpoint_for_sync_failure(str(exc), 1)
-        if checkpoint["retryable"] or checkpoint["errorClass"] != "site_map_missing":
+        if checkpoint["retryable"] or checkpoint["errorClass"] not in ("site_map_missing", "site_map_invalid"):
             raise
         print(json.dumps({
-            "error":"site_map_missing",
+            "error":checkpoint["errorClass"],
             "retryCheckpoint":checkpoint,
             "detail":str(exc),
         }))
