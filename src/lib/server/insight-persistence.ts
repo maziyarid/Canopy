@@ -22,6 +22,39 @@ async function insertNote(sql: SnapshotSql, access: SnapshotAccess, note: Insigh
     on conflict(id) do nothing`;
 }
 
+async function loadNotePage(
+  sql: SnapshotSql,
+  access: SnapshotAccess,
+  period: SnapshotPeriod,
+  pageSize: number,
+  cursorGeneratedAt: string | null,
+  cursorId: string | null,
+  clientOnly: boolean,
+) {
+  if (clientOnly && (cursorGeneratedAt == null || cursorId == null)) {
+    return sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
+      where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
+        and payload::json->>'visibility'='client' and payload::json->>'reviewState'='approved'
+      order by generated_at desc,id asc limit ${pageSize}`;
+  }
+  if (clientOnly) {
+    return sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
+      where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
+        and payload::json->>'visibility'='client' and payload::json->>'reviewState'='approved'
+        and (generated_at < ${cursorGeneratedAt} or (generated_at = ${cursorGeneratedAt} and id > ${cursorId}))
+      order by generated_at desc,id asc limit ${pageSize}`;
+  }
+  if (cursorGeneratedAt == null || cursorId == null) {
+    return sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
+      where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
+      order by generated_at desc,id asc limit ${pageSize}`;
+  }
+  return sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
+    where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
+      and (generated_at < ${cursorGeneratedAt} or (generated_at = ${cursorGeneratedAt} and id > ${cursorId}))
+    order by generated_at desc,id asc limit ${pageSize}`;
+}
+
 export async function persistSnapshotInsights(sql: SnapshotSql, access: SnapshotAccess, snapshot: ReportingSnapshot) {
   assertWriter(access);
   if (snapshot.projectId !== access.project.id || snapshot.site !== access.project.domain) throw new SnapshotAccessError(404, "Not found");
@@ -37,17 +70,11 @@ export async function readPeriodNotes(sql: SnapshotSql, access: SnapshotAccess, 
   const out: Array<InsightRecord & { revision: number }> = [];
   const grants = new Set(parseReportSections(access.reportSections));
   const pageSize = 100;
+  const clientOnly = access.role === "client";
   let cursorGeneratedAt: string | null = null;
   let cursorId: string | null = null;
   while (out.length < 100) {
-    const rows = cursorGeneratedAt == null || cursorId == null
-      ? await sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
-        where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
-        order by generated_at desc,id asc limit ${pageSize}`
-      : await sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
-        where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
-          and (generated_at < ${cursorGeneratedAt} or (generated_at = ${cursorGeneratedAt} and id > ${cursorId}))
-        order by generated_at desc,id asc limit ${pageSize}`;
+    const rows = await loadNotePage(sql, access, period, pageSize, cursorGeneratedAt, cursorId, clientOnly);
     if (!rows.length) break;
     for (const row of rows) {
       cursorGeneratedAt = row.generated_at;

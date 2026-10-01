@@ -55,8 +55,14 @@ test("client note page is not exhausted by hidden newer notes", async () => {
     }
     const visible = { ...base, id: "approved_old", title: "Approved older note", generatedAt: "2026-09-01T00:00:00.000Z", reviewState: "approved", visibility: "client", reviewedBy: "owner-1" };
     await sql`insert into report_insights(id,project_id,site,period_start,period_end,generated_at,payload) values (${visible.id},${"p1"},${"example.com"},${"2026-09-01"},${"2026-09-28"},${visible.generatedAt},${JSON.stringify(visible)})`;
-    const notes = await readPeriodNotes(sql, { ...access, role: "client", reportSections: ["search"] }, snapshot.period);
+    let queries = 0;
+    const counted = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries += 1;
+      return sql(strings, ...values);
+    }) as SnapshotSql;
+    const notes = await readPeriodNotes(counted, { ...access, role: "client", reportSections: ["search"] }, snapshot.period);
     assert.equal(notes.length, 1);
     assert.equal(notes[0].id, "approved_old");
+    assert.equal(queries, 1);
   } finally { await db.close(); await rm(directory, { recursive: true, force: true }); }
 });
