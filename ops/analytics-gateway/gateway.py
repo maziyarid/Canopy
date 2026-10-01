@@ -362,16 +362,33 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
                 (run_id,project_id),
             ).fetchone()
         failed=dict(row)
-        prior_failures=0
         with db() as c:
-            prior_failures=c.execute(
-                """select count(*) from sync_run
-                   where project_id=? and provider=? and site=? and window=?
-                     and status in ('error','blocked')""",
-                (project_id, provider, site, window),
-            ).fetchone()[0]
-        failed['retry_checkpoint']=checkpoint_for_sync_failure(message, attempt=int(prior_failures))
+            attempt=consecutive_failure_attempt(c, project_id, provider, site, window)
+        failed['retry_checkpoint']=checkpoint_for_sync_failure(message, attempt=attempt)
         return failed,True
+
+
+def consecutive_failure_attempt(c, project_id, provider, site, window):
+    """Count this failure streak, ignoring errors from before the last success.
+
+    A completed sync for the same project, provider, site, and window resets
+    the retry budget. Historical failures must not mark a fresh temporary
+    outage as failed_closed.
+    """
+    last_completed=c.execute(
+        """select max(started_at) from sync_run
+           where project_id=? and provider=? and site=? and window=?
+             and status='completed'""",
+        (project_id, provider, site, window),
+    ).fetchone()[0]
+    sql="""select count(*) from sync_run
+           where project_id=? and provider=? and site=? and window=?
+             and status in ('error','blocked')"""
+    params=[project_id, provider, site, window]
+    if last_completed:
+        sql+=" and started_at>?"
+        params.append(last_completed)
+    return int(c.execute(sql, params).fetchone()[0])
 
 def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
     sql='''select provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at
