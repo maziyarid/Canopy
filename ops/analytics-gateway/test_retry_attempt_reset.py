@@ -81,6 +81,22 @@ class RetryAttemptResetTest(unittest.TestCase):
         self.assertEqual(checkpoint["errorClass"], "timeout")
         self.assertFalse(checkpoint["scheduledPortfolioSyncEnabled"])
 
+
+    def test_reverse_finish_order_still_exhausts_overlapping_budget(self):
+        self.insert_run("started-last", "error", "2026-09-03T00:00:03Z")
+        self.insert_run("started-middle", "error", "2026-09-03T00:00:02Z")
+        checkpoint = self.fail_once("started-first", "2026-09-03T00:00:01Z")
+        self.assertEqual(checkpoint["attempt"], 3)
+        self.assertEqual(checkpoint["stage"], "failed_closed")
+        self.assertFalse(checkpoint["retryable"])
+
+    def test_later_success_hides_only_post_success_failures_from_earlier_run(self):
+        self.insert_run("later-ok", "completed", "2026-09-03T00:00:05Z")
+        self.insert_run("after-success", "error", "2026-09-03T00:00:06Z")
+        checkpoint = self.fail_once("earlier", "2026-09-03T00:00:01Z")
+        self.assertEqual(checkpoint["attempt"], 1)
+        self.assertTrue(checkpoint["retryable"])
+
     def test_other_site_failures_do_not_consume_budget(self):
         self.insert_run("other", "error", "2026-09-03T00:00:00Z", site="other.example")
         checkpoint = self.fail_once("mine", "2026-09-03T00:00:01Z")

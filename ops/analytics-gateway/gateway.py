@@ -374,7 +374,10 @@ def consecutive_failure_attempt(c, project_id, provider, site, window, run_id=No
     A completed sync resets the budget only for runs that started after it.
     A later-started success must not hide an earlier overlapping failure:
     that failure still counts as attempt 1 so checkpoint generation cannot
-    raise and drop the HTTP response.
+    raise and drop the HTTP response. Failures that already finished, even
+    if they started later, still consume the same open budget. A completed
+    run that started after this one does not reset it, and does not let
+    post-success failures consume this run's budget.
     """
     current_started=None
     if run_id:
@@ -395,16 +398,25 @@ def consecutive_failure_attempt(c, project_id, provider, site, window, run_id=No
         last_sql+=" and id!=?"
         last_params.append(run_id)
     last_completed=c.execute(last_sql, last_params).fetchone()[0]
-    sql="""select count(*) from sync_run
-           where project_id=? and provider=? and site=? and window=?
-             and status in ('error','blocked')"""
+    sql="""select count(*) from sync_run as failure
+           where failure.project_id=? and failure.provider=? and failure.site=?
+             and failure.window=? and failure.status in ('error','blocked')"""
     params=[project_id, provider, site, window]
-    if current_started:
-        sql+=" and started_at<=?"
-        params.append(current_started)
     if last_completed:
-        sql+=" and started_at>?"
+        sql+=" and failure.started_at>?"
         params.append(last_completed)
+    if current_started:
+        sql+=""" and not exists (
+                   select 1 from sync_run as success
+                   where success.project_id=failure.project_id
+                     and success.provider=failure.provider
+                     and success.site=failure.site
+                     and success.window=failure.window
+                     and success.status='completed'
+                     and success.started_at>?
+                     and success.started_at<failure.started_at
+                 )"""
+        params.append(current_started)
     count=int(c.execute(sql, params).fetchone()[0])
     return count if count >= 1 else 1
 
