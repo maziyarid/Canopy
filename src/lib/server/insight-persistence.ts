@@ -30,17 +30,45 @@ async function loadNotePage(
   cursorGeneratedAt: string | null,
   cursorId: string | null,
   clientOnly: boolean,
+  grants: Set<string>,
 ) {
+  const searchGranted = grants.has("search");
+  const acquisitionGranted = grants.has("acquisition");
+  const conversionsGranted = grants.has("conversions");
   if (clientOnly && (cursorGeneratedAt == null || cursorId == null)) {
     return sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
       where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
         and payload::json->>'visibility'='client' and payload::json->>'reviewState'='approved'
+        and json_typeof(payload::json->'evidenceRefs')='array'
+        and json_array_length(payload::json->'evidenceRefs')>0
+        and not exists (
+          select 1 from json_array_elements(payload::json->'evidenceRefs') ref
+          where not (
+            (ref->>'provider'='gsc' and ${searchGranted})
+            or (ref->>'provider'='ga4' and (
+              ((ref->>'metricName'='conversions' or ref->>'metricName'='keyEvents') and ${conversionsGranted})
+              or (coalesce(ref->>'metricName','')<>'conversions' and coalesce(ref->>'metricName','')<>'keyEvents' and ${acquisitionGranted})
+            ))
+          )
+        )
       order by generated_at desc,id asc limit ${pageSize}`;
   }
   if (clientOnly) {
     return sql<{ payload: string; revision: number; generated_at: string; id: string }>`select payload,revision,generated_at,id from report_insights
       where project_id=${access.project.id} and site=${access.project.domain} and period_end>=${period.start} and period_start<=${period.end}
         and payload::json->>'visibility'='client' and payload::json->>'reviewState'='approved'
+        and json_typeof(payload::json->'evidenceRefs')='array'
+        and json_array_length(payload::json->'evidenceRefs')>0
+        and not exists (
+          select 1 from json_array_elements(payload::json->'evidenceRefs') ref
+          where not (
+            (ref->>'provider'='gsc' and ${searchGranted})
+            or (ref->>'provider'='ga4' and (
+              ((ref->>'metricName'='conversions' or ref->>'metricName'='keyEvents') and ${conversionsGranted})
+              or (coalesce(ref->>'metricName','')<>'conversions' and coalesce(ref->>'metricName','')<>'keyEvents' and ${acquisitionGranted})
+            ))
+          )
+        )
         and (generated_at < ${cursorGeneratedAt} or (generated_at = ${cursorGeneratedAt} and id > ${cursorId}))
       order by generated_at desc,id asc limit ${pageSize}`;
   }
@@ -74,7 +102,7 @@ export async function readPeriodNotes(sql: SnapshotSql, access: SnapshotAccess, 
   let cursorGeneratedAt: string | null = null;
   let cursorId: string | null = null;
   while (out.length < 100) {
-    const rows = await loadNotePage(sql, access, period, pageSize, cursorGeneratedAt, cursorId, clientOnly);
+    const rows = await loadNotePage(sql, access, period, pageSize, cursorGeneratedAt, cursorId, clientOnly, grants);
     if (!rows.length) break;
     for (const row of rows) {
       cursorGeneratedAt = row.generated_at;

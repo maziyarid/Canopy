@@ -66,3 +66,29 @@ test("client note page is not exhausted by hidden newer notes", async () => {
     assert.equal(queries, 1);
   } finally { await db.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test("client section grants are filtered in SQL so ungranted notes do not page", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "insight-grants-"));
+  const db = new PGlite(directory);
+  const sql = (async (strings: TemplateStringsArray, ...values: unknown[]) => (await db.query(strings.reduce((out, part, i) => out + (i ? `$${i}` : "") + part, ""), values)).rows) as SnapshotSql;
+  try {
+    await db.exec(`create table report_insights(id text primary key, project_id text not null, site text not null, period_start date not null, period_end date not null, generated_at timestamptz not null, revision integer not null default 0, payload text not null);`);
+    const evidence = (provider: string, metricName: string) => [{ provider, provenance: "first_party", kind: "metric", metricName, site: "example.com", periodStart: "2026-09-01", periodEnd: "2026-09-28", value: 12 }];
+    const base = { projectId: "p1", periodStart: "2026-09-01", periodEnd: "2026-09-28", type: "observation", body: "body", provenance: "first_party", confidence: 0.8, limitation: "", recommendedAction: null, generatedBy: "test", reviewedBy: "owner-1", linkedTaskId: null, editHistory: [], reviewState: "approved", visibility: "client" };
+    for (let i = 0; i < 150; i += 1) {
+      const payload = { ...base, id: `ga4_${i}`, title: `Acquisition ${i}`, generatedAt: new Date(Date.UTC(2026, 8, 29, 12, 0, i)).toISOString(), evidenceRefs: evidence("ga4", "sessions") };
+      await sql`insert into report_insights(id,project_id,site,period_start,period_end,generated_at,payload) values (${payload.id},${"p1"},${"example.com"},${"2026-09-01"},${"2026-09-28"},${payload.generatedAt},${JSON.stringify(payload)})`;
+    }
+    const visible = { ...base, id: "search_ok", title: "Search note", generatedAt: "2026-09-01T00:00:00.000Z", evidenceRefs: evidence("gsc", "clicks") };
+    await sql`insert into report_insights(id,project_id,site,period_start,period_end,generated_at,payload) values (${visible.id},${"p1"},${"example.com"},${"2026-09-01"},${"2026-09-28"},${visible.generatedAt},${JSON.stringify(visible)})`;
+    let queries = 0;
+    const counted = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries += 1;
+      return sql(strings, ...values);
+    }) as SnapshotSql;
+    const notes = await readPeriodNotes(counted, { ...access, role: "client", reportSections: ["search"] }, snapshot.period);
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].id, "search_ok");
+    assert.equal(queries, 1);
+  } finally { await db.close(); await rm(directory, { recursive: true, force: true }); }
+});
