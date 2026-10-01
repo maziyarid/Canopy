@@ -96,7 +96,9 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
         raise PromotionReadinessError("portfolio_map_required_gate_missing")
     if "gsc_property_not_authorised" not in source:
         raise PromotionReadinessError("unauthorised_property_fail_closed_missing")
-    return ["scheduled_portfolio_map_fail_closed"]
+    if "isinstance(raw_project, str)" not in source:
+        raise PromotionReadinessError("non_string_project_id_not_rejected")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed"]
 
 
 def assess(root: Path | None = None) -> dict:
