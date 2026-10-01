@@ -13,3 +13,5 @@ Sync failure paths on this branch attach that checkpoint: `create_or_run_sync` r
 The portfolio CLI prints that same `retryCheckpoint` with `retryable=false` when `MS_ROBOT_PROJECT_SITE_MAP_JSON` is absent, then exits 1 before discovery or `create_or_run_sync`.
 
 An invalid, empty, or ambiguous `MS_ROBOT_PROJECT_SITE_MAP_JSON` prints `retryCheckpoint.retryable=false` with `errorClass=site_map_invalid` and exits 1 before discovery or `create_or_run_sync`. Process proof covers malformed JSON, two keys that normalise to one site with different project ids (`https://example.com/` and `sc-domain:example.com`), a project id outside `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`, and a blank site key.
+
+A non-string project id (number, boolean, array, or object) is rejected as `site_map_invalid` before discovery or `create_or_run_sync`. String project ids are unchanged.
