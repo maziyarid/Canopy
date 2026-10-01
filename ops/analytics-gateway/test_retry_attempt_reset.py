@@ -72,6 +72,15 @@ class RetryAttemptResetTest(unittest.TestCase):
         self.assertEqual(third["stage"], "failed_closed")
         self.assertFalse(third["retryable"])
 
+    def test_later_success_does_not_drop_earlier_overlapping_failure(self):
+        self.insert_run("later-ok", "completed", "2026-09-03T00:00:05Z")
+        checkpoint = self.fail_once("earlier", "2026-09-03T00:00:01Z")
+        self.assertEqual(checkpoint["attempt"], 1)
+        self.assertEqual(checkpoint["stage"], "retry_wait")
+        self.assertTrue(checkpoint["retryable"])
+        self.assertEqual(checkpoint["errorClass"], "timeout")
+        self.assertFalse(checkpoint["scheduledPortfolioSyncEnabled"])
+
     def test_other_site_failures_do_not_consume_budget(self):
         self.insert_run("other", "error", "2026-09-03T00:00:00Z", site="other.example")
         checkpoint = self.fail_once("mine", "2026-09-03T00:00:01Z")
