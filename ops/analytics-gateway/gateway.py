@@ -7,6 +7,12 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 from gsc_monitor import ensure_schema as ensure_monitor_schema, list_investigations, run_monitor
 from sqlite_migrations import ensure_analytics_schema
+import sys
+from pathlib import Path
+_MS_ROBOT_OPS = Path(__file__).resolve().parents[1] / "ms-robot"
+if str(_MS_ROBOT_OPS) not in sys.path:
+    sys.path.insert(0, str(_MS_ROBOT_OPS))
+from provider_retry_checkpoint import checkpoint_for_sync_failure, next_checkpoint
 
 HOST=os.getenv('ANALYTICS_GATEWAY_HOST','127.0.0.1')
 PORT=int(os.getenv('ANALYTICS_GATEWAY_PORT','9120'))
@@ -323,7 +329,9 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
                 'select * from sync_run where id=? and project_id=?',
                 (run_id,project_id),
             ).fetchone()
-        return dict(row),True
+        completed=dict(row)
+        completed['retry_checkpoint']=next_checkpoint('completed', None, 1)
+        return completed,True
     except Exception as e:
         finished=now()
         message=safe_error_message(e)
@@ -347,7 +355,9 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
                 'select * from sync_run where id=? and project_id=?',
                 (run_id,project_id),
             ).fetchone()
-        return dict(row),True
+        failed=dict(row)
+        failed['retry_checkpoint']=checkpoint_for_sync_failure(message, attempt=1)
+        return failed,True
 
 def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
     sql='''select provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at

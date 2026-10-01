@@ -81,7 +81,13 @@ def check_provider_retry_gate(root: Path) -> list[str]:
             raise PromotionReadinessError("provider_retry_fail_closed_missing:" + marker)
     if "MAX_ATTEMPTS = 3" not in source:
         raise PromotionReadinessError("provider_retry_bound_missing")
-    return ["provider_retry_checkpoint_fail_closed"]
+    gateway = (root / "ops/analytics-gateway/gateway.py").read_text(encoding="utf-8")
+    if "checkpoint_for_sync_failure" not in gateway:
+        raise PromotionReadinessError("gateway_retry_checkpoint_not_wired")
+    portfolio = (root / "ops/analytics-gateway/portfolio_gsc.py").read_text(encoding="utf-8")
+    if "site_map_missing" not in portfolio:
+        raise PromotionReadinessError("portfolio_site_map_checkpoint_missing")
+    return ["provider_retry_checkpoint_fail_closed", "gateway_sync_failure_checkpoint_wired"]
 
 
 def check_portfolio_map_gate(root: Path) -> list[str]:

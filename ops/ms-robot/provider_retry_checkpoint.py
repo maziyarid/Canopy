@@ -62,3 +62,33 @@ def _result(stage: str, error_class: str, attempt: int, retryable: bool) -> dict
         "maxAttempts": MAX_ATTEMPTS,
         "scheduledPortfolioSyncEnabled": False,
     }
+
+
+def sync_error_class(message: str | None) -> str:
+    """Map a gateway/portfolio failure message onto a checkpoint class.
+
+    Missing site maps and unauthorised properties are never retryable.
+    """
+    raw = str(message or "").strip()
+    lowered = raw.lower()
+    if raw in ("not_configured", "adapter_not_implemented", "ambiguous_schema"):
+        return raw
+    if "site_map_missing" in lowered or "ms_robot_project_site_map_json is required" in lowered:
+        return "site_map_missing"
+    if raw.startswith("gsc_property_not_authorised") or "gsc_property_not_authorised" in lowered:
+        return "gsc_property_not_authorised"
+    if ("rate" in lowered and "limit" in lowered) or "429" in lowered or "quota" in lowered:
+        return "rate_limited"
+    if "timeout" in lowered or "unreachable" in lowered:
+        return "timeout"
+    if "database is locked" in lowered or "sqlite_busy" in lowered or "analytics_schema_migration_busy" in lowered:
+        return "sqlite_busy"
+    if raw.startswith("google_provider_5") or "provider_unavailable" in lowered:
+        return "provider_unavailable"
+    if raw == "adapter_not_implemented":
+        return raw
+    return "unknown"
+
+
+def checkpoint_for_sync_failure(message: str | None, attempt: int = 1, stage: str = "running") -> dict:
+    return next_checkpoint(stage, sync_error_class(message), attempt)

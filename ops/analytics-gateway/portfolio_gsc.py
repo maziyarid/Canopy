@@ -5,6 +5,7 @@ import re
 from urllib.parse import urlparse
 
 from gateway import DB, create_or_run_sync, google_request, init_db, now
+from provider_retry_checkpoint import checkpoint_for_sync_failure
 from gsc_monitor import ensure_schema, run_monitor
 from monitor_dispatch import bridge_event
 
@@ -49,7 +50,18 @@ def project_site_map(env=os.environ):
 def main():
     init_db()
     ensure_schema(DB)
-    mapping=project_site_map()
+    try:
+        mapping=project_site_map()
+    except SystemExit as exc:
+        checkpoint=checkpoint_for_sync_failure(str(exc), 1)
+        if checkpoint["retryable"] or checkpoint["errorClass"] != "site_map_missing":
+            raise
+        print(json.dumps({
+            "error":"site_map_missing",
+            "retryCheckpoint":checkpoint,
+            "detail":str(exc),
+        }))
+        raise SystemExit(1) from exc
     discovery=google_request("/v1/sites")
     authorised={
         site_key(item.get("siteUrl")): item.get("siteUrl")
@@ -64,7 +76,12 @@ def main():
 
     for site,project_id in sorted(mapping.items()):
         if site not in authorised:
-            unavailable.append({"site":site,"projectId":project_id,"error":"gsc_property_not_authorised"})
+            unavailable.append({
+                "site":site,
+                "projectId":project_id,
+                "error":"gsc_property_not_authorised",
+                "retryCheckpoint":checkpoint_for_sync_failure("gsc_property_not_authorised:"+site, 1),
+            })
             continue
         run,created=create_or_run_sync(project_id,"gsc",site,"27d",started)
         touched_projects.add(project_id)
