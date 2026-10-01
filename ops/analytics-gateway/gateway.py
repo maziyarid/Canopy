@@ -363,32 +363,50 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
             ).fetchone()
         failed=dict(row)
         with db() as c:
-            attempt=consecutive_failure_attempt(c, project_id, provider, site, window)
+            attempt=consecutive_failure_attempt(c, project_id, provider, site, window, run_id)
         failed['retry_checkpoint']=checkpoint_for_sync_failure(message, attempt=attempt)
         return failed,True
 
 
-def consecutive_failure_attempt(c, project_id, provider, site, window):
+def consecutive_failure_attempt(c, project_id, provider, site, window, run_id=None):
     """Count this failure streak, ignoring errors from before the last success.
 
-    A completed sync for the same project, provider, site, and window resets
-    the retry budget. Historical failures must not mark a fresh temporary
-    outage as failed_closed.
+    A completed sync resets the budget only for runs that started after it.
+    A later-started success must not hide an earlier overlapping failure:
+    that failure still counts as attempt 1 so checkpoint generation cannot
+    raise and drop the HTTP response.
     """
-    last_completed=c.execute(
-        """select max(started_at) from sync_run
-           where project_id=? and provider=? and site=? and window=?
-             and status='completed'""",
-        (project_id, provider, site, window),
-    ).fetchone()[0]
+    current_started=None
+    if run_id:
+        current=c.execute(
+            'select started_at from sync_run where id=? and project_id=?',
+            (run_id, project_id),
+        ).fetchone()
+        if current:
+            current_started=current[0]
+    last_sql="""select max(started_at) from sync_run
+                where project_id=? and provider=? and site=? and window=?
+                  and status='completed'"""
+    last_params=[project_id, provider, site, window]
+    if current_started:
+        last_sql+=" and started_at<=?"
+        last_params.append(current_started)
+    if run_id:
+        last_sql+=" and id!=?"
+        last_params.append(run_id)
+    last_completed=c.execute(last_sql, last_params).fetchone()[0]
     sql="""select count(*) from sync_run
            where project_id=? and provider=? and site=? and window=?
              and status in ('error','blocked')"""
     params=[project_id, provider, site, window]
+    if current_started:
+        sql+=" and started_at<=?"
+        params.append(current_started)
     if last_completed:
         sql+=" and started_at>?"
         params.append(last_completed)
-    return int(c.execute(sql, params).fetchone()[0])
+    count=int(c.execute(sql, params).fetchone()[0])
+    return count if count >= 1 else 1
 
 def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
     sql='''select provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at
@@ -560,7 +578,17 @@ class H(BaseHTTPRequestHandler):
                     self.sendj(400,{'error':'invalid_idempotency_key'}); return
             started=now(); runs=[]
             for provider in accepted:
-                run,created=create_or_run_sync(project_id,provider,site,window,started,request_key)
+                try:
+                    run,created=create_or_run_sync(project_id,provider,site,window,started,request_key)
+                except Exception as e:
+                    self.sendj(502,{
+                        'error':'refresh_checkpoint_failed',
+                        'site':site,
+                        'provider':provider,
+                        'detail':safe_error_message(e)[:300],
+                        'runs':runs,
+                    })
+                    return
                 runs.append({**run,'created':created,'coalesced':not created})
             self.sendj(202,{'site':site,'accepted':accepted,'queuedAt':started,'runs':runs}); return
         self.sendj(404,{'error':'not_found'})
