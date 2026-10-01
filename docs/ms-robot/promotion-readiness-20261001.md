@@ -5,3 +5,5 @@
 It fails closed if migrations 0006-0011 are missing or duplicated, if medical manual-note refusals are removed, or if scheduled portfolio ingestion no longer requires `MS_ROBOT_PROJECT_SITE_MAP_JSON` and authorised-property refusal.
 
 Running the check does not merge, deploy, enable scheduled sync, or assign legacy rows. Production stays on its current release.
+
+`ops/ms-robot/provider_retry_checkpoint.py` bounds provider retries and fails closed on missing site maps, unauthorised properties, and unconfigured adapters. It does not enable scheduled portfolio sync.

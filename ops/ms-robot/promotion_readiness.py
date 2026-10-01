@@ -72,6 +72,18 @@ def check_medical_note_gate(root: Path) -> list[str]:
     return ["medical_manual_notes_fail_closed"]
 
 
+def check_provider_retry_gate(root: Path) -> list[str]:
+    source = (root / "ops/ms-robot/provider_retry_checkpoint.py").read_text(encoding="utf-8")
+    if "SCHEDULED_PORTFOLIO_SYNC_ENABLED = False" not in source:
+        raise PromotionReadinessError("provider_retry_enables_scheduled_sync")
+    for marker in ("site_map_missing", "gsc_property_not_authorised", "not_configured"):
+        if marker not in source:
+            raise PromotionReadinessError("provider_retry_fail_closed_missing:" + marker)
+    if "MAX_ATTEMPTS = 3" not in source:
+        raise PromotionReadinessError("provider_retry_bound_missing")
+    return ["provider_retry_checkpoint_fail_closed"]
+
+
 def check_portfolio_map_gate(root: Path) -> list[str]:
     source = (root / "ops/analytics-gateway/portfolio_gsc.py").read_text(encoding="utf-8")
     if "MS_ROBOT_PROJECT_SITE_MAP_JSON is required" not in source:
@@ -87,6 +99,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_migrations(root))
     checks.extend(check_medical_note_gate(root))
     checks.extend(check_portfolio_map_gate(root))
+    checks.extend(check_provider_retry_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
