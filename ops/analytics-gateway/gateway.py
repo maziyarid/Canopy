@@ -9,9 +9,15 @@ from gsc_monitor import ensure_schema as ensure_monitor_schema, list_investigati
 from sqlite_migrations import ensure_analytics_schema
 import sys
 from pathlib import Path
-_MS_ROBOT_OPS = Path(__file__).resolve().parents[1] / "ms-robot"
-if str(_MS_ROBOT_OPS) not in sys.path:
-    sys.path.insert(0, str(_MS_ROBOT_OPS))
+# Deployed unit runs this file from /srv/ms-robot-analytics/gateway.py.
+# Load the checkpoint module from that directory first so startup does not
+# require a sibling /srv/ms-robot tree. Repo layout remains a fallback.
+_GATEWAY_DIR = Path(__file__).resolve().parent
+if str(_GATEWAY_DIR) not in sys.path:
+    sys.path.insert(0, str(_GATEWAY_DIR))
+_MS_ROBOT_OPS = _GATEWAY_DIR.parent / "ms-robot"
+if _MS_ROBOT_OPS.is_dir() and str(_MS_ROBOT_OPS) not in sys.path:
+    sys.path.append(str(_MS_ROBOT_OPS))
 from provider_retry_checkpoint import checkpoint_for_sync_failure, next_checkpoint
 
 HOST=os.getenv('ANALYTICS_GATEWAY_HOST','127.0.0.1')
@@ -356,7 +362,15 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
                 (run_id,project_id),
             ).fetchone()
         failed=dict(row)
-        failed['retry_checkpoint']=checkpoint_for_sync_failure(message, attempt=1)
+        prior_failures=0
+        with db() as c:
+            prior_failures=c.execute(
+                """select count(*) from sync_run
+                   where project_id=? and provider=? and site=? and window=?
+                     and status in ('error','blocked')""",
+                (project_id, provider, site, window),
+            ).fetchone()[0]
+        failed['retry_checkpoint']=checkpoint_for_sync_failure(message, attempt=int(prior_failures))
         return failed,True
 
 def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
