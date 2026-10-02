@@ -98,7 +98,9 @@ def check_client_note_order_gate(root: Path) -> list[str]:
         raise PromotionReadinessError("client_note_filter_before_limit_missing")
     if source.find(marker) > source.find(limit):
         raise PromotionReadinessError("client_note_limit_precedes_approval_filter")
-    return ["client_note_approval_filter_before_limit"]
+    if "VISIBLE_NOTE_LIMIT" not in source or "truncated = extra.length > 0" not in source:
+        raise PromotionReadinessError("client_note_truncation_not_explicit")
+    return ["client_note_approval_filter_before_limit", "client_note_truncation_explicit"]
 
 
 def check_portfolio_map_gate(root: Path) -> list[str]:

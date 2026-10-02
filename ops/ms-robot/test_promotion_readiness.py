@@ -77,6 +77,19 @@ class PromotionReadinessTest(unittest.TestCase):
                 check_client_note_order_gate(root)
             self.assertIn("client_note_limit_precedes_approval_filter", str(caught.exception))
 
+    def test_silent_note_cap_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_tree(
+                root,
+                "payload::json->>'visibility'='client' and payload::json->>'reviewState'='approved'\n"
+                "order by generated_at desc,id asc limit ${pageSize}\n",
+                "MS_ROBOT_PROJECT_SITE_MAP_JSON is required\ngsc_property_not_authorised\n",
+            )
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_client_note_order_gate(root)
+            self.assertIn("client_note_truncation_not_explicit", str(caught.exception))
+
     def test_report_is_json_serialisable(self):
         json.dumps(assess(Path(__file__).resolve().parents[2]))
 

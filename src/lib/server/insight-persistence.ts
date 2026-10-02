@@ -93,15 +93,28 @@ export async function persistSnapshotInsights(sql: SnapshotSql, access: Snapshot
   }
 }
 
+export const VISIBLE_NOTE_LIMIT = 100;
+
+export type PeriodNoteWindow = {
+  notes: Array<InsightRecord & { revision: number }>;
+  truncated: boolean;
+  limit: number;
+};
+
 export async function readPeriodNotes(sql: SnapshotSql, access: SnapshotAccess, period: SnapshotPeriod): Promise<Array<InsightRecord & { revision: number }>> {
+  return (await readPeriodNoteWindow(sql, access, period)).notes;
+}
+
+export async function readPeriodNoteWindow(sql: SnapshotSql, access: SnapshotAccess, period: SnapshotPeriod): Promise<PeriodNoteWindow> {
   if (access.filter.trim()) throw new SnapshotAccessError(403, "Forbidden");
   const out: Array<InsightRecord & { revision: number }> = [];
   const grants = new Set(parseReportSections(access.reportSections));
-  const pageSize = 100;
+  const pageSize = VISIBLE_NOTE_LIMIT;
   const clientOnly = access.role === "client";
   let cursorGeneratedAt: string | null = null;
   let cursorId: string | null = null;
-  while (out.length < 100) {
+  let truncated = false;
+  while (out.length < VISIBLE_NOTE_LIMIT) {
     const rows = await loadNotePage(sql, access, period, pageSize, cursorGeneratedAt, cursorId, clientOnly, grants);
     if (!rows.length) break;
     for (const row of rows) {
@@ -120,11 +133,15 @@ export async function readPeriodNotes(sql: SnapshotSql, access: SnapshotAccess, 
         note.recommendedAction = note.recommendedAction ? redactForClient(note.recommendedAction) : null;
       }
       out.push({ ...note, revision: row.revision });
-      if (out.length >= 100) break;
+      if (out.length >= VISIBLE_NOTE_LIMIT) break;
     }
     if (rows.length < pageSize) break;
   }
-  return out;
+  if (out.length >= VISIBLE_NOTE_LIMIT && cursorGeneratedAt && cursorId) {
+    const extra = await loadNotePage(sql, access, period, 1, cursorGeneratedAt, cursorId, clientOnly, grants);
+    truncated = extra.length > 0;
+  }
+  return { notes: out, truncated, limit: VISIBLE_NOTE_LIMIT };
 }
 
 export async function createManualNote(sql: SnapshotSql, access: SnapshotAccess, snapshot: ReportingSnapshot, input: { title: string; body: string; provider: string; metricName: string }, actorId: string) {

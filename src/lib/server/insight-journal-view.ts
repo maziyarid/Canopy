@@ -15,6 +15,8 @@ export type InsightCardView = {
 
 export type InsightJournalView = {
   days: Array<{ date: string; cards: InsightCardView[] }>;
+  truncated: boolean;
+  visibleLimit: number;
 };
 
 export type MetricPlacement = {
@@ -77,11 +79,16 @@ export function toInsightCardView(insight: InsightRecord): InsightCardView {
   };
 }
 
-export function buildInsightJournalView(days: InsightJournalDay[]): InsightJournalView {
+export function buildInsightJournalView(
+  days: InsightJournalDay[],
+  options?: { truncated?: boolean; visibleLimit?: number },
+): InsightJournalView {
   return {
     days: days.map((day) => ({
       date: day.date,
       cards: day.insights.map(toInsightCardView),
     })),
+    truncated: options?.truncated === true,
+    visibleLimit: options?.visibleLimit ?? 100,
   };
 }

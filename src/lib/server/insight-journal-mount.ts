@@ -39,7 +39,7 @@ function visibleInsights(insights: readonly InsightRecord[], role: InsightRole):
     .filter((insight): insight is InsightRecord => insight !== null && clientMaySee(insight, role));
 }
 
-function journalDays(insights: readonly InsightRecord[]): InsightJournalView {
+function journalDays(insights: readonly InsightRecord[], truncated = false, visibleLimit = 100): InsightJournalView {
   const byDate = new Map<string, InsightRecord[]>();
   for (const insight of insights) {
     const date = insight.generatedAt.slice(0, 10);
@@ -53,7 +53,7 @@ function journalDays(insights: readonly InsightRecord[]): InsightJournalView {
       date,
       insights: rows.sort((a, b) => (a.generatedAt < b.generatedAt ? 1 : -1)),
     }));
-  return buildInsightJournalView(days);
+  return buildInsightJournalView(days, { truncated, visibleLimit });
 }
 
 function metricHasUsableValue(value: unknown): boolean {
@@ -99,6 +99,8 @@ export function mountInsightJournal(options: {
   role: InsightRole;
   now?: Date;
   generate?: boolean;
+  truncated?: boolean;
+  visibleLimit?: number;
 }): InsightJournalMountModel {
   const generated = options.snapshot && options.generate !== false
     ? insightsFromSnapshot(options.snapshot, "assistant:snapshot", options.now ?? new Date())
@@ -106,10 +108,11 @@ export function mountInsightJournal(options: {
   const projectId = options.snapshot?.projectId ?? options.projectId;
   const combined = scopedInsights([...(options.insights ?? []), ...generated], projectId);
   const visible = visibleInsights(combined, options.role);
-  const journal = journalDays(visible);
+  const journal = journalDays(visible, options.truncated === true, options.visibleLimit ?? 100);
 
   const beside: InsightJournalMountModel["beside"] = [];
   const warnings: string[] = [];
+  if (options.truncated) warnings.push("Showing the newest visible notes only. Older notes are omitted.");
   if (options.snapshot) {
     warnings.push(...ga4JournalWarnings(options.snapshot));
     const seen = new Set<string>();

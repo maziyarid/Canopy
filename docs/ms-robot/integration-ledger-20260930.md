@@ -69,7 +69,10 @@ findings. All three were reproduced and fixed with regression checks:
 
 Closed Minor: client note reads apply approval, visibility and section-grant
 filters before the page limit, so newer internal notes cannot hide an older
-approved client note. The reader still returns at most 100 visible notes.
+approved client note. A full visible page now sets truncated when another
+matching row remains, and the report returns notesTruncated plus visibleNoteLimit
+instead of silently omitting older notes. The reader still returns at most 100
+visible notes.
 
 Ruling: enable authentication in the integration build and update old template
 test expectations — production must never inherit the recovery checkout's

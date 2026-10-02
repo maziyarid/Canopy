@@ -8,7 +8,7 @@ import { getProviderStates, getProviderMetricRows } from "../analytics/gateway.s
 import { readGatewayLedger } from "./reporting-ledger";
 import { buildClientReportView } from "./client-report-view";
 import { mountInsightJournal } from "./insight-journal-mount";
-import { persistSnapshotInsights, readPeriodNotes } from "./insight-persistence";
+import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
 
 const readLedger = (projectId: string, site: string, period: import("./reporting-snapshot-core").SnapshotPeriod) =>
   readGatewayLedger(projectId, site, period, { states: getProviderStates, metrics: getProviderMetricRows });
@@ -73,12 +73,15 @@ export const getProjectReport = createServerFn({ method: "GET" })
     const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
     const snapshot = await loadReportingSnapshot({ sql, readLedger, resolveAccess, userId: context.userId, email: context.email, projectId: data.projectId, periodLabel: data.period, comparisonLabel: "" });
     if (access.role !== "client") await persistSnapshotInsights(sql, access, snapshot);
-    const notes = await readPeriodNotes(sql, access, snapshot.period);
+    const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
+    const notes = noteWindow.notes;
     const sections = access.role === "client" ? snapshot.sections : [...snapshot.sections, snapshot.providerHealth];
     return {
       view: buildClientReportView({ projectId: snapshot.projectId, site: snapshot.site, periodLabel: snapshot.period.label, role: access.role, grants: access.reportSections ?? [], sections }),
-      journal: mountInsightJournal({ snapshot, insights: notes, generate: false, role: access.role }),
+      journal: mountInsightJournal({ snapshot, insights: notes, generate: false, role: access.role, truncated: noteWindow.truncated, visibleLimit: noteWindow.limit }),
       notes: access.role === "client" ? [] : notes,
+      notesTruncated: noteWindow.truncated,
+      visibleNoteLimit: noteWindow.limit,
       canManageNotes: access.role !== "client",
       canWriteNotes: access.role !== "client" && access.project.data_domain !== "medical",
       period: snapshot.period,
