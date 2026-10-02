@@ -29,3 +29,7 @@ A mapped project id that is only whitespace is stripped and then rejected by the
 ## 2026-10-02 www and apex conflict
 
 `https://www.example.com/path` and `example.com` normalise to the same host. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`. Process proof: `test_www_and_apex_project_conflict_exits_1_without_discovery`. The existing `sc-domain` conflict proof does not cover the `www` prefix. Promotion readiness fails closed if the prefix strip or that proof is removed. Scheduled portfolio sync stays disabled.
+
+## Upstream tree reconciliation (2026-10-02)
+
+Promotion readiness now fails closed if the integration tree drops the PR #4 SQLite coordinator (`0b914518350ae0ff4293887aaaaaa5aea96b92fc`) or the PR #5 worker-bound ClickUp claim (`63988c96676e6a5be675b13dec5e94c2e7f06548`). This check does not merge those branches and does not authorise promotion.

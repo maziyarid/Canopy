@@ -149,6 +149,54 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed"]
 
 
+
+# Pinned heads inspected 2026-10-02. Content markers, not a merge.
+REQUIRED_UPSTREAM_HEADS = {
+    "pr4_aax132": "0b914518350ae0ff4293887aaaaaa5aea96b92fc",
+    "pr5_aax111": "63988c96676e6a5be675b13dec5e94c2e7f06548",
+}
+
+
+def check_upstream_tree_reconciliation(root: Path) -> list[str]:
+    """Fail closed if the integration tree drops PR #4 or PR #5 launch fixes.
+
+    This does not merge those branches. It only requires the shared SQLite
+    coordinator and the worker-bound ClickUp claim to still be present.
+    """
+    coordinator = root / "ops/analytics-gateway/sqlite_migrations.py"
+    coordinator_tests = root / "ops/analytics-gateway/test_sqlite_migrations.py"
+    claims = root / "src/lib/server/query-builders.ts"
+    for path in (coordinator, coordinator_tests, claims):
+        if not path.is_file():
+            raise PromotionReadinessError("upstream_tree_missing:" + path.name)
+    source = coordinator.read_text(encoding="utf-8")
+    for marker in (
+        'LEGACY_PROJECT_ID = "legacy"',
+        'WRITE_LOCK = "IMMEDIATE"',
+        "PRAGMA busy_timeout=",
+        "ambiguous_legacy_schema:",
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("pr4_sqlite_coordinator_missing:" + marker)
+    proofs = coordinator_tests.read_text(encoding="utf-8")
+    for name in (
+        "test_concurrent_gateway_and_monitor_migrate_legacy_once",
+        "test_ambiguous_unscoped_and_shadow_fail_closed",
+        "test_busy_deadline_is_controlled_failure",
+    ):
+        if name not in proofs:
+            raise PromotionReadinessError("pr4_sqlite_process_proof_missing:" + name)
+    claim_source = claims.read_text(encoding="utf-8")
+    if "export function buildClickUpClaimQuery" not in claim_source or "claimId: string" not in claim_source:
+        raise PromotionReadinessError("pr5_clickup_claim_binding_missing")
+    if "clickup_task_id = $1" not in claim_source or "previous" not in claim_source:
+        raise PromotionReadinessError("pr5_clickup_claim_compare_missing")
+    return [
+        "pr4_sqlite_coordinator_present:" + REQUIRED_UPSTREAM_HEADS["pr4_aax132"],
+        "pr5_clickup_claim_bound:" + REQUIRED_UPSTREAM_HEADS["pr5_aax111"],
+    ]
+
+
 def assess(root: Path | None = None) -> dict:
     root = repo_root_from(root)
     checks = []
@@ -158,6 +206,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_provider_retry_gate(root))
     checks.extend(check_client_note_order_gate(root))
     checks.extend(check_journal_warning_copy_gate(root))
+    checks.extend(check_upstream_tree_reconciliation(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,

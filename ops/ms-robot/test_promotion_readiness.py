@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_migrations
+from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_upstream_tree_reconciliation, check_migrations
 
 
 REQUIRED = {
@@ -132,6 +132,19 @@ class PromotionReadinessTest(unittest.TestCase):
                 check_journal_warning_copy_gate(root)
             self.assertIn("client_report_warnings_drop_journal_truncation", str(caught.exception))
 
+
+
+    def test_upstream_reconciliation_fails_closed_without_sqlite_coordinator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ops/analytics-gateway").mkdir(parents=True)
+            (root / "src/lib/server").mkdir(parents=True)
+            (root / "ops/analytics-gateway/sqlite_migrations.py").write_text("WRITE_LOCK = \"DEFERRED\"\n", encoding="utf-8")
+            (root / "ops/analytics-gateway/test_sqlite_migrations.py").write_text("", encoding="utf-8")
+            (root / "src/lib/server/query-builders.ts").write_text("export function buildClickUpClaimQuery\n", encoding="utf-8")
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_upstream_tree_reconciliation(root)
+            self.assertIn("pr4_sqlite_coordinator_missing", str(caught.exception))
 
 if __name__ == "__main__":
     unittest.main()
