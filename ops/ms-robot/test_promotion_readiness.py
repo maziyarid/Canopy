@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_upstream_tree_reconciliation, check_migrations
+from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_sqlite_coordinator_skips_postgres_0008, check_upstream_tree_reconciliation, check_migrations
 
 
 REQUIRED = {
@@ -158,6 +158,23 @@ class PromotionReadinessTest(unittest.TestCase):
             with self.assertRaises(PromotionReadinessError) as caught:
                 check_migrations(root)
             self.assertIn("migration_0008_renumbered_onto_pr4", str(caught.exception))
+
+
+    def test_sqlite_coordinator_applying_0008_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "ops/analytics-gateway").mkdir(parents=True)
+            (root / "ops/analytics-gateway/sqlite_migrations.py").write_text(
+                "POSTGRESQL_MIGRATIONS_APPLIED_BY_COORDINATOR = ()\nseo_data_cache\n",
+                encoding="utf-8",
+            )
+            (root / "ops/analytics-gateway/test_sqlite_migrations.py").write_text(
+                "def test_sqlite_coordinator_does_not_apply_postgres_0008():\n    pass\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_sqlite_coordinator_skips_postgres_0008(root)
+            self.assertIn("sqlite_coordinator_applies_postgres_0008", str(caught.exception))
 
 if __name__ == "__main__":
     unittest.main()

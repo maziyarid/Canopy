@@ -15,6 +15,8 @@ import time
 LEGACY_PROJECT_ID = "legacy"
 SCHEMA_VERSION_KEY = "analytics_schema_version"
 SCHEMA_VERSION = "provider-ledger-project-scope-v1"
+# PostgreSQL files, including PR #5 migration 0008, are not applied here.
+POSTGRESQL_MIGRATIONS_APPLIED_BY_COORDINATOR = ()
 DEFAULT_DEADLINE_SECONDS = 30
 DEFAULT_BUSY_TIMEOUT_MS = 30000
 WRITE_LOCK = "IMMEDIATE"

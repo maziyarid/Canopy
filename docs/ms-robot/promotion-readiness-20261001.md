@@ -38,3 +38,8 @@ Promotion readiness now fails closed if the integration tree drops the PR #4 SQL
 ## 2026-10-02 migration number identity
 
 Promotion readiness now fails closed if PR #4 `0006`/`0007` lose `quota_state` / `provider_sync_runs_idem`, or if PR #5 `0008` `seo_data_cache_identity_idx` is copied onto those numbers. The files stay `0006`, `0007`, and `0008`. This does not merge main and does not renumber PostgreSQL migrations.
+
+
+## 2026-10-03 SQLite coordinator does not apply PostgreSQL 0008
+
+The analytics SQLite coordinator does not read `migrations/*.sql`. After `ensure_analytics_schema`, the runtime database has no `seo_data_cache` table and no `seo_data_cache_identity_idx`. Promotion readiness fails closed if `sqlite_migrations.py` starts referencing `seo_data_cache` or if `test_sqlite_coordinator_does_not_apply_postgres_0008` is removed. PostgreSQL 0006/0007 stay on PR #4 and 0008 stays on PR #5. This does not merge main, deploy, or enable scheduled portfolio sync.

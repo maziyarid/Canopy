@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from sqlite_migrations import (
     AmbiguousLegacySchemaError,
     AnalyticsSchemaMigrationBusy,
+    POSTGRESQL_MIGRATIONS_APPLIED_BY_COORDINATOR,
     SCHEMA_VERSION,
     SCHEMA_VERSION_KEY,
     UnknownLegacySchemaError,
@@ -200,6 +201,30 @@ def run_pair(path, barrier_dir):
 class SqliteMigrationTests(unittest.TestCase):
     def test_lock_prefers_immediate(self):
         self.assertEqual(WRITE_LOCK, "IMMEDIATE")
+
+    def test_sqlite_coordinator_does_not_apply_postgres_0008(self):
+        self.assertEqual(POSTGRESQL_MIGRATIONS_APPLIED_BY_COORDINATOR, ())
+        source = (ROOT / "sqlite_migrations.py").read_text(encoding="utf-8")
+        self.assertNotIn("seo_data_cache", source)
+        self.assertNotIn("0008_seo_data_cache_identity.sql", source)
+        self.assertNotIn("migrations/", source)
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "state.sqlite3"
+            ensure_analytics_schema(db_path)
+            connection = sqlite3.connect(db_path)
+            try:
+                names = {
+                    row[0]
+                    for row in connection.execute(
+                        "select name from sqlite_master where name is not null"
+                    )
+                }
+            finally:
+                connection.close()
+        self.assertNotIn("seo_data_cache", names)
+        self.assertNotIn("seo_data_cache_identity_idx", names)
+        self.assertTrue(set(TABLES) <= names)
+
 
     def test_concurrent_gateway_and_monitor_migrate_legacy_once(self):
         with tempfile.TemporaryDirectory() as tmp:

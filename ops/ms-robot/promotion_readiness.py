@@ -215,6 +215,24 @@ def check_upstream_tree_reconciliation(root: Path) -> list[str]:
     ]
 
 
+
+def check_sqlite_coordinator_skips_postgres_0008(root: Path) -> list[str]:
+    """SQLite startup must not apply PostgreSQL migration 0008.
+
+    0008 is the PR #5 seo_data_cache identity index. The analytics coordinator
+    builds its own SQLite tables and must not execute migrations/*.sql.
+    """
+    source = (root / "ops/analytics-gateway/sqlite_migrations.py").read_text(encoding="utf-8")
+    if "POSTGRESQL_MIGRATIONS_APPLIED_BY_COORDINATOR = ()" not in source:
+        raise PromotionReadinessError("sqlite_coordinator_postgres_boundary_missing")
+    if "seo_data_cache" in source or "0008_seo_data_cache_identity.sql" in source:
+        raise PromotionReadinessError("sqlite_coordinator_applies_postgres_0008")
+    proof = (root / "ops/analytics-gateway/test_sqlite_migrations.py").read_text(encoding="utf-8")
+    if "test_sqlite_coordinator_does_not_apply_postgres_0008" not in proof:
+        raise PromotionReadinessError("sqlite_0008_non_application_proof_missing")
+    return ["sqlite_coordinator_does_not_apply_postgres_0008"]
+
+
 def assess(root: Path | None = None) -> dict:
     root = repo_root_from(root)
     checks = []
@@ -225,6 +243,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_client_note_order_gate(root))
     checks.extend(check_journal_warning_copy_gate(root))
     checks.extend(check_upstream_tree_reconciliation(root))
+    checks.extend(check_sqlite_coordinator_skips_postgres_0008(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
