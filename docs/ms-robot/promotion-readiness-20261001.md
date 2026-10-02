@@ -25,3 +25,7 @@ Client note reads filter visibility, review state and section grants in SQL befo
 ## 2026-10-02 whitespace project id
 
 A mapped project id that is only whitespace is stripped and then rejected by the existing site-map pattern before GSC discovery. Process proof: `test_whitespace_only_project_id_exits_1_without_discovery`. Promotion readiness fails closed if that proof or the strip-before-pattern order is removed. Scheduled portfolio sync stays disabled.
+
+## 2026-10-02 www and apex conflict
+
+`https://www.example.com/path` and `example.com` normalise to the same host. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`. Process proof: `test_www_and_apex_project_conflict_exits_1_without_discovery`. The existing `sc-domain` conflict proof does not cover the `www` prefix. Promotion readiness fails closed if the prefix strip or that proof is removed. Scheduled portfolio sync stays disabled.
