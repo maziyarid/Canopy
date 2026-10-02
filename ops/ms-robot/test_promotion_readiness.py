@@ -7,9 +7,9 @@ from promotion_readiness import PromotionReadinessError, assess, check_client_no
 
 
 REQUIRED = {
-    "0006_provider_sync_ledger.sql": "select 1;\n",
-    "0007_provider_sync_project_idempotency.sql": "select 1;\n",
-    "0008_seo_data_cache_identity.sql": "select 1;\n",
+    "0006_provider_sync_ledger.sql": "alter table provider_sync_runs add column if not exists quota_state text;\n",
+    "0007_provider_sync_project_idempotency.sql": "create unique index provider_sync_runs_idem on provider_sync_runs(project_id, idempotency_key);\n",
+    "0008_seo_data_cache_identity.sql": "-- does not collide with PR #4\ncreate unique index seo_data_cache_identity_idx on seo_data_cache(project_id);\n",
     "0009_privacy_data_domain.sql": "select 1;\n",
     "0010_report_section_grants.sql": "select 1;\n",
     "0011_report_insights.sql": "select 1;\n",
@@ -145,6 +145,19 @@ class PromotionReadinessTest(unittest.TestCase):
             with self.assertRaises(PromotionReadinessError) as caught:
                 check_upstream_tree_reconciliation(root)
             self.assertIn("pr4_sqlite_coordinator_missing", str(caught.exception))
+
+    def test_pr5_migration_renumbered_onto_pr4_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_tree(root, "x", "y")
+            swapped = (root / "migrations/0008_seo_data_cache_identity.sql").read_text(encoding="utf-8")
+            (root / "migrations/0006_provider_sync_ledger.sql").write_text(
+                (root / "migrations/0006_provider_sync_ledger.sql").read_text(encoding="utf-8") + swapped,
+                encoding="utf-8",
+            )
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_migrations(root)
+            self.assertIn("migration_0008_renumbered_onto_pr4", str(caught.exception))
 
 if __name__ == "__main__":
     unittest.main()

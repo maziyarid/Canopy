@@ -51,6 +51,12 @@ def migration_numbers(root: Path) -> list[str]:
     return numbers
 
 
+MIGRATION_IDENTITY = {
+    "0006_provider_sync_ledger.sql": ("quota_state", "provider_sync_runs"),
+    "0007_provider_sync_project_idempotency.sql": ("provider_sync_runs_idem", "idempotency_key"),
+    "0008_seo_data_cache_identity.sql": ("seo_data_cache_identity_idx", "does not collide with PR #4"),
+}
+
 def check_migrations(root: Path) -> list[str]:
     missing = [name for name in REQUIRED_MIGRATIONS if not (root / "migrations" / name).is_file()]
     if missing:
@@ -60,7 +66,19 @@ def check_migrations(root: Path) -> list[str]:
         raise PromotionReadinessError("duplicate_migration_numbers")
     if numbers != sorted(numbers):
         raise PromotionReadinessError("migration_numbers_not_ordered")
-    return [f"migrations_present:{','.join(REQUIRED_MIGRATIONS)}"]
+    bodies = {
+        name: (root / "migrations" / name).read_text(encoding="utf-8")
+        for name in MIGRATION_IDENTITY
+    }
+    for name, markers in MIGRATION_IDENTITY.items():
+        for marker in markers:
+            if marker not in bodies[name]:
+                raise PromotionReadinessError("migration_identity_missing:" + name + ":" + marker)
+    if "seo_data_cache_identity_idx" in bodies["0006_provider_sync_ledger.sql"] or "seo_data_cache_identity_idx" in bodies["0007_provider_sync_project_idempotency.sql"]:
+        raise PromotionReadinessError("migration_0008_renumbered_onto_pr4")
+    if "quota_state" in bodies["0008_seo_data_cache_identity.sql"]:
+        raise PromotionReadinessError("migration_0006_swapped_onto_0008")
+    return [f"migrations_present:{','.join(REQUIRED_MIGRATIONS)}", "migration_0006_0007_0008_not_renumbered"]
 
 
 def check_medical_note_gate(root: Path) -> list[str]:

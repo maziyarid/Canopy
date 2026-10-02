@@ -33,3 +33,8 @@ A mapped project id that is only whitespace is stripped and then rejected by the
 ## Upstream tree reconciliation (2026-10-02)
 
 Promotion readiness now fails closed if the integration tree drops the PR #4 SQLite coordinator (`0b914518350ae0ff4293887aaaaaa5aea96b92fc`) or the PR #5 worker-bound ClickUp claim (`63988c96676e6a5be675b13dec5e94c2e7f06548`). This check does not merge those branches and does not authorise promotion.
+
+
+## 2026-10-02 migration number identity
+
+Promotion readiness now fails closed if PR #4 `0006`/`0007` lose `quota_state` / `provider_sync_runs_idem`, or if PR #5 `0008` `seo_data_cache_identity_idx` is copied onto those numbers. The files stay `0006`, `0007`, and `0008`. This does not merge main and does not renumber PostgreSQL migrations.
