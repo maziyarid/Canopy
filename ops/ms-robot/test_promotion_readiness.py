@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from promotion_readiness import PromotionReadinessError, assess, check_migrations
+from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_migrations
 
 
 REQUIRED = {
@@ -62,6 +62,20 @@ class PromotionReadinessTest(unittest.TestCase):
             with self.assertRaises(PromotionReadinessError) as caught:
                 check_migrations(root)
             self.assertIn("duplicate_migration_numbers", str(caught.exception))
+
+
+    def test_client_note_limit_before_filter_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_tree(
+                root,
+                "order by generated_at desc,id asc limit ${pageSize}\n"
+                "payload::json->>'visibility'='client' and payload::json->>'reviewState'='approved'\n",
+                "MS_ROBOT_PROJECT_SITE_MAP_JSON is required\ngsc_property_not_authorised\n",
+            )
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_client_note_order_gate(root)
+            self.assertIn("client_note_limit_precedes_approval_filter", str(caught.exception))
 
     def test_report_is_json_serialisable(self):
         json.dumps(assess(Path(__file__).resolve().parents[2]))

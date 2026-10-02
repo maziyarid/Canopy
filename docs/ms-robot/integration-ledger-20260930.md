@@ -67,10 +67,9 @@ findings. All three were reproduced and fixed with regression checks:
    coverage remains partial, with stored dates and evidence ranges shown;
    sparse rows alone never prove missing days had zero activity.
 
-Deferred Minor: the 100-record note read limit precedes client approval/grant
-filtering. More than 100 recent internal notes can hide an older approved client
-note. The query remains project/site scoped; this is a completeness limitation,
-not permission to expose drafts. Track pagination/filter ordering separately.
+Closed Minor: client note reads apply approval, visibility and section-grant
+filters before the page limit, so newer internal notes cannot hide an older
+approved client note. The reader still returns at most 100 visible notes.
 
 Ruling: enable authentication in the integration build and update old template
 test expectations — production must never inherit the recovery checkout's

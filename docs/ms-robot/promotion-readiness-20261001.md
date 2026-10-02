@@ -19,3 +19,5 @@ A non-string project id (number, boolean, array, or object) is rejected as `site
 A project id of `legacy` (any case) is rejected as `site_map_invalid` before discovery or `create_or_run_sync`. That name is reserved for the SQLite migration scope and must not become a scheduled tenant.
 
 An unauthorised mapped property stays `gsc_property_not_authorised` / `failed_closed` / `retryable=false` / attempt 1. A second portfolio process against the same database still exits 1 and does not call `create_or_run_sync`. Discovery may run again; that is not a retry of the refusal. Scheduled portfolio sync stays disabled.
+
+Client note reads filter visibility, review state and section grants in SQL before the page limit. An older approved note is not hidden by newer internal notes. The reader still returns at most 100 visible notes.

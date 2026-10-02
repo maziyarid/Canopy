@@ -90,6 +90,17 @@ def check_provider_retry_gate(root: Path) -> list[str]:
     return ["provider_retry_checkpoint_fail_closed", "gateway_sync_failure_checkpoint_wired"]
 
 
+def check_client_note_order_gate(root: Path) -> list[str]:
+    source = (root / "src/lib/server/insight-persistence.ts").read_text(encoding="utf-8")
+    marker = "payload::json->>'visibility'='client' and payload::json->>'reviewState'='approved'"
+    limit = "order by generated_at desc,id asc limit ${pageSize}"
+    if marker not in source or limit not in source:
+        raise PromotionReadinessError("client_note_filter_before_limit_missing")
+    if source.find(marker) > source.find(limit):
+        raise PromotionReadinessError("client_note_limit_precedes_approval_filter")
+    return ["client_note_approval_filter_before_limit"]
+
+
 def check_portfolio_map_gate(root: Path) -> list[str]:
     source = (root / "ops/analytics-gateway/portfolio_gsc.py").read_text(encoding="utf-8")
     if "MS_ROBOT_PROJECT_SITE_MAP_JSON is required" not in source:
@@ -110,6 +121,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_medical_note_gate(root))
     checks.extend(check_portfolio_map_gate(root))
     checks.extend(check_provider_retry_gate(root))
+    checks.extend(check_client_note_order_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
