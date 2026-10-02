@@ -17,3 +17,5 @@ An invalid, empty, or ambiguous `MS_ROBOT_PROJECT_SITE_MAP_JSON` prints `retryCh
 A non-string project id (number, boolean, array, or object) is rejected as `site_map_invalid` before discovery or `create_or_run_sync`. String project ids are unchanged.
 
 A project id of `legacy` (any case) is rejected as `site_map_invalid` before discovery or `create_or_run_sync`. That name is reserved for the SQLite migration scope and must not become a scheduled tenant.
+
+An unauthorised mapped property stays `gsc_property_not_authorised` / `failed_closed` / `retryable=false` / attempt 1. A second portfolio process against the same database still exits 1 and does not call `create_or_run_sync`. Discovery may run again; that is not a retry of the refusal. Scheduled portfolio sync stays disabled.
