@@ -14,13 +14,17 @@ PROJECT_ID_PATTERN=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RESERVED_PROJECT_IDS=frozenset({"legacy"})
 
 
+def normalise_host(host):
+    return str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
+
+
 def site_key(site_url):
     raw = str(site_url or "").strip()
     if raw.startswith("sc-domain:"):
-        return raw.split(":", 1)[1].lower().rstrip(".")
+        return normalise_host(raw.split(":", 1)[1])
     if "://" in raw:
-        return (urlparse(raw).hostname or raw).lower().removeprefix("www.").rstrip(".")
-    return raw.lower().removeprefix("www.").strip("/").rstrip(".")
+        return normalise_host(urlparse(raw).hostname or raw)
+    return normalise_host(raw.strip("/"))
 
 
 def project_site_map(env=os.environ):
