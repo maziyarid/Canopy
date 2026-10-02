@@ -11,6 +11,7 @@ from monitor_dispatch import bridge_event
 
 
 PROJECT_ID_PATTERN=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+RESERVED_PROJECT_IDS=frozenset({"legacy"})
 
 
 def site_key(site_url):
@@ -41,6 +42,8 @@ def project_site_map(env=os.environ):
         project_id=raw_project.strip()
         if not site:
             raise SystemExit("MS_ROBOT_PROJECT_SITE_MAP_JSON contains an empty site")
+        if project_id.lower() in RESERVED_PROJECT_IDS:
+            raise SystemExit(f"invalid project id for mapped site {site}: reserved project scope")
         if not PROJECT_ID_PATTERN.fullmatch(project_id):
             raise SystemExit(f"invalid project id for mapped site {site}")
         if site in output and output[site]!=project_id:
