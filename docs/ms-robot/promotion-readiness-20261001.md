@@ -20,4 +20,4 @@ A project id of `legacy` (any case) is rejected as `site_map_invalid` before dis
 
 An unauthorised mapped property stays `gsc_property_not_authorised` / `failed_closed` / `retryable=false` / attempt 1. A second portfolio process against the same database still exits 1 and does not call `create_or_run_sync`. Discovery may run again; that is not a retry of the refusal. Scheduled portfolio sync stays disabled.
 
-Client note reads filter visibility, review state and section grants in SQL before the page limit. An older approved note is not hidden by newer internal notes. The reader still returns at most 100 visible notes.
+Client note reads filter visibility, review state and section grants in SQL before the page limit. An older approved note is not hidden by newer internal notes. The reader still returns at most 100 visible notes. The snapshot passes `notesTruncated` into the journal mount, which already has a `warnings` array and sets the omission warning. `ClientReportView` only has per-section `warning`, so no journal warnings array was added. If that slot appears later, promotion readiness fails closed unless it copies the same omission warning.
