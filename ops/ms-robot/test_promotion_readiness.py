@@ -34,6 +34,7 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertFalse(report["scheduledPortfolioSyncEnabled"])
         self.assertIn("medical_manual_notes_fail_closed", report["checks"])
         self.assertIn("scheduled_portfolio_map_fail_closed", report["checks"])
+        self.assertIn("whitespace_project_id_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
     def test_missing_migration_fails_closed(self):

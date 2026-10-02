@@ -99,6 +99,19 @@ class PortfolioInvalidProjectIdProcessTest(unittest.TestCase):
         self.assertFalse(checkpoint["retryCheckpoint"]["retryable"])
         self.assertIn("empty site", checkpoint["detail"])
 
+    def test_whitespace_only_project_id_exits_1_without_discovery(self):
+        payload, checkpoint = self._run({"https://example.com/": "   \t  "})
+        self.assertEqual(payload["code"], 1)
+        self.assertEqual(payload["called"], {"sync": 0, "google": 0})
+        self.assertEqual(checkpoint["error"], "site_map_invalid")
+        self.assertFalse(checkpoint["retryCheckpoint"]["retryable"])
+        self.assertEqual(checkpoint["retryCheckpoint"]["errorClass"], "site_map_invalid")
+        self.assertEqual(checkpoint["retryCheckpoint"]["stage"], "failed_closed")
+        self.assertFalse(checkpoint["retryCheckpoint"]["scheduledPortfolioSyncEnabled"])
+        self.assertIn("invalid project id", checkpoint["detail"])
+        self.assertNotIn("google_request", checkpoint["detail"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
