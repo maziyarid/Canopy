@@ -138,7 +138,10 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     proof = (root / "ops/ms-robot/test_portfolio_invalid_project_id_process.py").read_text(encoding="utf-8")
     if "test_whitespace_only_project_id_exits_1_without_discovery" not in proof:
         raise PromotionReadinessError("whitespace_project_id_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed"]
+    padded = (root / "ops/ms-robot/test_portfolio_padded_project_id_process.py").read_text(encoding="utf-8")
+    if "test_padded_project_id_is_stripped_before_discovery" not in padded:
+        raise PromotionReadinessError("padded_project_id_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery"]
 
 
 def assess(root: Path | None = None) -> dict:
