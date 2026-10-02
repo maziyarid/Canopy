@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_migrations
+from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_migrations
 
 
 REQUIRED = {
@@ -63,7 +63,6 @@ class PromotionReadinessTest(unittest.TestCase):
                 check_migrations(root)
             self.assertIn("duplicate_migration_numbers", str(caught.exception))
 
-
     def test_client_note_limit_before_filter_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -92,6 +91,45 @@ class PromotionReadinessTest(unittest.TestCase):
 
     def test_report_is_json_serialisable(self):
         json.dumps(assess(Path(__file__).resolve().parents[2]))
+
+    def test_client_report_without_warnings_slot_does_not_invent_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/lib/server").mkdir(parents=True)
+            (root / "src/lib/server/insight-journal-mount.ts").write_text(
+                "options.truncated\nShowing the newest visible notes only. Older notes are omitted.\n",
+                encoding="utf-8",
+            )
+            (root / "src/lib/server/reporting-snapshot.ts").write_text(
+                "truncated: noteWindow.truncated\n",
+                encoding="utf-8",
+            )
+            (root / "src/lib/server/client-report-view.ts").write_text(
+                "export type ClientReportView = {\n  sections: ClientSectionView[];\n};\n",
+                encoding="utf-8",
+            )
+            checks = check_journal_warning_copy_gate(root)
+            self.assertIn("journal_truncation_warning_mounted", checks)
+
+    def test_invented_client_warnings_slot_must_copy_journal_truncation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src/lib/server").mkdir(parents=True)
+            (root / "src/lib/server/insight-journal-mount.ts").write_text(
+                "options.truncated\nShowing the newest visible notes only. Older notes are omitted.\n",
+                encoding="utf-8",
+            )
+            (root / "src/lib/server/reporting-snapshot.ts").write_text(
+                "truncated: noteWindow.truncated\n",
+                encoding="utf-8",
+            )
+            (root / "src/lib/server/client-report-view.ts").write_text(
+                "export type ClientReportView = {\n  warnings: string[];\n};\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_journal_warning_copy_gate(root)
+            self.assertIn("client_report_warnings_drop_journal_truncation", str(caught.exception))
 
 
 if __name__ == "__main__":
