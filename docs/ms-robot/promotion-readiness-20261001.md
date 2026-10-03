@@ -69,3 +69,8 @@ The analytics SQLite coordinator does not read `migrations/*.sql`. After `ensure
 
 `https://ex%61mple.com` and `example.com` normalise to the same host. `decode_host` applies one percent-decode before the port, www, trailing-dot, and IDNA conflict check. A leftover `%` fails closed without echoing the raw key. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`. Process proof: `test_percent_encoded_host_conflicts_with_apex_before_discovery`. The IDNA proof does not cover a percent-encoded label. Promotion readiness fails closed if `decode_host` or that proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.
 - 2026-10-03: decoded scheme/path residue fails closed before discovery; Unicode and punycode forms of the same host conflict. Scheduled portfolio sync stays disabled.
+
+
+## 2026-10-03 empty host label
+
+`.example.com` and `example..com` are not site identities. `assert_hostname` rejects a leading dot and an empty label before discovery or `create_or_run_sync`, and does not echo the raw key. Process proof: `test_empty_label_hosts_exit_before_discovery`. Promotion readiness fails closed if that rejection or proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.

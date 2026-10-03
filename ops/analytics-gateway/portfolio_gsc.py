@@ -38,8 +38,11 @@ def decode_host(host):
 
 def assert_hostname(host):
     # One decode must leave a hostname, not a second identity via scheme, path,
-    # backslash, or whitespace. IPv6 keeps internal colons. Do not echo the raw key.
+    # backslash, whitespace, or an empty label. IPv6 keeps internal colons.
+    # Do not echo the raw key.
     if not host or any(char in host for char in "/\\@ \t\r\n"):
+        raise SystemExit("invalid site host")
+    if host.startswith(".") or ".." in host:
         raise SystemExit("invalid site host")
     if ":" in host and host.count(":") < 2:
         raise SystemExit("invalid site host")
