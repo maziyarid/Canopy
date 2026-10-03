@@ -1,3 +1,4 @@
+import { assertUnrestrictedSession } from "./platform-launch-scope.server";
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { studioAuth } from "./studio-auth";
@@ -25,6 +26,7 @@ export const mangoolsRequest = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .validator(PublicMangoolsRequestSchema)
   .handler(async ({ context, data }) => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     if (!context.userId) throw new Error("Unauthorized");
     const key = await ownerMangoolsKey(sql, context.userId);

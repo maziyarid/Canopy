@@ -1,3 +1,4 @@
+import { assertLaunchProject, getLaunchScope } from "./platform-launch-scope.server.ts";
 import type { Sql } from "@/lib/db";
 import type { Project, Role } from "@/lib/types";
 import { parseReportSections } from "./report-sections.ts";
@@ -52,10 +53,7 @@ export function canAdminProviders(role: Role, keywordFilter: string) {
  * - Call assertSameDataDomain only when such a context exists; do not use it
  *   to forbid independent project grants.
  */
-export function assertSameDataDomain(
-  ctxDomain: DataDomain,
-  targetDomain: DataDomain,
-): void {
+export function assertSameDataDomain(ctxDomain: DataDomain, targetDomain: DataDomain): void {
   if (ctxDomain !== targetDomain) {
     throw new Error("Project not found");
   }
@@ -76,7 +74,7 @@ export function applyAmbientDataDomain(
 }
 
 export async function linkInvites(sql: Sql, userId: string, email: string) {
-  if (!email) return;
+  if (!email || getLaunchScope()) return;
   await sql`update project_access set user_id = ${userId} where email = ${email} and (user_id is null or user_id = '')`;
 }
 
@@ -86,6 +84,7 @@ export async function resolveAccess(
   email: string,
   projectId: string,
 ): Promise<AccessCtx> {
+  assertLaunchProject(userId, projectId);
   const projects = await sql<DbProject>`select * from projects where id = ${projectId}`;
   const project = projects[0];
   if (!project) throw new Error("Project not found");
@@ -103,7 +102,12 @@ export async function resolveAccess(
   `;
   const row = rows[0];
   if (!row) throw new Error("Forbidden");
-  return { role: row.role, filter: row.keyword_filter ?? "", reportSections: parseReportSections(row.report_sections), project: normalized };
+  return {
+    role: row.role,
+    filter: row.keyword_filter ?? "",
+    reportSections: parseReportSections(row.report_sections),
+    project: normalized,
+  };
 }
 
 export function filterKeywords<T extends { keyword: string }>(rows: T[], filter: string) {
@@ -117,7 +121,14 @@ export function filterKeywords<T extends { keyword: string }>(rows: T[], filter:
 
 export function toProject(
   p: DbProject,
-  extra: { role: Role; keywordFilter: string; keywordCount: number; memberCount: number; avgRank: number | null; top10: number },
+  extra: {
+    role: Role;
+    keywordFilter: string;
+    keywordCount: number;
+    memberCount: number;
+    avgRank: number | null;
+    top10: number;
+  },
 ): Project {
   return {
     id: p.id,
