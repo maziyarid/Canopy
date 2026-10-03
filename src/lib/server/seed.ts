@@ -1,3 +1,4 @@
+import { assertUnrestrictedSession } from "./platform-launch-scope.server";
 import { createServerFn } from "@tanstack/react-start";
 import { getSql } from "@/lib/db";
 import { opportunityScore } from "@/lib/score";
@@ -77,6 +78,7 @@ async function insertProject(
 export const seedSampleStudio = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .handler(async ({ context }) => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     const existing = await sql<{ id: string; domain: string }>`
       select id, domain from projects
@@ -279,7 +281,9 @@ export const seedSampleStudio = createServerFn({ method: "POST" })
 
     const north = ids[0] ?? existing.find((e) => e.domain === "northline.studio")?.id;
     if (north) {
-      const hasBrief = await sql<{ id: string }>`select id from briefs where project_id = ${north} limit 1`;
+      const hasBrief = await sql<{
+        id: string;
+      }>`select id from briefs where project_id = ${north} limit 1`;
       if (!hasBrief.length) {
         await sql`
           insert into briefs (id, project_id, keyword, content)
@@ -313,7 +317,9 @@ export const seedSampleStudio = createServerFn({ method: "POST" })
       existing.find((e) => e.domain === "drbastaninejad.com")?.id ??
       (existing.some((e) => e.domain === "northline.studio") ? ids[0] : ids[1]);
     if (clinicId && clinicId !== north) {
-      const hasBrief = await sql<{ id: string }>`select id from briefs where project_id = ${clinicId} limit 1`;
+      const hasBrief = await sql<{
+        id: string;
+      }>`select id from briefs where project_id = ${clinicId} limit 1`;
       if (!hasBrief.length) {
         await sql`
           insert into briefs (id, project_id, keyword, content)

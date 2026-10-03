@@ -7,14 +7,36 @@ export const studioAuth = createMiddleware({ type: "function" })
   })
   .server(async ({ next, context }) => {
     const { assertSameSiteRequest } = await import("@/lib/auth/isolation.server");
-    const { getSessionUser, requireUserId } = await import("@/lib/auth/verify.server");
+    const { requireUserId, UnauthorizedError, authConfigured } =
+      await import("@/lib/auth/verify.server");
     assertSameSiteRequest();
-    const userId = await requireUserId(context.bearerToken);
-    const user = await getSessionUser(context.bearerToken);
-    return next({
-      context: {
-        userId,
-        email: (user?.email ?? "").toLowerCase().trim(),
-      },
-    });
+    const [{ auth }, { getSql }, { requestLaunchAuthority }, { runWithLaunchScope }] =
+      await Promise.all([
+        import("@/lib/auth/server"),
+        import("@/lib/db"),
+        import("./platform-launch-auth.server"),
+        import("./platform-launch-scope.server"),
+      ]);
+    const { getRequest } = await import("@tanstack/react-start/server");
+    const request = getRequest();
+    const headers = new Headers(request?.headers);
+    if (context.bearerToken) headers.set("Authorization", `Bearer ${context.bearerToken}`);
+    const { gateIdentityEnabled } = await import("@/lib/auth/gate-identity.server");
+    const authenticationEnabled = authConfigured || gateIdentityEnabled();
+    const authority =
+      request && authenticationEnabled
+        ? await requestLaunchAuthority(auth, await getSql(), headers, true)
+        : null;
+    if (!authority && authenticationEnabled) throw new UnauthorizedError();
+    const scope = authority?.scope ?? null;
+    const user = authority?.user ?? null;
+    const userId = user?.id ?? (await requireUserId(context.bearerToken));
+    return runWithLaunchScope(scope, () =>
+      next({
+        context: {
+          userId,
+          email: scope ? "" : (user?.email ?? "").toLowerCase().trim(),
+        },
+      }),
+    );
   });

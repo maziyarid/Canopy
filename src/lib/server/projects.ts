@@ -1,3 +1,4 @@
+import { assertUnrestrictedSession, getLaunchScope } from "./platform-launch-scope.server";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { studioAuth } from "./studio-auth";
@@ -33,31 +34,42 @@ export const listProjects = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const sql = await getSql();
     await linkInvites(sql, context.userId, context.email);
+    const scope = getLaunchScope();
+    const scopedProjectId = scope?.project_id ?? null;
     const owned = await sql<DbProject>`
-      select * from projects where owner_id = ${context.userId} order by created_at desc
+      select * from projects where owner_id = ${context.userId}
+        and (${scopedProjectId}::text is null or id = ${scopedProjectId}) order by created_at desc
     `;
     const shared = await sql<DbProject>`
       select p.* from projects p
       join project_access a on a.project_id = p.id
       where p.owner_id <> ${context.userId}
         and (a.user_id = ${context.userId} or (${context.email} <> '' and a.email = ${context.email}))
+        and (${scopedProjectId}::text is null or p.id = ${scopedProjectId})
       order by p.created_at desc
     `;
     const accessRows = await sql<{ project_id: string; role: Role; keyword_filter: string }>`
       select project_id, role, keyword_filter from project_access
-      where user_id = ${context.userId} or (${context.email} <> '' and email = ${context.email})
+      where (user_id = ${context.userId} or (${context.email} <> '' and email = ${context.email}))
+        and (${scopedProjectId}::text is null or project_id = ${scopedProjectId})
     `;
     const accessMap = new Map(accessRows.map((a) => [a.project_id, a]));
-    const all = [...owned, ...shared.filter((p) => !owned.some((o) => o.id === p.id))];
+    const all = [...owned, ...shared.filter((p) => !owned.some((o) => o.id === p.id))].filter(
+      (p) => !scope || p.id === scope.project_id,
+    );
     const out: Project[] = [];
     for (const p of all) {
-      const role: Role = p.owner_id === context.userId ? "owner" : (accessMap.get(p.id)?.role ?? "client");
-      const filter = p.owner_id === context.userId ? "" : (accessMap.get(p.id)?.keyword_filter ?? "");
+      const role: Role =
+        p.owner_id === context.userId ? "owner" : (accessMap.get(p.id)?.role ?? "client");
+      const filter =
+        p.owner_id === context.userId ? "" : (accessMap.get(p.id)?.keyword_filter ?? "");
       const keywordRows = await sql<{ keyword: string }>`
         select keyword from keywords where project_id = ${p.id}
       `;
       const scopedKeywords = filterKeywords(keywordRows, filter);
-      const mem = await sql<{ c: number }>`select count(*)::int as c from project_access where project_id = ${p.id}`;
+      const mem = await sql<{
+        c: number;
+      }>`select count(*)::int as c from project_access where project_id = ${p.id}`;
       const rankRows = await sql<{ keyword: string; rank: number | null }>`
         select distinct on (keyword) keyword, rank from rank_history
         where project_id = ${p.id}
@@ -65,7 +77,9 @@ export const listProjects = createServerFn({ method: "GET" })
       `;
       const scopedRanks = filterKeywords(rankRows, filter);
       const ranked = scopedRanks.map((r) => n(r.rank)).filter((x) => x > 0);
-      const avgRank = ranked.length ? Math.round((ranked.reduce((s, x) => s + x, 0) / ranked.length) * 10) / 10 : null;
+      const avgRank = ranked.length
+        ? Math.round((ranked.reduce((s, x) => s + x, 0) / ranked.length) * 10) / 10
+        : null;
       const top10 = ranked.filter((x) => x <= 10).length;
       out.push(
         toProject(p, {
@@ -97,6 +111,7 @@ export const createProject = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
+    assertUnrestrictedSession();
     const id = nid();
     await sql`
       insert into projects (id, owner_id, name, domain, data_domain, location_id, language_id, platform_id, competitors, notes)
@@ -172,8 +187,14 @@ export const getProjectBundle = createServerFn({ method: "GET" })
   .handler(async ({ context, data }): Promise<ProjectBundle> => {
     const sql = await getSql();
     await linkInvites(sql, context.userId, context.email);
-    const { project, role, filter } = await resolveAccess(sql, context.userId, context.email, data.id);
-    const kwRows = await sql`select * from keywords where project_id = ${data.id} order by opportunity desc`;
+    const { project, role, filter } = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.id,
+    );
+    const kwRows =
+      await sql`select * from keywords where project_id = ${data.id} order by opportunity desc`;
     const keywords = filterKeywords(kwRows.map(mapKeyword), filter);
     const rankRows = await sql`
       select * from rank_history where project_id = ${data.id} order by checked_at desc
@@ -186,18 +207,25 @@ export const getProjectBundle = createServerFn({ method: "GET" })
     }
     const ranks = [...latestByKw.values()];
     const ranked = ranks.map((r) => r.rank).filter((x): x is number => x != null && x > 0);
-    const avgRank = ranked.length ? Math.round((ranked.reduce((s, x) => s + x, 0) / ranked.length) * 10) / 10 : null;
+    const avgRank = ranked.length
+      ? Math.round((ranked.reduce((s, x) => s + x, 0) / ranked.length) * 10) / 10
+      : null;
     const top10 = ranked.filter((x) => x <= 10).length;
-    const mem = await sql<{ c: number }>`select count(*)::int as c from project_access where project_id = ${data.id}`;
-    const relatedRaw = await sql`select * from keywords where project_id = ${data.id} and agent = 'Expander' order by opportunity desc`;
+    const mem = await sql<{
+      c: number;
+    }>`select count(*)::int as c from project_access where project_id = ${data.id}`;
+    const relatedRaw =
+      await sql`select * from keywords where project_id = ${data.id} and agent = 'Expander' order by opportunity desc`;
     const comps = await sql`select * from competitors where project_id = ${data.id}`;
     const gapRows = await sql`select * from gaps where project_id = ${data.id}`;
-    const serpRows = await sql`select * from serp_rows where project_id = ${data.id} order by position asc`;
+    const serpRows =
+      await sql`select * from serp_rows where project_id = ${data.id} order by position asc`;
     const accessRows =
       role === "client"
         ? []
         : await sql`select * from project_access where project_id = ${data.id} order by created_at desc`;
-    const briefRows = await sql`select * from briefs where project_id = ${data.id} order by created_at desc`;
+    const briefRows =
+      await sql`select * from briefs where project_id = ${data.id} order by created_at desc`;
     const logRows = filter.trim()
       ? []
       : await sql`select * from activity_log where project_id = ${data.id} order by created_at desc limit 40`;
