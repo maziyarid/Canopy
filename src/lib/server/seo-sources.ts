@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { assertOperatorAccess } from "./operator-access";
 import { studioAuth } from "./studio-auth";
 import { buildSeoCacheUpsertQuery, buildSeoDataQuery, buildSeoTimelineQuery } from "./query-builders";
 
@@ -37,7 +38,7 @@ export const saveSEOData = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(await resolveAccess(sql, context.userId || "", context.email || "", data.projectId));
 
     const query = buildSeoCacheUpsertQuery({
       id: crypto.randomUUID(),
@@ -66,7 +67,7 @@ export const getSEOData = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(await resolveAccess(sql, context.userId || "", context.email || "", data.projectId));
 
     const query = buildSeoDataQuery(data);
     const rows = await sql.query<{
@@ -105,7 +106,7 @@ export const aggregateSEOData = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(await resolveAccess(sql, context.userId || "", context.email || "", data.projectId));
 
     const cachedData = await getSEOData({
       data: {
@@ -134,7 +135,7 @@ export const getSEOTimeline = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(await resolveAccess(sql, context.userId || "", context.email || "", data.projectId));
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - data.days);

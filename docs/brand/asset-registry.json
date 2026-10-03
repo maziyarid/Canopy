@@ -1,0 +1,522 @@
+{
+  "schema": "ms-robot.brand.v1",
+  "identity": "Ms Robot",
+  "system": "cyan graphite",
+  "source_archive_sha256": "e87a15c999f843656b4bca3cdd212c3231b0e5dcdfba5f9a918eb89098dff0d4",
+  "source_inventory": [
+    {
+      "source": "msROBOT/01_Logos/cyberpunk_ms_robot_neon_emblem.png",
+      "sha256": "8b9f263b890e791d67f6976fc6933d792576f03a0161b22bf5516d97867dc1fe",
+      "bytes": 2044970,
+      "canonical_source": "msROBOT/01_Logos/cyberpunk_ms_robot_neon_emblem.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/01_Logos/msrobot_cybernetic_halo_emblem.png",
+      "sha256": "051383ca37cebdce6601ae79e5eb554f45f66889c021ef25fc45ae60984b46ae",
+      "bytes": 2206059,
+      "canonical_source": "msROBOT/01_Logos/msrobot_cybernetic_halo_emblem.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/01_Logos/neon_ms_robot_cyberpunk_emblem.png",
+      "sha256": "c88213391631084ea4323d5a031f4cc3abeeae80bfcb96ccdd22333b63fcfb23",
+      "bytes": 1378638,
+      "canonical_source": "msROBOT/01_Logos/neon_ms_robot_cyberpunk_emblem.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/02_App_Icons_Favicon/cyberpunk_neon_avatar_portrait.png",
+      "sha256": "47a8677c3afd283e75d4eda9e1afe6e49753cd83ccfc2d159bbc11d402b5a9ba",
+      "bytes": 2401784,
+      "canonical_source": "msROBOT/02_App_Icons_Favicon/cyberpunk_neon_avatar_portrait.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/02_App_Icons_Favicon/neon_cyberpunk_portrait_icon.png",
+      "sha256": "2b6c8bc727a3091989d5e6f9e7efeea7cfe44d7208a16e8cab8990eb81a3d34d",
+      "bytes": 2234035,
+      "canonical_source": "msROBOT/02_App_Icons_Favicon/neon_cyberpunk_portrait_icon.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/03_Profile_Images/cyan_circuitry_sci_fi_portrait.png",
+      "sha256": "553a84f10ba089280fe8304c9bc54de1eb697e37ce997c208424067ca278c041",
+      "bytes": 2161509,
+      "canonical_source": "msROBOT/03_Profile_Images/cyan_circuitry_sci_fi_portrait.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/03_Profile_Images/cyberpunk_neon_avatar_portrait.png",
+      "sha256": "47a8677c3afd283e75d4eda9e1afe6e49753cd83ccfc2d159bbc11d402b5a9ba",
+      "bytes": 2401784,
+      "canonical_source": "msROBOT/02_App_Icons_Favicon/cyberpunk_neon_avatar_portrait.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/03_Profile_Images/neon_cyberpunk_ms._robot_avatar.png",
+      "sha256": "d2fbd55f0b0d1a04deebbdc8b1e537201e780c9b2eb6143795b46b1e5ef5edff",
+      "bytes": 1698571,
+      "canonical_source": "msROBOT/03_Profile_Images/neon_cyberpunk_ms._robot_avatar.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/04_Character_States_Expressions/ms_robot_endless_expressions.png",
+      "sha256": "0bc8ca12644fec69b050519d0b642eb0ddf6d4b848869990886678e5be876120",
+      "bytes": 2589222,
+      "canonical_source": "msROBOT/04_Character_States_Expressions/ms_robot_endless_expressions.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/04_Character_States_Expressions/ms_robot_expressions_and_status_sheet.png",
+      "sha256": "84dd7e2eb52d42e0d663126a2da44ebb704987df531c262ef7bbfbd946ffbe02",
+      "bytes": 2512601,
+      "canonical_source": "msROBOT/04_Character_States_Expressions/ms_robot_expressions_and_status_sheet.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/04_Character_States_Expressions/ms_robot_expressions_status_sheet.png",
+      "sha256": "35b66ac5f49d114f8e754252fb64fc6903ec0845a4cf1519f1bf3a0488640292",
+      "bytes": 2404607,
+      "canonical_source": "msROBOT/04_Character_States_Expressions/ms_robot_expressions_status_sheet.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/05_Stickers/cyberpunk_android_emoji_sticker_sheet.png",
+      "sha256": "f89400854963ac39965bf1bf58d600b8af3872191ba6fa8f2cb66e860cee9dc6",
+      "bytes": 2693532,
+      "canonical_source": "msROBOT/05_Stickers/cyberpunk_android_emoji_sticker_sheet.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/05_Stickers/ms_robot_cyberpunk_sticker_sheet.png",
+      "sha256": "eeb733b86ede0777f995e186e9d9e1188c84c37eed062b73e7352c2475d67be6",
+      "bytes": 2698466,
+      "canonical_source": "msROBOT/05_Stickers/ms_robot_cyberpunk_sticker_sheet.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/06_Emoji_Assets/cyberpunk_android_emoji_sticker_sheet.png",
+      "sha256": "f89400854963ac39965bf1bf58d600b8af3872191ba6fa8f2cb66e860cee9dc6",
+      "bytes": 2693532,
+      "canonical_source": "msROBOT/05_Stickers/cyberpunk_android_emoji_sticker_sheet.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/07_Marketing_Assets/ms_robot_ai_analytics_of_tomorrow.png",
+      "sha256": "e9fd4af0027268ba78d8bb6cb54d3586028f86061c210e1525cb0e42e0536400",
+      "bytes": 2041541,
+      "canonical_source": "msROBOT/07_Marketing_Assets/ms_robot_ai_analytics_of_tomorrow.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/07_Marketing_Assets/ms_robot_ai_insights_for_what_s_next.png",
+      "sha256": "f9db5b51c213cf2ebdeb1c9509c9a67dcba6f04a622e292979dc3e99e18473c8",
+      "bytes": 2020782,
+      "canonical_source": "msROBOT/07_Marketing_Assets/ms_robot_ai_insights_for_what_s_next.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/07_Marketing_Assets/ms_robot_your_data_ally.png",
+      "sha256": "b8f7f4f0844c964d80c41043d395c1baee37d423c859bb595e0e8804f2a70aa6",
+      "bytes": 2025236,
+      "canonical_source": "msROBOT/07_Marketing_Assets/ms_robot_your_data_ally.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/08_Brand_Board/ms_robot_cyberpunk_brand_board.png",
+      "sha256": "f8f1088526dfc3a6979b4b17ddcbbfc26b20618fc82d8b42d0dcadb3d2adc558",
+      "bytes": 2060263,
+      "canonical_source": "msROBOT/08_Brand_Board/ms_robot_cyberpunk_brand_board.png",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/09_Documentation/ASSET_MANIFEST.json",
+      "sha256": "3c90c443a34cd8bd2db00a88331d55a095bcdfb7d742c413e5780f386c64d721",
+      "bytes": 1403,
+      "canonical_source": "msROBOT/09_Documentation/ASSET_MANIFEST.json",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/09_Documentation/BRAND_GUIDE.txt",
+      "sha256": "c15e4e4e26887d09b6352df9dc1b5952375103522f565f119e6e91eef7c75bc0",
+      "bytes": 417,
+      "canonical_source": "msROBOT/09_Documentation/BRAND_GUIDE.txt",
+      "archive_only": false
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 05_41_29 PM.png",
+      "sha256": "83878d650fe79c5f1e7a582bcd86d026c15f703e52da9bb741174bf328e1cb7b",
+      "bytes": 2144307,
+      "canonical_source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 05_41_29 PM.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_44 PM (1).png",
+      "sha256": "8b9f263b890e791d67f6976fc6933d792576f03a0161b22bf5516d97867dc1fe",
+      "bytes": 2044970,
+      "canonical_source": "msROBOT/01_Logos/cyberpunk_ms_robot_neon_emblem.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_46 PM (2).png",
+      "sha256": "d2fbd55f0b0d1a04deebbdc8b1e537201e780c9b2eb6143795b46b1e5ef5edff",
+      "bytes": 1698571,
+      "canonical_source": "msROBOT/03_Profile_Images/neon_cyberpunk_ms._robot_avatar.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_49 PM (3).png",
+      "sha256": "ef5282bb0f39839367563d60eebe9a666c04e2bbe2565642cc3ee8a82bc2a1d0",
+      "bytes": 2336037,
+      "canonical_source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_49 PM (3).png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_51 PM (4).png",
+      "sha256": "b5526e273870d1dceb89bc3d00abb80126a61ca430dda4c2c704844a7579d484",
+      "bytes": 1371997,
+      "canonical_source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_51 PM (4).png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_52 PM (5).png",
+      "sha256": "f8f1088526dfc3a6979b4b17ddcbbfc26b20618fc82d8b42d0dcadb3d2adc558",
+      "bytes": 2060263,
+      "canonical_source": "msROBOT/08_Brand_Board/ms_robot_cyberpunk_brand_board.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_54 PM (6).png",
+      "sha256": "3ab130a700a0a3d6c773bc377708416a2ec5f495b3fcf04ccbe55532426c25cb",
+      "bytes": 2268921,
+      "canonical_source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_54 PM (6).png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_55 PM (7).png",
+      "sha256": "84dd7e2eb52d42e0d663126a2da44ebb704987df531c262ef7bbfbd946ffbe02",
+      "bytes": 2512601,
+      "canonical_source": "msROBOT/04_Character_States_Expressions/ms_robot_expressions_and_status_sheet.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_57 PM (8).png",
+      "sha256": "0bc8ca12644fec69b050519d0b642eb0ddf6d4b848869990886678e5be876120",
+      "bytes": 2589222,
+      "canonical_source": "msROBOT/04_Character_States_Expressions/ms_robot_endless_expressions.png",
+      "archive_only": true
+    },
+    {
+      "source": "msROBOT/10_Single_Generated_Images/ChatGPT Image Sep 21, 2026, 06_03_58 PM (9).png",
+      "sha256": "e9fd4af0027268ba78d8bb6cb54d3586028f86061c210e1525cb0e42e0536400",
+      "bytes": 2041541,
+      "canonical_source": "msROBOT/07_Marketing_Assets/ms_robot_ai_analytics_of_tomorrow.png",
+      "archive_only": true
+    }
+  ],
+  "production": [
+    {
+      "path": "/brand/ms-robot/icon-32.webp",
+      "width": 32,
+      "height": 32,
+      "bytes": 1296,
+      "sha256": "e89fe8295d9e03093aa976a49e5848c62f291fae0d0e8e88fdc84d9bf3dc63cf"
+    },
+    {
+      "path": "/brand/ms-robot/icon-32.png",
+      "width": 32,
+      "height": 32,
+      "bytes": 3089,
+      "sha256": "6f42983264b6480d4f4bd2e82f0b684729501ecddb210272f1bcb1e77140d55c"
+    },
+    {
+      "path": "/brand/ms-robot/icon-48.webp",
+      "width": 48,
+      "height": 48,
+      "bytes": 2404,
+      "sha256": "553ef827c1fefc37bc13ac12c396f1de8ed9923301002261d66ee1d1d6d09293"
+    },
+    {
+      "path": "/brand/ms-robot/icon-48.png",
+      "width": 48,
+      "height": 48,
+      "bytes": 6450,
+      "sha256": "ca990763397746146ecc30fb5bd5932d0c9d2c2d4809662ec0c4d06defe1d61a"
+    },
+    {
+      "path": "/brand/ms-robot/icon-96.webp",
+      "width": 96,
+      "height": 96,
+      "bytes": 6482,
+      "sha256": "5c6c5a83bea9b7fa1115a72d3dba0424b6db012319edacda6905ae8696ec64c6"
+    },
+    {
+      "path": "/brand/ms-robot/icon-96.png",
+      "width": 96,
+      "height": 96,
+      "bytes": 22390,
+      "sha256": "2de1d7c8b44748fafed5d3afbaf144a00e37b9586a9dfec0b33fd80a9113ecd8"
+    },
+    {
+      "path": "/brand/ms-robot/icon-192.webp",
+      "width": 192,
+      "height": 192,
+      "bytes": 18238,
+      "sha256": "3451a9ba7d7f65ba81402aab2e545ec15854b5293338425daaa2ca10387c3e57"
+    },
+    {
+      "path": "/brand/ms-robot/icon-192.png",
+      "width": 192,
+      "height": 192,
+      "bytes": 78283,
+      "sha256": "a98f6efbb076830b931fc0eddb753b36ac02b49cc630bad637a5e57096cb0a68"
+    },
+    {
+      "path": "/brand/ms-robot/icon-512.webp",
+      "width": 512,
+      "height": 512,
+      "bytes": 75252,
+      "sha256": "a9aad74cf40d301548a147ef3026faa850f2fdc5148780e7a3f38ec80af7c9c2"
+    },
+    {
+      "path": "/brand/ms-robot/icon-512.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 441494,
+      "sha256": "ca6c7f5c6d70c2188a6ccd6f30de3a116c404efaac54521720abcc3b42b46629"
+    },
+    {
+      "path": "/brand/ms-robot/avatar-32.webp",
+      "width": 32,
+      "height": 32,
+      "bytes": 1296,
+      "sha256": "e89fe8295d9e03093aa976a49e5848c62f291fae0d0e8e88fdc84d9bf3dc63cf"
+    },
+    {
+      "path": "/brand/ms-robot/avatar-48.webp",
+      "width": 48,
+      "height": 48,
+      "bytes": 2404,
+      "sha256": "553ef827c1fefc37bc13ac12c396f1de8ed9923301002261d66ee1d1d6d09293"
+    },
+    {
+      "path": "/brand/ms-robot/avatar-64.webp",
+      "width": 64,
+      "height": 64,
+      "bytes": 3648,
+      "sha256": "dadff912b93f0404cd75b36c6a9cefb998b467dad4d392565f0e5acc55a06c11"
+    },
+    {
+      "path": "/brand/ms-robot/avatar-96.webp",
+      "width": 96,
+      "height": 96,
+      "bytes": 6482,
+      "sha256": "5c6c5a83bea9b7fa1115a72d3dba0424b6db012319edacda6905ae8696ec64c6"
+    },
+    {
+      "path": "/brand/ms-robot/avatar-128.webp",
+      "width": 128,
+      "height": 128,
+      "bytes": 10160,
+      "sha256": "2bac5ff9e947e5d5a491e1bf1c22102caa8ac1a532e7abbad4e462d791d713f0"
+    },
+    {
+      "path": "/brand/ms-robot/avatar-256.webp",
+      "width": 256,
+      "height": 256,
+      "bytes": 27780,
+      "sha256": "d7990f92a2909ff99706cbc21033b36b47c8b1f6fa5902070243f2453337ce38"
+    },
+    {
+      "path": "/brand/ms-robot/signature-192.webp",
+      "width": 192,
+      "height": 61,
+      "bytes": 11730,
+      "sha256": "a47794e9e33c4fd924d0af8ffb4951a3084539970ee2872563a16853297bdbb9"
+    },
+    {
+      "path": "/brand/ms-robot/signature-384.webp",
+      "width": 384,
+      "height": 123,
+      "bytes": 33688,
+      "sha256": "4ba9cfa9b1c07cb4b694d543a983be52859a39ceecea27bb3e0747eccea6a27e"
+    },
+    {
+      "path": "/brand/ms-robot/state-neutral-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2566,
+      "sha256": "274a7aca9a5ec55e26ebff185a9217ed100219b0e7c4e305384579c48d98036d"
+    },
+    {
+      "path": "/brand/ms-robot/state-neutral-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 8308,
+      "sha256": "3661adec0bc07719779f77dbc005ba34d6e99dc0e9aee61a5306127043f8780f"
+    },
+    {
+      "path": "/brand/ms-robot/state-welcome-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2578,
+      "sha256": "9885d799a7492a01f6362c2f2446d0149000dd93a731066b6819b14147f9a2a5"
+    },
+    {
+      "path": "/brand/ms-robot/state-welcome-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 7778,
+      "sha256": "5a6ab10b66481749ae0997fef118fa9078c826ae747647e0a742ba6962e08b0f"
+    },
+    {
+      "path": "/brand/ms-robot/state-happy-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2360,
+      "sha256": "9089dc9394c3cb3cb01c5b4a5390f9a0b2aeb9fa0b7b60020c6fa3ad79a770f9"
+    },
+    {
+      "path": "/brand/ms-robot/state-happy-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 7192,
+      "sha256": "a42c7ba91b2b2bad0bd4ba50a6877e6157fc16b7b3feeded2b52ddeba475950a"
+    },
+    {
+      "path": "/brand/ms-robot/state-thinking-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2318,
+      "sha256": "5affab9775107bc5641fdd7d001f728fef96f7ea31689839fff3f81cd3343ef4"
+    },
+    {
+      "path": "/brand/ms-robot/state-thinking-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 7104,
+      "sha256": "1bdd0dc287cfee347899d376b57fbb66c227edfcb49dea35ba808a31d24ef56e"
+    },
+    {
+      "path": "/brand/ms-robot/state-analysing-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 3084,
+      "sha256": "4d51a4c5bf274ef5d045abd0e2878e7d3e229fbf79fc7f17ef5c279c1c0163a9"
+    },
+    {
+      "path": "/brand/ms-robot/state-analysing-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 9568,
+      "sha256": "cb65b058c8a57c4492ece3f4257aa031fd93bdd8a3b3df4188323d215234144f"
+    },
+    {
+      "path": "/brand/ms-robot/state-explaining-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2926,
+      "sha256": "97815cda9caa549ea3ea305ca5983f796c16ca61959b6025af7fc8d5a6b1f0f4"
+    },
+    {
+      "path": "/brand/ms-robot/state-explaining-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 9084,
+      "sha256": "92c621403a5b38eddf730ac20dd011364b28760fe42a55abc1b1da583eda2d18"
+    },
+    {
+      "path": "/brand/ms-robot/state-excited-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2844,
+      "sha256": "90790bd98a87708b8a77f62e7ba8c2860b9ca238c1f560dcd42197ee17c23f4b"
+    },
+    {
+      "path": "/brand/ms-robot/state-excited-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 8312,
+      "sha256": "2b2602ecf8f726aa74e936521456546c3c2f1049ffcd40939e009365fa6504f6"
+    },
+    {
+      "path": "/brand/ms-robot/state-success-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2726,
+      "sha256": "cd6b42fcddf8553dad19a1b7360d5c63b40ec6bd8cd4ddefb1a202d7d67e1a23"
+    },
+    {
+      "path": "/brand/ms-robot/state-success-192.webp",
+      "width": 192,
+      "height": 142,
+      "bytes": 8200,
+      "sha256": "1afeb5ec0c3b9f1d34e67d2331ef73204cc0469dcf4b73f7336ce7915228d463"
+    },
+    {
+      "path": "/brand/ms-robot/state-alert-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2844,
+      "sha256": "f26bce68044e83618112ac153190277f03d0634d28d9b0e022366ca33c56fbd0"
+    },
+    {
+      "path": "/brand/ms-robot/state-alert-192.webp",
+      "width": 192,
+      "height": 143,
+      "bytes": 8830,
+      "sha256": "ff997ae2e7f2cd4f1f1cb06a94d25f23522b737536636516c25b4083b6c6e258"
+    },
+    {
+      "path": "/brand/ms-robot/state-confused-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2706,
+      "sha256": "dd3b9f92992c64fddf2237079ff8ee772723043791fec783775f1c95ab7f57aa"
+    },
+    {
+      "path": "/brand/ms-robot/state-confused-192.webp",
+      "width": 192,
+      "height": 143,
+      "bytes": 8490,
+      "sha256": "05bd272d542fbe4086668cbb28d8c5673857efcf408b996a14cb8a64b8eb3472"
+    },
+    {
+      "path": "/brand/ms-robot/state-offline-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2084,
+      "sha256": "b8247d013b82ffa91abe8b98b3cd8d6779c5f67f147180a25870b3c5fe112645"
+    },
+    {
+      "path": "/brand/ms-robot/state-offline-192.webp",
+      "width": 192,
+      "height": 143,
+      "bytes": 6292,
+      "sha256": "44c6d3869125eb6e90da6f27a3f2d02aef32572c42eec672e458720f7d441441"
+    },
+    {
+      "path": "/brand/ms-robot/state-idle-96.webp",
+      "width": 96,
+      "height": 71,
+      "bytes": 2768,
+      "sha256": "961be1498e7948635f46e70e4139bc67b5a68e22d1746c26f5436c424356d2ba"
+    },
+    {
+      "path": "/brand/ms-robot/state-idle-192.webp",
+      "width": 192,
+      "height": 143,
+      "bytes": 8432,
+      "sha256": "d2ec1b7342f53f46f89b862a64f49706d875c6cecd3d363b8289e519d6570bf3"
+    }
+  ],
+  "favicon": "/favicon.svg",
+  "rules": [
+    "Existing simple M mark is retained for tiny favicon legibility; portrait is never a 16px favicon.",
+    "Alternate MR red/purple board is reference-only.",
+    "Marketing mockup measurements are not analytics evidence.",
+    "Character images are decorative; backend status and ordinary text remain authoritative.",
+    "No raw PNG boards or duplicate source folders in public build."
+  ]
+}

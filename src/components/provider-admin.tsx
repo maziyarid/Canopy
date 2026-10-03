@@ -49,7 +49,12 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
           runtime: "سرویس همگام‌سازی",
           online: "فعال",
           offline: "در دسترس نیست",
-          test: "بررسی اتصال",
+          test: "همگام‌سازی اکنون",
+          auth: "روش احراز هویت",
+          scopes: "مجوزهای اتصال",
+          enabled: "فعال‌سازی منبع",
+          yes: "فعال",
+          no: "غیرفعال",
           account: "حساب / Property",
           permission: "سطح دسترسی",
           freshness: "تازگی داده",
@@ -71,7 +76,12 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
           runtime: "Sync runtime",
           online: "Available",
           offline: "Unavailable",
-          test: "Test sync",
+          test: "Sync now",
+          auth: "Authentication method",
+          scopes: "Connection scopes",
+          enabled: "Provider enabled",
+          yes: "Enabled",
+          no: "Disabled",
           account: "Account / property",
           permission: "Permission",
           freshness: "Data freshness",
@@ -117,6 +127,7 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
     <div className="grid gap-4">
       <section className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
+          <img src={`/brand/ms-robot/state-${!data.runtimeAvailable ? "offline" : data.providers.some(provider => ["error", "degraded"].includes(provider.status)) ? "alert" : data.providers.some(provider => provider.status === "ok") ? "neutral" : "confused"}-96.webp`} width={64} height={47} className="h-auto w-16" alt="" />
           <div>
             <h2 className="font-display text-xl font-semibold">{ui.title}</h2>
             <p className="mt-1 max-w-3xl text-sm text-muted">{ui.body}</p>
@@ -151,6 +162,9 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
               <Badge tone={tone(provider.status)}>{provider.status}</Badge>
             </div>
             <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+              <div><dt className="text-xs text-subtle">{ui.auth}</dt><dd className="mt-0.5 break-words">{provider.auth_type || "—"}</dd></div>
+              <div><dt className="text-xs text-subtle">{ui.enabled}</dt><dd className="mt-0.5">{provider.enabled ? ui.yes : ui.no}</dd></div>
+              <div className="sm:col-span-2"><dt className="text-xs text-subtle">{ui.scopes}</dt><dd className="mt-0.5 break-all">{provider.scopes.join(" · ") || "—"}</dd></div>
               <div>
                 <dt className="text-xs text-subtle">{ui.account}</dt>
                 <dd className="mt-0.5 break-all">{provider.accountRef || "—"}</dd>

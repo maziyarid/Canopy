@@ -12,6 +12,7 @@ import {
   getProviderSyncRuns,
   requestProviderRefresh,
 } from "@/lib/analytics/gateway.server";
+import { redactForClient } from "./redact";
 import { studioAuth } from "./studio-auth";
 import { canAdminProviders, resolveAccess } from "./access";
 
@@ -113,9 +114,9 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       states = providerResponse.providers;
       generatedAt = providerResponse.generatedAt;
       runs = runResponse.runs.filter((run) => run.site === project.domain);
-    } catch (error) {
+    } catch {
       runtimeAvailable = false;
-      runtimeError = error instanceof Error ? error.message : "Analytics gateway unavailable";
+      runtimeError = "Analytics gateway unavailable";
     }
 
     const stateMap = new Map(states.map((state) => [state.provider, state]));
@@ -124,6 +125,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       const connection = connectionMap.get(provider);
       return {
         ...state,
+        last_error: state.last_error ? redactForClient(state.last_error) : null,
         accountRef: connection?.account_ref ?? "",
         permissionTier: connection?.permission_tier ?? "read",
         scopes: parseScopes(connection?.scopes ?? "[]"),
@@ -131,7 +133,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
         connectionLastSuccess: connection?.last_success ?? null,
         connectionLastAttempt: connection?.last_attempt ?? null,
         connectionFreshness: connection?.freshness ?? null,
-        connectionError: connection?.last_error ?? "",
+        connectionError: redactForClient(connection?.last_error ?? ""),
       };
     });
 

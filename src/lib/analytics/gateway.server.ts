@@ -56,6 +56,11 @@ export async function getProviderMetricRows(projectId: string, provider: string,
   return gatewayFetch(`/v1/metrics?${query}`, { headers: { "X-Ms-Robot-Project-Id": projectId } });
 }
 
+export async function getProviderSearchRows(projectId: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse> {
+  const query = new URLSearchParams({ provider: "gsc", site, dataset, start, end, limit: "2000" });
+  return gatewayFetch(`/v1/metrics?${query}`, { headers: { "X-Ms-Robot-Project-Id": projectId } });
+}
+
 export async function getAnalyticsSnapshot(
   projectId: string,
   site: string,

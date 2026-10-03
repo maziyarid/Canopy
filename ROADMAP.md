@@ -1,6 +1,18 @@
 # ADA + Ms Robot + Maz Robot Roadmap
 
-Last updated: 2026-09-21
+Last updated: 2026-10-03
+
+## Current verified checkpoint — 3 October 2026
+
+The current assessment is [the complete section/feature ledger](docs/ms-robot/completion-assessment-20261003.md), covering all 48 unified prompt sections, all nine analytics stages, the 18 Ms Robot and 20 cross-stack gates, provider/admin fields and programme tasks. Historical phase observations below are dated recovery evidence, not current completion claims.
+
+Source baseline is PR #12 (`b756b518`), stacked on PR #10. The continuation branch `feat/ms-robot-completion-20261003` adds prior-window reporting, historical closing dates/notes, audited CSV, actual daily query/page ingestion and sampled tables, raw-cache/operator restrictions, safe provider errors, bilingual controls, mobile containment and optimised approved brand assets.
+
+Fresh verification: 199 script, 231 TypeScript, 24 launch, 42 Python analytics and 50 Python operations checks pass; typecheck and production build pass; lint has zero errors and nine existing warnings. Built owner/client EN/FA mobile controls and durable app/gateway restart acceptance pass using isolated synthetic data. Independent review has no remaining Critical/Important findings.
+
+**Production completion remains blocked.** The live SQLite is legacy/unscoped and no canonical project/site map is configured. Live GSC latest observed success is 2 October with data through 1 October; old GSC/event timers remain active. GA4 discovery returned zero accounts; GTM discovery returned 403. Semrush has no usable API units. Ubersuggest has a genuine authenticated connector, but no autonomous VPS adapter. Other provider adapters, complete Provider Admin actions, durable scoped worker recovery, encrypted legacy settings migration, inquiry/ops workflows and Qalam/social integration still require implementation. No production cutover, paid purchase or publication was performed.
+
+Do not close AAX-41/50/68/80/81/82/128 from this checkpoint. Complete source convergence, authorised tenant migration and real provider/client acceptance before deployment. Core inquiry/operations tasks and conditional Maz platforms retain their own exit gates.
 
 ## Product boundaries
 
