@@ -89,3 +89,5 @@ The analytics SQLite coordinator does not read `migrations/*.sql`. After `ensure
 ## 2026-10-03 ambiguous GSC property
 
 `sc-domain:example.com` and `https://example.com/` are different Search Console properties that share a host. Discovery that returns both for a mapped host is `site_map_invalid` before `create_or_run_sync`, and the raw property URLs are not echoed. A single authorised property is synced with its original `siteUrl`, not the canonical host. Process proof: `test_ambiguous_gsc_properties_exit_before_sync` and `test_authorised_property_url_is_synced`. Promotion readiness fails closed if that rejection or proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.
+
+- 2026-10-03: malformed GSC discovery (`sites` not a list, or a non-object entry) fails closed as `site_map_invalid` before sync. Payload is not echoed. Scheduled portfolio sync stays disabled.
