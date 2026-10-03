@@ -169,7 +169,12 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     trailing = (root / "ops/ms-robot/test_portfolio_trailing_dot_site_conflict_process.py").read_text(encoding="utf-8")
     if "test_trailing_dot_host_conflicts_with_apex_before_discovery" not in trailing:
         raise PromotionReadinessError("trailing_dot_conflict_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed"]
+    if "def bare_host(" not in source or 'host.split("@")[-1]' not in source:
+        raise PromotionReadinessError("scheme_less_path_not_normalised_before_conflict")
+    path_proof = (root / "ops/ms-robot/test_portfolio_scheme_less_path_conflict_process.py").read_text(encoding="utf-8")
+    if "test_scheme_less_path_conflicts_with_apex_before_discovery" not in path_proof:
+        raise PromotionReadinessError("scheme_less_path_conflict_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed"]
 
 
 

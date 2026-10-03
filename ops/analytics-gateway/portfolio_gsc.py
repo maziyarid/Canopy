@@ -18,13 +18,21 @@ def normalise_host(host):
     return str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
 
 
+def bare_host(value):
+    # Scheme-less map keys must not become a second site identity via path,
+    # query, fragment, or userinfo. URL-form keys already use hostname only.
+    host = str(value or "").split("?", 1)[0].split("#", 1)[0]
+    host = host.split("/", 1)[0]
+    return host.split("@")[-1]
+
+
 def site_key(site_url):
     raw = str(site_url or "").strip()
     if raw.startswith("sc-domain:"):
-        return normalise_host(raw.split(":", 1)[1])
+        return normalise_host(bare_host(raw.split(":", 1)[1]))
     if "://" in raw:
         return normalise_host(urlparse(raw).hostname or raw)
-    return normalise_host(raw.strip("/"))
+    return normalise_host(bare_host(raw))
 
 
 def project_site_map(env=os.environ):
