@@ -65,13 +65,22 @@ disabled. Do not put credentials in command arguments, transcripts or source.
 No timer or production consumer is enabled by this change. Canonical project
 mapping, deployment approval and backup/read-back are separate rollout gates.
 
-Delivered events are read first to recover interrupted intake without duplicate
-receipts. If the bridge commits an ACK but its response is lost, v1 has no
-per-event status lookup. The local receipt stays `recorded`, the CLI reports
-`reconciliation_required` and exits nonzero. Verify the bridge record and its
-bound local receipt under the recovery owner's procedure; do not infer success,
-regress an ACK with a fail call, edit receipt state by guesswork or redrive a dead
-event. A future confirmed-status protocol is needed for automatic reconciliation.
+Pending durable receipts are checked through authenticated, exact-scope
+`GET /v1/events/<encoded-id>` before fresh intake. The returned envelope must
+validate and match the stored fingerprint. A confirmed `acked` record then
+updates only the local receipt and increments `reconciled`; it sends no bridge
+transition. Matching queued/delivered records resume the normal lifecycle using
+the existing receipt. Pending verification and fresh intake share the configured
+batch limit. Other project/site receipts are never queried or confirmed.
+
+The first uncertain ACK retains `recorded` state and exits nonzero. A subsequent
+bounded run can confirm an accepted ACK whose reply was lost, including after a
+process restart. Missing, changed, dead, malformed or unavailable lookup records
+remain `reconciliation_required`, receive no transition and require operator
+verification. Legacy bridges without exact lookup also remain unconfirmed.
+Never infer success, regress an ACK with fail, edit receipt state by guesswork or
+redrive a dead event. A reconciliation failure consumes a batch slot; investigate
+persistently unresolved receipts before widening or scheduling intake.
 Intake requires the paired Ada bridge update that filters exact project/site
 before applying the limit and confirms that scope in the response. A legacy
 bridge without this capability reports unavailable before any transition; no

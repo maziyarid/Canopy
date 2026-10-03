@@ -32,6 +32,8 @@ class Bridge:
     def list_events(self, state, limit, project_id, site_key):
         self.calls.append(('read', state))
         return [dict(row) for row in self.rows if row['state'] == state][:limit]
+    def get_event(self, event_id, project_id, site_key):
+        return dict(next(row for row in self.rows if row['event_id']==event_id and row['project_key']==project_id and row['site_key']==site_key))
     def transition(self, event_id, action, error=None):
         if action in ('delivered', 'ack'):
             # Separate connection proves the receipt committed before either write.
@@ -112,7 +114,7 @@ class ConsumerTest(unittest.TestCase):
         self.assertEqual(result['rejected'], 1)
         self.assertEqual(result['acknowledged'], 1)
         self.assertEqual(self.rows()[0]['event_id'], 'healthy')
-    def test_ack_committed_with_lost_response_remains_explicitly_unconfirmed(self):
+    def test_ack_committed_with_lost_response_is_confirmed_by_identity_on_restart(self):
         class LostReply(Bridge):
             def transition(self, event_id, action, error=None):
                 answer = super().transition(event_id, action, error)
@@ -124,10 +126,11 @@ class ConsumerTest(unittest.TestCase):
         self.assertEqual(first['status'], 'reconciliation_required')
         self.assertEqual(bridge.rows[0]['state'], 'acked')
         second = self.run_once(bridge)
-        self.assertEqual(second['status'], 'reconciliation_required')
-        self.assertEqual(second['pending_receipts'], 1)
+        self.assertEqual(second['status'], 'complete')
+        self.assertEqual(second['pending_receipts'], 0)
+        self.assertEqual(second['reconciled'], 1)
         self.assertEqual(len(self.rows()), 1)
-        self.assertEqual(self.rows()[0]['state'], 'recorded')
+        self.assertEqual(self.rows()[0]['state'], 'acknowledged')
     def test_wrong_project_or_site_is_left_untouched(self):
         bridge = Bridge(self.path, [event(project_key='project-b'), event(event_id='event-2', site_key='other.example')])
         result = self.run_once(bridge)

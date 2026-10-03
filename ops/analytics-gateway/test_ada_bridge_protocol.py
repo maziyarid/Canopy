@@ -147,6 +147,131 @@ class BridgeProtocolTest(unittest.TestCase):
         self.assertEqual(self.bridge_rows(), [('event-1', 'queued', 0)])
         self.assertEqual(self.receipts(), [])
 
+    def lose_committed_ack_reply(self):
+        original=self.client.transition
+        def lost(event_id,action,error=None):
+            answer=original(event_id,action,error)
+            if action=='ack': raise OSError('lost reply after real bridge commit')
+            return answer
+        self.client.transition=lost
+    def test_restart_reconciles_accepted_ack_with_lost_reply_without_bridge_writes(self):
+        self.publish(event(event_type='ms_robot.action.proposal'))
+        self.lose_committed_ack_reply()
+        self.assertEqual(self.intake()['status'],'reconciliation_required')
+        self.assertEqual(self.receipts(),[('event-1','recorded','proposal_only')])
+        with sqlite3.connect(self.root/'bridge/events.sqlite3') as db:
+            before=db.execute('select * from events').fetchall()
+        from ada_bridge_consumer import BridgeClient
+        result=self.intake(BridgeClient(self.url,'isolated-fixture-credential'))
+        self.assertEqual(result['status'],'complete')
+        self.assertEqual(result['reconciled'],1)
+        self.assertEqual(result['pending_receipts'],0)
+        self.assertEqual(self.receipts(),[('event-1','acknowledged','proposal_only')])
+        with sqlite3.connect(self.root/'bridge/events.sqlite3') as db:
+            self.assertEqual(db.execute('select * from events').fetchall(),before)
+        self.assertNotIn(b'transient content only',Path(self.db).read_bytes())
+    def test_reconciliation_rejects_changed_acked_identity_without_regressing_bridge(self):
+        self.publish(event())
+        self.lose_committed_ack_reply();self.intake()
+        with sqlite3.connect(self.root/'bridge/events.sqlite3') as db:
+            db.execute("update events set source='different-source'")
+        from ada_bridge_consumer import BridgeClient
+        result=self.intake(BridgeClient(self.url,'isolated-fixture-credential'))
+        self.assertEqual(result['unconfirmed'],1)
+        self.assertEqual(result['status'],'reconciliation_required')
+        self.assertEqual(self.receipts(),[('event-1','recorded','informational')])
+        self.assertEqual(self.bridge_rows(),[('event-1','acked',0)])
+    def test_unresolved_dead_receipt_is_not_redriven(self):
+        self.publish(event());self.lose_committed_ack_reply();self.intake()
+        with sqlite3.connect(self.root/'bridge/events.sqlite3') as db:
+            db.execute("update events set state='dead',attempts=8")
+        from ada_bridge_consumer import BridgeClient
+        result=self.intake(BridgeClient(self.url,'isolated-fixture-credential'))
+        self.assertEqual(result['unconfirmed'],1)
+        self.assertEqual(result['status'],'reconciliation_required')
+        self.assertEqual(self.bridge_rows(),[('event-1','dead',8)])
+        self.assertEqual(self.receipts()[0][1],'recorded')
+    def test_lookup_failure_retains_receipt_and_prevents_repeat_transition(self):
+        self.publish(event())
+        original=self.client.transition
+        def lost_before_ack(identity,action,error=None):
+            if action=='ack':raise OSError('not sent')
+            return original(identity,action,error)
+        self.client.transition=lost_before_ack;self.intake()
+        from ada_bridge_consumer import BridgeClient
+        fresh=BridgeClient(self.url,'isolated-fixture-credential')
+        request=fresh.request
+        def unavailable_lookup(path,*args,**kwargs):
+            if path.startswith('/v1/events/event-1?'):raise OSError('lookup unavailable')
+            return request(path,*args,**kwargs)
+        fresh.request=unavailable_lookup
+        result=self.intake(fresh)
+        self.assertEqual(result['status'],'reconciliation_required')
+        self.assertEqual(result['unconfirmed'],1)
+        self.assertEqual(result['acknowledged'],0)
+        self.assertEqual(self.bridge_rows(),[('event-1','delivered',0)])
+        self.assertEqual(self.receipts()[0][1],'recorded')
+    def test_lookup_response_with_wrong_scope_or_identity_cannot_confirm_ack(self):
+        self.publish(event());self.lose_committed_ack_reply();self.intake()
+        from ada_bridge_consumer import BridgeClient
+        for field in ['scope','event_id','project_key','site_key','target','payload','payload_sha256','state']:
+            with self.subTest(field=field):
+                fresh=BridgeClient(self.url,'isolated-fixture-credential')
+                request=fresh.request
+                def altered(path,*args,**kwargs):
+                    answer=request(path,*args,**kwargs)
+                    if path.startswith('/v1/events/event-1?'):
+                        if field=='scope':answer['scope']={'project_key':'project-b','site_key':'example.com'}
+                        elif field=='payload':answer['event'][field]={'message':'changed'}
+                        else:answer['event'][field]='changed'
+                    return answer
+                fresh.request=altered
+                result=self.intake(fresh)
+                self.assertEqual(result['unconfirmed'],1)
+                self.assertEqual(result['status'],'reconciliation_required')
+                self.assertEqual(self.receipts()[0][1],'recorded')
+                self.assertEqual(self.bridge_rows(),[('event-1','acked',0)])
+    def test_reconciliation_and_fresh_intake_share_the_bounded_batch(self):
+        for number in range(5):self.publish(event(event_id=f'event-{number}',idempotency_key=f'notice-{number}'))
+        self.lose_committed_ack_reply()
+        self.consume(self.client,self.db,'project-a','example.com',enabled=True,limit=5)
+        self.publish(event(event_id='new-event',idempotency_key='new-event'))
+        from ada_bridge_consumer import BridgeClient
+        result=self.intake(BridgeClient(self.url,'isolated-fixture-credential'))
+        self.assertEqual(result['reconciled'],2)
+        self.assertEqual(result['acknowledged'],2)
+        self.assertEqual(result['recorded'],0)
+        self.assertEqual(result['pending_receipts'],3)
+        self.assertIn(('new-event','queued',0),self.bridge_rows())
+    def test_pending_receipts_in_another_scope_are_not_reconciled(self):
+        from ada_bridge_receipts import persist_receipt,validate_event
+        from sqlite_migrations import ensure_analytics_schema
+        ensure_analytics_schema(self.db)
+        foreign=event(event_id='foreign',idempotency_key='foreign',project_key='project-b')
+        persist_receipt(self.db,validate_event(foreign));self.publish(foreign)
+        self.client.transition('foreign','ack')
+        self.publish(event())
+        self.assertEqual(self.intake()['status'],'complete')
+        self.assertEqual(sorted(self.receipts()),[('event-1','acknowledged','informational'),('foreign','recorded','informational')])
+    def test_real_cli_process_confirms_lost_ack_after_restart(self):
+        self.publish(event(event_id='event:restart/reference'))
+        self.lose_committed_ack_reply();self.intake()
+        env={**os.environ,'MSROBOT_BRIDGE_URL':self.url,'MSROBOT_BRIDGE_TOKEN':'isolated-fixture-credential','ANALYTICS_GATEWAY_DB':self.db}
+        result=subprocess.run([sys.executable,str(Path(__file__).with_name('ada_bridge_consumer.py')),'--enabled','--project-id','project-a','--site-key','example.com','--limit','2'],env=env,capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stderr)
+        answer=json.loads(result.stdout)
+        self.assertEqual(answer['reconciled'],1)
+        self.assertEqual(answer['pending_receipts'],0)
+        self.assertEqual(self.receipts(),[('event:restart/reference','acknowledged','informational')])
+    def test_missing_bridge_record_exits_nonzero_without_false_confirmation(self):
+        self.publish(event());self.lose_committed_ack_reply();self.intake()
+        with sqlite3.connect(self.root/'bridge/events.sqlite3') as db:db.execute('delete from events')
+        env={**os.environ,'MSROBOT_BRIDGE_URL':self.url,'MSROBOT_BRIDGE_TOKEN':'isolated-fixture-credential','ANALYTICS_GATEWAY_DB':self.db}
+        result=subprocess.run([sys.executable,str(Path(__file__).with_name('ada_bridge_consumer.py')),'--enabled','--project-id','project-a','--site-key','example.com'],env=env,capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,1)
+        self.assertEqual(json.loads(result.stdout)['status'],'reconciliation_required')
+        self.assertEqual(self.receipts(),[('event-1','recorded','informational')])
+
 
 if __name__ == '__main__':
     unittest.main()

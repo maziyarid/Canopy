@@ -167,3 +167,15 @@ def pending_receipt_count(path, project_id, site_key):
     with sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
         return connection.execute("select count(*) from ada_bridge_receipt where project_id=? and site_key=? and state='recorded'",
                                   (project_id, site_key)).fetchone()[0]
+
+
+def pending_receipts(path, project_id, site_key, limit):
+    reference(project_id, 128)
+    reference(site_key, 160)
+    if type(limit) is not int or not 1 <= limit <= 20:
+        raise ReceiptError('invalid_limit')
+    with sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=15) as connection:
+        connection.row_factory = sqlite3.Row
+        return [dict(row) for row in connection.execute('''select event_id,envelope_sha256
+          from ada_bridge_receipt where project_id=? and site_key=? and state='recorded'
+          order by received_at,event_id limit ?''', (project_id, site_key, limit))]

@@ -6,7 +6,7 @@ import os
 from urllib.parse import quote, urlparse, urlencode
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-from ada_bridge_receipts import ReceiptError, mark_acknowledged, pending_receipt_count, persist_receipt, reference, validate_event
+from ada_bridge_receipts import ReceiptError, mark_acknowledged, pending_receipt_count, pending_receipts, persist_receipt, reference, validate_event
 from sqlite_migrations import ensure_analytics_schema
 
 
@@ -71,6 +71,17 @@ class BridgeClient:
             raise BridgeError('bridge_transition_unconfirmed')
         return obj
 
+    def get_event(self, event_id, project_id, site_key):
+        reference(event_id, 80)
+        scope = {'project_key': reference(project_id, 128), 'site_key': reference(site_key, 160)}
+        query = urlencode({'target': 'ms_robot', **scope})
+        obj = self.request('/v1/events/' + quote(event_id, safe='') + '?' + query,
+                           maximum_bytes=65536 + 8192 + 1024)
+        row = obj.get('event')
+        if obj.get('scope') != scope or not isinstance(row, dict) or row.get('event_id') != event_id or row.get('target') != 'ms_robot' or row.get('project_key') != project_id or row.get('site_key') != site_key or row.get('state') not in {'queued', 'delivered', 'acked', 'dead'}:
+            raise BridgeError('bridge_lookup_unconfirmed')
+        return row
+
 
 def consume_once(bridge, db_path, project_id, site_key, *, enabled=False, limit=5):
     if not enabled:
@@ -80,9 +91,10 @@ def consume_once(bridge, db_path, project_id, site_key, *, enabled=False, limit=
     if type(limit) is not int or not 1 <= limit <= 20:
         raise ReceiptError('invalid_limit')
     result = {'status': 'complete', 'recorded': 0, 'duplicates': 0, 'acknowledged': 0,
-              'rejected': 0, 'skipped': 0, 'unconfirmed': 0, 'pending_receipts': 0}
+              'rejected': 0, 'skipped': 0, 'unconfirmed': 0, 'pending_receipts': 0, 'reconciled': 0}
     try:
         ensure_analytics_schema(db_path)
+        pending = pending_receipts(db_path, project_id, site_key, limit)
     except Exception:
         return {**result, 'status': 'storage_unavailable'}
     try:
@@ -92,6 +104,29 @@ def consume_once(bridge, db_path, project_id, site_key, *, enabled=False, limit=
         return {**result, 'status': 'unavailable'}
     processed = 0
     seen = set()
+    recovered = []
+    for receipt in pending:
+        identity = receipt['event_id']
+        try:
+            raw = bridge.get_event(identity, project_id, site_key)
+            event = validate_event(raw)
+            if event['event_id'] != identity or event['project_key'] != project_id or event['site_key'] != site_key or event['envelope_sha256'] != receipt['envelope_sha256']:
+                raise ReceiptError('event_identity_conflict')
+            if raw.get('state') == 'acked':
+                mark_acknowledged(db_path, event)
+                result['acknowledged'] += 1
+                result['reconciled'] += 1
+            elif raw.get('state') in {'queued', 'delivered'}:
+                recovered.append(raw)
+                continue
+            else:
+                raise BridgeError('bridge_lookup_unconfirmed')
+        except Exception:
+            # Missing, changed, dead or unavailable status never grants a write.
+            result['unconfirmed'] += 1
+        seen.add(identity)
+        processed += 1
+    rows = recovered + rows
     for raw in rows:
         if not isinstance(raw, dict):
             result['rejected'] += 1
@@ -129,7 +164,7 @@ def consume_once(bridge, db_path, project_id, site_key, *, enabled=False, limit=
             mark_acknowledged(db_path, event)
             result['acknowledged'] += 1
         except Exception:
-            # Keep the committed receipt and recover via the delivered listing.
+            # Keep the committed receipt; verify exact bridge identity on restart.
             # A transport error must never regress a possibly accepted ACK.
             result['unconfirmed'] += 1
     try:
