@@ -14,8 +14,28 @@ PROJECT_ID_PATTERN=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RESERVED_PROJECT_IDS=frozenset({"legacy"})
 
 
+def strip_port(host):
+    # A mapped port is not a second site identity. Bracketed IPv6 keeps its address.
+    host = str(host or "")
+    if host.startswith("["):
+        end = host.find("]")
+        return host[1:end] if end > 1 else host
+    if host.count(":") == 1:
+        name, port = host.rsplit(":", 1)
+        if port.isdigit():
+            return name
+    return host
+
+
 def normalise_host(host):
-    return str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
+    host = strip_port(host)
+    host = str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
+    if not host:
+        return ""
+    try:
+        return host.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise SystemExit(f"invalid site host: {host}") from exc
 
 
 def bare_host(value):
