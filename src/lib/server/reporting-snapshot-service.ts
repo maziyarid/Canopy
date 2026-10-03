@@ -77,6 +77,13 @@ export async function resolveSnapshotAccess(
   }
 }
 
+export function reportClosingDate(endDate?: string, now = new Date()): Date {
+  if (!endDate) return now;
+  const timestamp = Date.parse(`${endDate}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate) || !Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== endDate || endDate > now.toISOString().slice(0, 10)) throw new SnapshotAccessError(400, "Invalid reporting date");
+  return new Date(timestamp);
+}
+
 export function assertRefreshCapability(access: SnapshotAccess) {
   if ((access.role !== "owner" && access.role !== "editor") || access.filter.trim()) {
     throw new SnapshotAccessError(403, "Forbidden");
@@ -134,6 +141,8 @@ export function buildReportingSnapshot(input: {
   generatedAt: string;
   rows: LedgerRow[];
   ledgerAvailable: boolean;
+  comparisonRows?: LedgerRow[];
+  comparisonAvailable?: boolean;
 }): ReportingSnapshot {
   const search = sectionFromRows("search", ["gsc"], input.rows, input.ledgerAvailable);
   const acquisition = sectionFromRows("acquisition", ["ga4"], input.rows.filter(row => !["conversions", "keyEvents"].includes(row.metricName ?? "")), input.ledgerAvailable);
@@ -153,6 +162,7 @@ export function buildReportingSnapshot(input: {
     comparison: input.comparison,
     sections: [overview, search, acquisition, conversions],
     providerHealth,
+    ...(input.comparison ? { comparisonSections: buildReportingSnapshot({ ...input, period: input.comparison, comparison: null, rows: input.comparisonRows ?? [], ledgerAvailable: input.comparisonAvailable ?? false }).sections } : {}),
   };
   return {
     ...body,
@@ -173,16 +183,23 @@ export async function loadReportingSnapshot(opts: {
   comparisonLabel?: string | null;
   correlationId?: string;
   now?: Date;
+  endDate?: string;
   readLedger?: LedgerReader;
 }): Promise<ReportingSnapshot> {
   const access = await resolveSnapshotAccess(opts.resolveAccess, opts.sql, opts.userId, opts.email, opts.projectId);
   if (access.filter.trim()) throw new SnapshotAccessError(403, "Forbidden");
-  const period = periodFromLabel(opts.periodLabel, opts.now);
+  const period = periodFromLabel(opts.periodLabel, reportClosingDate(opts.endDate, opts.now));
   const comparison = opts.comparisonLabel === "" ? null : comparisonPeriod(period);
   if (opts.comparisonLabel && comparison) comparison.label = opts.comparisonLabel;
   const requestedAt = (opts.now ?? new Date()).toISOString();
-  const { rows, available } = await (opts.readLedger ?? (async () => ({ rows: [], available: false })))(access.project.id, access.project.domain, period);
-  const fingerprint = `${available}:${ledgerFingerprint(rows)}`;
+  const reader = opts.readLedger ?? (async () => ({ rows: [], available: false }));
+  const safeRead = async (window: SnapshotPeriod) => {
+    try { return await reader(access.project.id, access.project.domain, window); }
+    catch { return { rows: [], available: false }; }
+  };
+  const [current, previous] = await Promise.all([reader(access.project.id, access.project.domain, period), comparison ? safeRead(comparison) : Promise.resolve({ rows: [], available: false })]);
+  const { rows, available } = current;
+  const fingerprint = `${available}:${ledgerFingerprint(rows)}:${previous.available}:${ledgerFingerprint(previous.rows)}`;
   const audience = access.role === "client" ? parseReportSections(access.reportSections).join(",") : "admin";
   const cacheKey = snapshotCacheKey(access.project.id, `${access.project.domain}:${period.label}:${period.start}:${period.end}:${audience}`, comparison ? `${comparison.label}:${comparison.start}:${comparison.end}` : null);
   const cached = snapshotCache.get(cacheKey, fingerprint);
@@ -204,6 +221,8 @@ export async function loadReportingSnapshot(opts: {
     generatedAt: requestedAt,
     rows,
     ledgerAvailable: available,
+    comparisonRows: previous.rows,
+    comparisonAvailable: previous.available,
   });
   const visible = filterSnapshotForAccess(snapshot, access);
   snapshotCache.set(cacheKey, fingerprint, visible);
@@ -221,6 +240,7 @@ export async function refreshReportingSnapshotRecord(opts: {
   comparisonLabel?: string | null;
   correlationId?: string;
   now?: Date;
+  endDate?: string;
   readLedger?: LedgerReader;
 }): Promise<{ replayed: boolean; snapshot: ReportingSnapshot }> {
   const access = await resolveSnapshotAccess(opts.resolveAccess, opts.sql, opts.userId, opts.email, opts.projectId);
@@ -230,7 +250,7 @@ export async function refreshReportingSnapshotRecord(opts: {
   // Idempotency-Key may only replay a refresh for the same effective period
   // and comparison; a different request must not receive the first snapshot.
   const now = opts.now ?? new Date();
-  const requestedPeriod = periodFromLabel(opts.periodLabel, now);
+  const requestedPeriod = periodFromLabel(opts.periodLabel, reportClosingDate(opts.endDate, now));
   const requestedComparison = opts.comparisonLabel === "" ? null : comparisonPeriod(requestedPeriod);
   if (opts.comparisonLabel && requestedComparison) {
     requestedComparison.label = opts.comparisonLabel;
@@ -253,11 +273,14 @@ export async function refreshReportingSnapshotRecord(opts: {
 export function filterSnapshotForAccess(snapshot: ReportingSnapshot, access: SnapshotAccess): ReportingSnapshot {
   if (access.role !== "client") return snapshot;
   const granted = new Set(parseReportSections(access.reportSections));
-  const details = snapshot.sections.filter(section => section.key !== "overview" && granted.has(section.key as "search" | "acquisition" | "conversions"));
-  const sections = snapshot.sections.filter(section => granted.has(section.key as "overview" | "search" | "acquisition" | "conversions")).map(section => {
+  const filterSections = (source: SnapshotSection[]) => {
+  const details = source.filter(section => section.key !== "overview" && granted.has(section.key as "search" | "acquisition" | "conversions"));
+  return source.filter(section => granted.has(section.key as "overview" | "search" | "acquisition" | "conversions")).map(section => {
     const visible = section.key === "overview" ? deriveOverview(details) : section;
     return { ...visible, warning: visible.warning ? redactForClient(visible.warning) : null };
   });
-  const body = { ...snapshot, sections, providerHealth: { key: "providerHealth", status: "unavailable" as const, freshness: null, lastSyncAt: null, warning: null, metrics: [] } };
+  };
+  const sections = filterSections(snapshot.sections);
+  const body = { ...snapshot, sections, ...(snapshot.comparisonSections ? { comparisonSections: filterSections(snapshot.comparisonSections) } : {}), providerHealth: { key: "providerHealth", status: "unavailable" as const, freshness: null, lastSyncAt: null, warning: null, metrics: [] } };
   return { ...body, etag: computeStableEtag(stableSnapshotBody(body)) };
 }

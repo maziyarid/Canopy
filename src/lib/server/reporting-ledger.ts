@@ -7,9 +7,9 @@ type State = {
 };
 export type GatewayMetricRow = {
   provider: string; site: string; dataset: string; data_date: string;
-  metrics: Record<string, unknown>; updated_at?: string;
+  dimensions?: Record<string, unknown>; metrics: Record<string, unknown>; updated_at?: string;
 };
-export type GatewayMetricResponse = { rows: GatewayMetricRow[]; coverage?: { ranges: Array<{ start: string; end: string }> } };
+export type GatewayMetricResponse = { rows: GatewayMetricRow[]; truncated?: boolean; coverage?: { ranges: Array<{ start: string; end: string }> } };
 export type ReportGateway = {
   states(projectId: string): Promise<{ providers: State[] }>;
   metrics(projectId: string, provider: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse>;

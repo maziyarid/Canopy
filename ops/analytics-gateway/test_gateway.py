@@ -15,6 +15,7 @@ def free_port():
 class FakeGoogle(BaseHTTPRequestHandler):
     token='fake-google-token'
     leak_authorization_error=False
+    malformed_metrics=False
     def log_message(self,*_): pass
     def sendj(self,code,obj):
         raw=json.dumps(obj).encode()
@@ -53,8 +54,12 @@ class FakeGoogle(BaseHTTPRequestHandler):
                     {'keys':[d1],'clicks':2,'impressions':100,'ctr':.02,'position':10},
                     {'keys':[d2],'clicks':3,'impressions':200,'ctr':.015,'position':20},
                 ]
+            elif dims==['date','query','page']:
+                rows=[{'keys':[(date.today()-timedelta(days=2)).isoformat(),'query one','https://example.com/a'],'clicks':1,'impressions':50,'ctr':.02,'position':8}]
             else:
                 rows=[{'keys':['query one','https://example.com/a'],'clicks':1,'impressions':50,'ctr':.02,'position':8}]
+            if self.malformed_metrics:
+                for row in rows: row.pop('impressions',None)
             self.sendj(200,{'siteUrl':body.get('siteUrl'),'dimensions':dims,'rows':rows,'fetchedAt':'2026-09-21T00:00:00Z'}); return
         self.sendj(404,{'error':'not_found'})
 
