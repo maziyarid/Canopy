@@ -91,6 +91,14 @@ def record_running(
             )
             """
         )
+        existing = connection.execute(
+            "select stage, error_class from provider_jobs where id=?",
+            (job_id,),
+        ).fetchone()
+        if existing is not None:
+            classification = str(existing["error_class"] or "").strip()
+            if existing["stage"] == "failed_closed" or classification in FAIL_CLOSED:
+                raise ProviderJobRecoveryError("fail_closed_reclaim_forbidden")
         connection.execute(
             """
             insert into provider_jobs (
@@ -104,10 +112,22 @@ def record_running(
                 attempt=excluded.attempt,
                 heartbeat_at=excluded.heartbeat_at,
                 updated_at=excluded.updated_at
+            where provider_jobs.stage != 'failed_closed'
+              and provider_jobs.error_class not in (
+                'not_configured',
+                'adapter_not_implemented',
+                'site_map_missing',
+                'site_map_invalid',
+                'gsc_property_not_authorised',
+                'ambiguous_schema',
+                'unknown'
+              )
             """,
             (job_id, provider, project_id, attempt, stamp, stamp),
         )
         row = connection.execute("select * from provider_jobs where id=?", (job_id,)).fetchone()
+        if row is None or row["stage"] == "failed_closed" or str(row["error_class"] or "").strip() in FAIL_CLOSED:
+            raise ProviderJobRecoveryError("fail_closed_reclaim_forbidden")
         connection.execute("COMMIT")
         return dict(row)
     except Exception:

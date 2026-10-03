@@ -123,5 +123,20 @@ class ProviderJobRecoveryTest(unittest.TestCase):
                 heartbeat_job(path, "job-6", now=started + timedelta(seconds=200))
 
 
+
+    def test_record_running_refuses_failed_closed_reclaim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-7", "gsc", "project-a", attempt=1, now=started)
+            record_attempt_failure(path, "job-7", "site_map_missing", now=started)
+            recovered = recover_stale_running(path, now=started + timedelta(seconds=120))
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            with self.assertRaises(ProviderJobRecoveryError) as raised:
+                record_running(path, "job-7", "gsc", "project-a", attempt=1, now=started + timedelta(seconds=130))
+            self.assertEqual(str(raised.exception), "fail_closed_reclaim_forbidden")
+            second = recover_stale_running(path, now=started + timedelta(seconds=240))
+            self.assertEqual(second, [])
+
 if __name__ == "__main__":
     unittest.main()
