@@ -14,12 +14,19 @@ const CREDENTIAL_RE =
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const PHONE_RE = /(?:\+?\d{1,3}[\s-]?)?(?:\(\d{2,4}\)|\d{2,4})[\s-]?\d{3,4}[\s-]?\d{3,4}/g;
 
-/** App-level salt for PII refs. Not a secret; prevents offline rainbow tables of the 32-bit hash. */
-const PII_SALT = "ms-robot-pii-v1";
+function piiPepper(): string {
+  const pepper = process.env.MS_ROBOT_PII_PEPPER?.trim() ?? "";
+  if (pepper.length >= 16) return pepper;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("MS_ROBOT_PII_PEPPER is required");
+  }
+  // Non-production only. Not a committed secret and not used when NODE_ENV=production.
+  return "test-only-pii-pepper-not-for-production";
+}
 
 function stableHash(input: string): string {
-  // Salted SHA-256 truncated for compact correlation refs. Not reversible without the original value.
-  const h = createHash("sha256").update(PII_SALT).update(input).digest("hex").slice(0, 16);
+  // Full SHA-256 with a server pepper. 64 hex chars, not a public 64-bit truncation.
+  const h = createHash("sha256").update(piiPepper()).update("\0").update(input).digest("hex");
   return `pii:${h}`;
 }
 

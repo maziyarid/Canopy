@@ -8,6 +8,7 @@ import { canWrite, nid, ownerMangoolsKey, resolveAccess } from "./access";
 import { mangoolsFetch } from "./mangools";
 import { mapKeyword } from "./mappers";
 import { queueMonday } from "./monday";
+import { applyAmbientDataDomain } from "./access";
 import { redactForClient, redactForLog } from "./redact";
 
 async function log(
@@ -28,10 +29,11 @@ async function log(
 
 export const addSeeds = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), seeds: z.array(z.string()).max(80) }))
+  .validator(z.object({ projectId: z.string(), seeds: z.array(z.string()).max(80), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
+    applyAmbientDataDomain(data.ambientDataDomain, project.data_domain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const existing = await sql<{ keyword: string }>`select keyword from keywords where project_id = ${data.projectId}`;
     const have = new Set(existing.map((r) => r.keyword.toLowerCase()));
@@ -60,11 +62,13 @@ export const updateKeywordStatus = createServerFn({ method: "POST" })
       projectId: z.string(),
       id: z.string(),
       status: z.enum(["new", "tracked", "briefed", "ignored"]),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     }),
   )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { role, project } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { role, project } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
+    applyAmbientDataDomain(data.ambientDataDomain, project.data_domain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const rows = await sql<{ keyword: string }>`
       select keyword from keywords where id = ${data.id} and project_id = ${data.projectId}
@@ -86,10 +90,11 @@ export const updateKeywordStatus = createServerFn({ method: "POST" })
 
 export const scoreKeywords = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), keywords: z.array(z.string()).max(700).optional() }))
+  .validator(z.object({ projectId: z.string(), keywords: z.array(z.string()).max(700).optional() }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
+    applyAmbientDataDomain(data.ambientDataDomain, project.data_domain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const key = await ownerMangoolsKey(sql, project.owner_id);
     if (!key) throw new Error("Add your Mangools API key in Connect.");
@@ -146,10 +151,11 @@ export const scoreKeywords = createServerFn({ method: "POST" })
 
 export const expandRelated = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), seed: z.string().min(1).max(200) }))
+  .validator(z.object({ projectId: z.string(), seed: z.string().min(1).max(200) }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
+    applyAmbientDataDomain(data.ambientDataDomain, project.data_domain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const key = await ownerMangoolsKey(sql, project.owner_id);
     if (!key) throw new Error("Add your Mangools API key in Connect.");
@@ -189,10 +195,11 @@ export const expandRelated = createServerFn({ method: "POST" })
 
 export const pullCompetitor = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), url: z.string().min(3).max(200) }))
+  .validator(z.object({ projectId: z.string(), url: z.string().min(3).max(200) }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
+    applyAmbientDataDomain(data.ambientDataDomain, project.data_domain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const key = await ownerMangoolsKey(sql, project.owner_id);
     if (!key) throw new Error("Add your Mangools API key in Connect.");
@@ -216,10 +223,11 @@ export const pullCompetitor = createServerFn({ method: "POST" })
 
 export const runGap = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), competitors: z.array(z.string()).max(5).optional() }))
+  .validator(z.object({ projectId: z.string(), competitors: z.array(z.string()).max(5).optional() }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
+    applyAmbientDataDomain(data.ambientDataDomain, project.data_domain);
     if (!canWrite(role)) throw new Error("Forbidden");
     if (!project.domain) throw new Error("Set a home domain on the project.");
     const list = (data.competitors?.length ? data.competitors : project.competitors.split(","))

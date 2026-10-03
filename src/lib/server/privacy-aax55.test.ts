@@ -46,7 +46,7 @@ describe("AAX-55 redactPii", () => {
     const raw = "contact patient@example.com for follow-up";
     const out = redactPii(raw);
     assert.doesNotMatch(out, /patient@example\.com/);
-    assert.match(out, /pii:[0-9a-f]{16}/);
+    assert.match(out, /pii:[0-9a-f]{64}/);
   });
 
   it("same email yields same hash", () => {
@@ -65,14 +65,29 @@ describe("AAX-55 redactPii", () => {
     const raw = "call +1 555-123-4567";
     const out = redactPii(raw);
     assert.doesNotMatch(out, /555-123-4567/);
-    assert.match(out, /pii:[0-9a-f]{16}/);
+    assert.match(out, /pii:[0-9a-f]{64}/);
   });
 
-  it("hash is longer than 32-bit and salted (not guessable offline with short brute)", () => {
+  it("hash is full SHA-256 and not a public 64-bit truncation", () => {
     const out = redactPii("secret@clinic.ir");
     const m = out.match(/pii:([0-9a-f]+)/);
     assert.ok(m);
-    assert.equal(m![1].length, 16); // 64-bit hex from SHA-256 slice
+    assert.equal(m![1].length, 64);
+    assert.doesNotMatch(out, /ms-robot-pii-v1/);
+  });
+
+  it("production fails closed without a server pepper", () => {
+    const previousNode = process.env.NODE_ENV;
+    const previousPepper = process.env.MS_ROBOT_PII_PEPPER;
+    process.env.NODE_ENV = "production";
+    delete process.env.MS_ROBOT_PII_PEPPER;
+    try {
+      assert.throws(() => redactPii("patient@example.com"), /MS_ROBOT_PII_PEPPER is required/);
+    } finally {
+      process.env.NODE_ENV = previousNode;
+      if (previousPepper === undefined) delete process.env.MS_ROBOT_PII_PEPPER;
+      else process.env.MS_ROBOT_PII_PEPPER = previousPepper;
+    }
   });
 });
 
