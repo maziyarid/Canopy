@@ -53,3 +53,8 @@ The analytics SQLite coordinator does not read `migrations/*.sql`. After `ensure
 ## 2026-10-03 scheme-less path conflict
 
 `example.com/blog` and `example.com` normalise to the same host. A scheme-less key is not a second site identity: `bare_host` drops path, query, fragment, and userinfo before the www/trailing-dot normalisation. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`. Process proof: `test_scheme_less_path_conflicts_with_apex_before_discovery`. The URL-path www proof does not cover a scheme-less path. Promotion readiness fails closed if `bare_host` or that proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.
+
+
+## 2026-10-03 port and IDNA host conflict
+
+`example.com:443` and `https://www.example.com/` normalise to the same host. `exämple.com` and `xn--exmple-cua.com` normalise to the same punycode host. `strip_port` drops a single numeric port, and `normalise_host` IDNA-encodes before the project conflict check. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`. Process proof: `test_port_and_idna_conflict_with_apex_before_discovery`. Promotion readiness fails closed if `strip_port`, the IDNA encode, or that proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.

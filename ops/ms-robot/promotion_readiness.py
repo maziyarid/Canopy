@@ -174,7 +174,12 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     path_proof = (root / "ops/ms-robot/test_portfolio_scheme_less_path_conflict_process.py").read_text(encoding="utf-8")
     if "test_scheme_less_path_conflicts_with_apex_before_discovery" not in path_proof:
         raise PromotionReadinessError("scheme_less_path_conflict_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed"]
+    if "def strip_port(" not in source or 'host.encode("idna")' not in source:
+        raise PromotionReadinessError("port_or_idna_not_normalised_before_conflict")
+    port_proof = (root / "ops/ms-robot/test_portfolio_port_idna_conflict_process.py").read_text(encoding="utf-8")
+    if "test_port_and_idna_conflict_with_apex_before_discovery" not in port_proof:
+        raise PromotionReadinessError("port_idna_conflict_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed"]
 
 
 

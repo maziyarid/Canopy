@@ -36,6 +36,7 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertIn("scheduled_portfolio_map_fail_closed", report["checks"])
         self.assertIn("whitespace_project_id_fail_closed", report["checks"])
         self.assertIn("trailing_dot_conflict_fail_closed", report["checks"])
+        self.assertIn("port_idna_conflict_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
     def test_missing_migration_fails_closed(self):
