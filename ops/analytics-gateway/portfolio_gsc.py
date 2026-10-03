@@ -181,8 +181,20 @@ def main():
         }))
         raise SystemExit(1) from exc
     discovery=google_request("/v1/sites")
+    sites=discovery.get("sites") if isinstance(discovery, dict) else None
+    # A string or error object is not an empty property list. Treating it as
+    # unauthorised would retry the wrong failure and might sync a character key.
+    if not isinstance(sites, list) or any(not isinstance(item, dict) for item in sites):
+        message="site_map_invalid: gsc discovery payload"
+        checkpoint=checkpoint_for_sync_failure(message, 1)
+        print(json.dumps({
+            "error":checkpoint["errorClass"],
+            "retryCheckpoint":checkpoint,
+            "detail":message,
+        }))
+        raise SystemExit(1)
     authorised={}
-    for item in discovery.get("sites", []):
+    for item in sites:
         site_url=item.get("siteUrl")
         if not site_url:
             continue

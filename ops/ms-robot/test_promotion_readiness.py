@@ -42,6 +42,7 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertIn("ipv4_mapped_conflict_fail_closed", report["checks"])
         self.assertIn("ipv4_dword_conflict_fail_closed", report["checks"])
         self.assertIn("ambiguous_gsc_property_fail_closed", report["checks"])
+        self.assertIn("gsc_discovery_payload_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
     def test_missing_migration_fails_closed(self):
