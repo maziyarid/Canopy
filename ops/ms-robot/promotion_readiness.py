@@ -179,12 +179,17 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     port_proof = (root / "ops/ms-robot/test_portfolio_port_idna_conflict_process.py").read_text(encoding="utf-8")
     if "test_port_and_idna_conflict_with_apex_before_discovery" not in port_proof:
         raise PromotionReadinessError("port_idna_conflict_process_proof_missing")
+    if "def decode_host(" not in source or "unquote(" not in source:
+        raise PromotionReadinessError("percent_host_not_decoded_before_conflict")
+    percent_proof = (root / "ops/ms-robot/test_portfolio_percent_host_conflict_process.py").read_text(encoding="utf-8")
+    if "test_percent_encoded_host_conflicts_with_apex_before_discovery" not in percent_proof:
+        raise PromotionReadinessError("percent_host_conflict_process_proof_missing")
     if 'host.startswith("[")' not in source or 'host.find("]")' not in source:
         raise PromotionReadinessError("ipv6_bracket_port_not_normalised_before_conflict")
     ipv6_proof = (root / "ops/ms-robot/test_portfolio_ipv6_port_conflict_process.py").read_text(encoding="utf-8")
     if "test_ipv6_bracket_port_conflicts_with_url_host_before_discovery" not in ipv6_proof:
         raise PromotionReadinessError("ipv6_port_conflict_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "ipv6_port_conflict_fail_closed"]
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed"]
 
 
 

@@ -63,3 +63,8 @@ The analytics SQLite coordinator does not read `migrations/*.sql`. After `ensure
 ## 2026-10-03 IPv6 bracket port conflict
 
 `[2001:db8::1]:443` and `https://[2001:db8::1]/` normalise to the same host. `strip_port` keeps the address inside brackets and drops the mapped port, so a bracketed IPv6 literal is not a second site identity. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`. Process proof: `test_ipv6_bracket_port_conflicts_with_url_host_before_discovery`. The numeric `host:port` proof does not cover bracketed IPv6. Promotion readiness fails closed if the bracket handling or that proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.
+
+
+## 2026-10-03 percent-encoded host conflict
+
+`https://ex%61mple.com` and `example.com` normalise to the same host. `decode_host` applies one percent-decode before the port, www, trailing-dot, and IDNA conflict check. A leftover `%` fails closed without echoing the raw key. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`. Process proof: `test_percent_encoded_host_conflicts_with_apex_before_discovery`. The IDNA proof does not cover a percent-encoded label. Promotion readiness fails closed if `decode_host` or that proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.

@@ -2,7 +2,7 @@
 import json
 import os
 import re
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from gateway import DB, create_or_run_sync, google_request, init_db, now
 from provider_retry_checkpoint import checkpoint_for_sync_failure
@@ -27,8 +27,17 @@ def strip_port(host):
     return host
 
 
+def decode_host(host):
+    # A percent-encoded label is not a second site identity. One decode only;
+    # a leftover % is ambiguous and fails closed without echoing the raw key.
+    decoded = unquote(str(host or ""))
+    if "%" in decoded:
+        raise SystemExit("invalid site host")
+    return decoded
+
+
 def normalise_host(host):
-    host = strip_port(host)
+    host = strip_port(decode_host(host))
     host = str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
     if not host:
         return ""

@@ -37,6 +37,7 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertIn("whitespace_project_id_fail_closed", report["checks"])
         self.assertIn("trailing_dot_conflict_fail_closed", report["checks"])
         self.assertIn("port_idna_conflict_fail_closed", report["checks"])
+        self.assertIn("percent_host_conflict_fail_closed", report["checks"])
         self.assertIn("ipv6_port_conflict_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
@@ -173,6 +174,7 @@ class PromotionReadinessTest(unittest.TestCase):
             "ops/ms-robot/test_portfolio_trailing_dot_site_conflict_process.py",
             "ops/ms-robot/test_portfolio_scheme_less_path_conflict_process.py",
             "ops/ms-robot/test_portfolio_port_idna_conflict_process.py",
+            "ops/ms-robot/test_portfolio_percent_host_conflict_process.py",
             "ops/ms-robot/test_portfolio_ipv6_port_conflict_process.py",
         ]
         with tempfile.TemporaryDirectory() as tmp:
