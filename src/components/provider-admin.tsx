@@ -1,3 +1,4 @@
+import { AdaEventsPanel } from "./ada-events-panel";
 import { Badge, Button } from "@/components/ui";
 import { useLocale } from "@/lib/locale";
 import type { ProviderKey } from "@/lib/analytics/contracts";
@@ -7,7 +8,7 @@ import {
   type ProviderAdminView,
 } from "@/lib/server/provider-admin";
 import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const PROVIDER_LABELS: Record<ProviderKey, string> = {
@@ -40,6 +41,7 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
   const [data, setData] = useState<ProviderAdminView | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<ProviderKey | null>(null);
+  const requestVersion = useRef(0);
 
   const ui =
     lang === "fa"
@@ -89,19 +91,27 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
         };
 
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
     try {
       setError("");
-      setData(await getProviderAdmin({ data: { projectId } }));
+      const response = await getProviderAdmin({ data: { projectId } });
+      if (version === requestVersion.current) setData(response);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Provider admin unavailable");
+      if (version === requestVersion.current) {
+        setData(null);
+        setError(err instanceof Error ? err.message : "Provider admin unavailable");
+      }
     }
   }, [projectId]);
 
   useEffect(() => {
     void load();
+    return () => {
+      requestVersion.current += 1;
+    };
   }, [load]);
 
-  if (!data && !error) {
+  if ((!data || data.projectId !== projectId) && !error) {
     return (
       <div className="grid min-h-48 place-items-center text-muted">
         <RefreshCw className="size-5 animate-spin" />
@@ -109,12 +119,21 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
     );
   }
 
-  if (!data) {
+  if (!data || data.projectId !== projectId) {
     return <p className="rounded-xl bg-bad/10 p-4 text-sm text-bad">{error}</p>;
   }
 
   return (
     <div className="grid gap-4">
+      {data.adaEvents ? (
+        <AdaEventsPanel
+          data={data.adaEvents}
+          lang={lang}
+          onRefresh={() => {
+            void load();
+          }}
+        />
+      ) : null}
       <section className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -157,19 +176,27 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
               </div>
               <div>
                 <dt className="text-xs text-subtle">{ui.permission}</dt>
-                <dd className="mt-0.5">{provider.permissionTier || provider.capability || "read"}</dd>
+                <dd className="mt-0.5">
+                  {provider.permissionTier || provider.capability || "read"}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-subtle">{ui.freshness}</dt>
-                <dd className="mt-0.5">{stamp(provider.freshness || provider.connectionFreshness, lang)}</dd>
+                <dd className="mt-0.5">
+                  {stamp(provider.freshness || provider.connectionFreshness, lang)}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-subtle">{ui.lastAttempt}</dt>
-                <dd className="mt-0.5">{stamp(provider.last_attempt || provider.connectionLastAttempt, lang)}</dd>
+                <dd className="mt-0.5">
+                  {stamp(provider.last_attempt || provider.connectionLastAttempt, lang)}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-subtle">{ui.lastSuccess}</dt>
-                <dd className="mt-0.5">{stamp(provider.last_success || provider.connectionLastSuccess, lang)}</dd>
+                <dd className="mt-0.5">
+                  {stamp(provider.last_success || provider.connectionLastSuccess, lang)}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs text-subtle">{ui.error}</dt>
@@ -198,7 +225,9 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
                 }
               }}
             >
-              <RefreshCw className={busy === provider.provider ? "size-4 animate-spin" : "size-4"} />
+              <RefreshCw
+                className={busy === provider.provider ? "size-4 animate-spin" : "size-4"}
+              />
               {ui.test}
             </Button>
           </section>
@@ -215,7 +244,9 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
               <thead>
                 <tr className="text-ink-muted">
                   {[ui.provider, ui.runStatus, ui.window, ui.started, ui.rows].map((label) => (
-                    <th key={label} className="px-3 py-2 text-start font-medium">{label}</th>
+                    <th key={label} className="px-3 py-2 text-start font-medium">
+                      {label}
+                    </th>
                   ))}
                 </tr>
               </thead>

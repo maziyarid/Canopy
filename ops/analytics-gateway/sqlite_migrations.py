@@ -12,6 +12,8 @@ import random
 import sqlite3
 import time
 
+from ada_bridge_receipts import ensure_receipts_schema
+
 LEGACY_PROJECT_ID = "legacy"
 SCHEMA_VERSION_KEY = "analytics_schema_version"
 SCHEMA_VERSION = "provider-ledger-project-scope-v1"
@@ -419,6 +421,7 @@ def ensure_analytics_schema(
             for spec in TABLE_SPECS:
                 reconcile_one(connection, spec)
             ensure_additive_columns_and_indexes(connection)
+            ensure_receipts_schema(connection)
             validate_canonical_schema(connection)
             write_schema_marker(connection)
             connection.execute("COMMIT")

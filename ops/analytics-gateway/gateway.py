@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 from gsc_monitor import ensure_schema as ensure_monitor_schema, list_investigations, run_monitor
 from sqlite_migrations import ensure_analytics_schema
+from ada_bridge_receipts import list_receipts, ReceiptError
 import sys
 from pathlib import Path
 # Deployed unit runs this file from /srv/ms-robot-analytics/gateway.py.
@@ -509,6 +510,16 @@ class H(BaseHTTPRequestHandler):
         if not self.guard(): return
         project_id=self.project_scope()
         if project_id is None: return
+        if u.path=='/v1/ada-events':
+            query=parse_qs(u.query)
+            try:
+                limit=int(query.get('limit',['50'])[0])
+                events=list_receipts(DB,project_id,query.get('site',[''])[0],limit)
+            except (ReceiptError,TypeError,ValueError):
+                self.sendj(400,{'error':'invalid_event_scope_or_limit'}); return
+            except (sqlite3.Error,OSError):
+                self.sendj(503,{'error':'event_receipts_unavailable'}); return
+            self.sendj(200,{'events':events,'generatedAt':now()}); return
         if u.path=='/v1/providers':
             self.sendj(200,{'providers':safe_provider_rows(project_id),'generatedAt':now()}); return
         if u.path=='/v1/sync-runs':
