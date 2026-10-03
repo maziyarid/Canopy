@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from provider_retry_checkpoint import (
+    FAIL_CLOSED,
+    RETRYABLE,
     SCHEDULED_PORTFOLIO_SYNC_ENABLED,
     ProviderRetryError,
     next_checkpoint,
@@ -115,17 +117,57 @@ def record_running(
         connection.close()
 
 
+def record_attempt_failure(
+    path: Path,
+    job_id: str,
+    error_class: str,
+    now: datetime | None = None,
+) -> dict:
+    """Persist the failed attempt class while the job is still running.
+
+    Recovery must read this class. A later caller cannot reclassify a
+    fail-closed attempt as retryable.
+    """
+    classification = _persistable_class(error_class)
+    stamp = _stamp(now)
+    connection = _connect(path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        updated = connection.execute(
+            """
+            update provider_jobs
+            set error_class=?, updated_at=?
+            where id=? and stage='running'
+            """,
+            (classification, stamp, job_id),
+        )
+        if updated.rowcount != 1:
+            raise ProviderJobRecoveryError("running_job_missing")
+        row = connection.execute("select * from provider_jobs where id=?", (job_id,)).fetchone()
+        connection.execute("COMMIT")
+        return dict(row)
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+    finally:
+        connection.close()
+
+
 def recover_stale_running(
     path: Path,
     now: datetime | None = None,
     stale_seconds: int = STALE_RUNNING_SECONDS,
-    error_class: str = "provider_unavailable",
+    error_class: str | None = None,
 ) -> list[dict]:
     """Move crashed running jobs to the next fail-closed checkpoint.
 
-    A job still inside the heartbeat window is left running. Retryable classes
-    become retry_wait until the attempt bound; fail-closed classes never retry.
+    The class comes from the persisted failed attempt. A caller-supplied class
+    is ignored so a restart cannot reclassify a fail-closed job as retryable.
+    A missing persisted class fails closed as unknown.
     """
+    if error_class is not None:
+        # Accepted only so older call sites keep compiling. Not used.
+        _persistable_class(error_class)
     if stale_seconds < 1:
         raise ProviderJobRecoveryError("stale_window_required")
     moment = now or datetime.now(timezone.utc)
@@ -144,7 +186,9 @@ def recover_stale_running(
         ).fetchall()
         stamp = _stamp(moment)
         for row in rows:
-            checkpoint = next_checkpoint("running", error_class, int(row["attempt"]))
+            persisted = str(row["error_class"] or "").strip()
+            classification = persisted if persisted else "unknown"
+            checkpoint = next_checkpoint("running", classification, int(row["attempt"]))
             connection.execute(
                 """
                 update provider_jobs
@@ -179,3 +223,12 @@ def _stamp(moment: datetime | None) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat()
+
+
+def _persistable_class(error_class: str) -> str:
+    if not error_class or not str(error_class).strip():
+        raise ProviderJobRecoveryError("error_class_required")
+    raw = str(error_class).strip()
+    if raw in RETRYABLE or raw in FAIL_CLOSED:
+        return raw
+    return "unknown"
