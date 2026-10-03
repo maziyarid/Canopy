@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ipaddress
 import json
 import os
 import re
@@ -51,6 +52,37 @@ def assert_hostname(host):
     return host
 
 
+
+def canonical_ip(host):
+    # Dotted IPv4, leading-zero octets, and IPv4-mapped IPv6 are one site key.
+    # Fail closed on an unparsable mapped form. Do not echo the raw key.
+    text = str(host or "")
+    lower = text.lower()
+    if lower.startswith("::ffff:"):
+        mapped = text[7:]
+        try:
+            return str(ipaddress.IPv4Address(int(ipaddress.IPv4Address(mapped))))
+        except (ipaddress.AddressValueError, ValueError):
+            octets = mapped.split(".")
+            if len(octets) == 4 and all(part.isdigit() and 0 <= int(part) <= 255 for part in octets):
+                return ".".join(str(int(part)) for part in octets)
+            raise SystemExit("invalid site host")
+    octets = text.split(".")
+    if len(octets) == 4 and all(part.isdigit() for part in octets):
+        if any(int(part) > 255 for part in octets):
+            raise SystemExit("invalid site host")
+        return ".".join(str(int(part)) for part in octets)
+    try:
+        ip = ipaddress.ip_address(text)
+    except ValueError:
+        return text
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        return str(ip.ipv4_mapped)
+    if isinstance(ip, ipaddress.IPv4Address):
+        return str(ip)
+    return ip.compressed
+
+
 def normalise_host(host):
     host = strip_port(decode_host(host))
     host = str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
@@ -62,7 +94,7 @@ def normalise_host(host):
     except UnicodeError as exc:
         raise SystemExit("invalid site host") from exc
     # IDNA can map Unicode spaces onto ASCII space. Re-check the canonical form.
-    return assert_hostname(canonical)
+    return canonical_ip(assert_hostname(canonical))
 
 
 def bare_host(value):
