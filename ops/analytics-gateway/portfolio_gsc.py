@@ -181,11 +181,27 @@ def main():
         }))
         raise SystemExit(1) from exc
     discovery=google_request("/v1/sites")
-    authorised={
-        site_key(item.get("siteUrl")): item.get("siteUrl")
-        for item in discovery.get("sites", [])
-        if item.get("siteUrl")
-    }
+    authorised={}
+    for item in discovery.get("sites", []):
+        site_url=item.get("siteUrl")
+        if not site_url:
+            continue
+        key=site_key(site_url)
+        bucket=authorised.setdefault(key, [])
+        if site_url not in bucket:
+            bucket.append(site_url)
+    # A domain property and a URL-prefix property are different GSC identities.
+    # Last-write-wins would sync the wrong property. Fail closed, do not echo URLs.
+    ambiguous=sorted(key for key, urls in authorised.items() if key in mapping and len(urls) > 1)
+    if ambiguous:
+        message="site_map_invalid: more than one gsc property"
+        checkpoint=checkpoint_for_sync_failure(message, 1)
+        print(json.dumps({
+            "error":checkpoint["errorClass"],
+            "retryCheckpoint":checkpoint,
+            "detail":message,
+        }))
+        raise SystemExit(1)
 
     started=now()
     runs=[]
@@ -201,11 +217,12 @@ def main():
                 "retryCheckpoint":checkpoint_for_sync_failure("gsc_property_not_authorised:"+site, 1),
             })
             continue
-        run,created=create_or_run_sync(project_id,"gsc",site,"27d",started)
+        property_url=authorised[site][0]
+        run,created=create_or_run_sync(project_id,"gsc",property_url,"27d",started)
         touched_projects.add(project_id)
         runs.append({
             "projectId":project_id,
-            "site":site,
+            "site":property_url,
             "status":run.get("status"),
             "rowsWritten":run.get("rows_written"),
             "errorClass":run.get("error_class"),

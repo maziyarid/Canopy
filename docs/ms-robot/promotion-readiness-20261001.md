@@ -84,3 +84,8 @@ The analytics SQLite coordinator does not read `migrations/*.sql`. After `ensure
 ## 2026-10-03 IPv4 dword and hex conflict
 
 `3221225985` and `0xc0000201` are the same address as `192.0.2.1`. `integer_ipv4` canonicalises a decimal dword and a `0x` hex form before the project conflict check. A short numeric label is left as a hostname. Different project ids on those keys are `site_map_invalid` before discovery or `create_or_run_sync`, and the raw dword/hex key is not echoed. Process proof: `test_ipv4_dword_and_hex_conflict_with_dotted_before_discovery`. Promotion readiness fails closed if `integer_ipv4` or that proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.
+
+
+## 2026-10-03 ambiguous GSC property
+
+`sc-domain:example.com` and `https://example.com/` are different Search Console properties that share a host. Discovery that returns both for a mapped host is `site_map_invalid` before `create_or_run_sync`, and the raw property URLs are not echoed. A single authorised property is synced with its original `siteUrl`, not the canonical host. Process proof: `test_ambiguous_gsc_properties_exit_before_sync` and `test_authorised_property_url_is_synced`. Promotion readiness fails closed if that rejection or proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.
