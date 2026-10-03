@@ -107,8 +107,8 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
 
     try {
       const [providerResponse, runResponse] = await Promise.all([
-        getProviderStates(),
-        getProviderSyncRuns(100),
+        getProviderStates(data.projectId),
+        getProviderSyncRuns(data.projectId, 100),
       ]);
       states = providerResponse.providers;
       generatedAt = providerResponse.generatedAt;
@@ -160,5 +160,5 @@ export const requestProviderSync = createServerFn({ method: "POST" })
     if (!canAdminProviders(role, filter)) throw new Error("Forbidden");
     if (!project.domain.trim()) throw new Error("Project domain is required before provider sync");
 
-    return requestProviderRefresh(project.domain, data.providers, data.window);
+    return requestProviderRefresh(data.projectId, project.domain, data.providers, data.window);
   });

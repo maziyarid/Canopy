@@ -2,6 +2,8 @@ export type Lang = "en" | "fa";
 
 export type Role = "owner" | "editor" | "client";
 
+export type DataDomain = "medical" | "thesis" | "other";
+
 export type KeywordStatus = "new" | "tracked" | "briefed" | "ignored";
 
 export type ProjectTab =
@@ -12,6 +14,7 @@ export type ProjectTab =
   | "agents"
   | "access"
   | "progress"
+  | "report"
   | "providers"
   | "connect";
 
@@ -20,6 +23,7 @@ export type Project = {
   ownerId: string;
   name: string;
   domain: string;
+  dataDomain: DataDomain;
   locationId: number;
   languageId: number;
   platformId: number;
@@ -112,6 +116,7 @@ export type AccessRow = {
   userId: string | null;
   role: Role;
   keywordFilter: string;
+  reportSections?: string[];
   createdAt: string;
 };
 

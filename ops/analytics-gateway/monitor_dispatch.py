@@ -9,9 +9,11 @@ ANALYTICS_TOKEN=os.getenv("ANALYTICS_GATEWAY_TOKEN","")
 BRIDGE_URL=os.getenv("MSROBOT_BRIDGE_URL","http://127.0.0.1:9110").rstrip("/")
 BRIDGE_TOKEN=os.getenv("MSROBOT_BRIDGE_TOKEN","")
 
-def request_json(url, token, method="GET", body=None):
+def request_json(url, token, method="GET", body=None, project_id=None):
     raw=None if body is None else json.dumps(body,separators=(",",":")).encode()
     headers={"Accept":"application/json","Authorization":"Bearer "+token}
+    if project_id:
+        headers["X-Ms-Robot-Project-Id"]=project_id
     if raw is not None:
         headers["Content-Type"]="application/json"
     req=Request(url,data=raw,headers=headers,method=method)
@@ -22,13 +24,17 @@ def canonical_hash(value):
     raw=json.dumps(value,separators=(",",":"),sort_keys=True).encode()
     return hashlib.sha256(raw).hexdigest()
 def bridge_event(signal, state):
+    project_id=str(signal.get("projectId") or "").strip()
     site=str(signal.get("site") or "")
     signal_type=str(signal.get("signalType") or "")
     evidence=signal.get("evidence") or {}
-    base=hashlib.sha256(f"gsc:{site}:{signal_type}".encode()).hexdigest()
+    if not project_id:
+        raise RuntimeError("monitor_signal_missing_project_id")
+    base=hashlib.sha256(f"gsc:{project_id}:{site}:{signal_type}".encode()).hexdigest()
     evidence_hash=canonical_hash(evidence)
     payload={
         "provider":"gsc",
+        "project_id":project_id,
         "state":state,
         "signal_type":signal_type,
         "severity":signal.get("severity") or "medium",
@@ -53,11 +59,16 @@ def main():
     if not BRIDGE_TOKEN:
         raise SystemExit("MSROBOT_BRIDGE_TOKEN is required")
 
+    project_id=os.getenv("MS_ROBOT_MONITOR_PROJECT_ID","").strip()
+    if not project_id:
+        raise SystemExit("MS_ROBOT_MONITOR_PROJECT_ID is required")
+
     monitor=request_json(
         ANALYTICS_URL+"/v1/monitor/gsc",
         ANALYTICS_TOKEN,
         "POST",
         {},
+        project_id,
     )
     receipts=[]
     for signal in monitor.get("activeSignals") or []:

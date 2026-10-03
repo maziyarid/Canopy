@@ -1,3 +1,5 @@
+import { ProjectReport } from "./project-report";
+import { ReportSectionGrants } from "./report-section-grants";
 import { Badge, Button, Field, Input, Textarea } from "@/components/ui";
 import { Spark } from "@/components/spark";
 import { ProviderAdminPanel } from "@/components/provider-admin";
@@ -54,6 +56,7 @@ import { toast } from "sonner";
 
 const TAB_IDS: { id: ProjectTab; owner?: boolean; hideClient?: boolean }[] = [
   { id: "overview" },
+  { id: "report" },
   { id: "keywords" },
   { id: "tracker" },
   { id: "research", hideClient: true },
@@ -104,6 +107,7 @@ export function Workspace({ id }: { id: string }) {
   const tabs = TAB_IDS.filter((x) => {
     if (x.owner && role !== "owner") return false;
     if (x.hideClient && role === "client") return false;
+    if (x.id === "report" && bundle.project.keywordFilter.trim()) return false;
     return true;
   });
 
@@ -141,12 +145,13 @@ export function Workspace({ id }: { id: string }) {
               tab === item.id ? "bg-raised text-fg shadow-[var(--shadow-border)]" : "text-muted hover:text-fg",
             )}
           >
-            {t(item.id as CopyKey)}
+            {item.id === "report" ? "Analytics" : t(item.id as CopyKey)}
           </button>
         ))}
       </div>
 
       {tab === "overview" && <Overview bundle={bundle} />}
+      {tab === "report" && <ProjectReport key={bundle.project.id} projectId={bundle.project.id} />}
       {tab === "keywords" && <KeywordsPanel bundle={bundle} reload={reload} />}
       {tab === "tracker" && <TrackerPanel bundle={bundle} reload={reload} />}
       {tab === "research" && <ResearchPanel bundle={bundle} reload={reload} />}
@@ -849,6 +854,7 @@ function AccessPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () => 
                 <p className="text-xs text-muted">
                   {t(a.role)} {a.keywordFilter ? `· ${a.keywordFilter}` : ""}
                 </p>
+                {a.role === "client" && !a.keywordFilter.trim() ? <ReportSectionGrants projectId={bundle.project.id} memberId={a.id} sections={a.reportSections ?? []} reload={reload} /> : null}
               </div>
               <Button
                 size="sm"

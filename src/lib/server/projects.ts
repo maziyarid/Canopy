@@ -87,6 +87,7 @@ export const createProject = createServerFn({ method: "POST" })
     z.object({
       name: z.string().min(1).max(120),
       domain: z.string().max(200).default(""),
+      dataDomain: z.enum(["medical", "thesis", "other"]).default("other"),
       locationId: z.number().int().default(2840),
       languageId: z.number().int().default(1000),
       platformId: z.number().int().default(1),
@@ -98,9 +99,9 @@ export const createProject = createServerFn({ method: "POST" })
     const sql = await getSql();
     const id = nid();
     await sql`
-      insert into projects (id, owner_id, name, domain, location_id, language_id, platform_id, competitors, notes)
+      insert into projects (id, owner_id, name, domain, data_domain, location_id, language_id, platform_id, competitors, notes)
       values (
-        ${id}, ${context.userId}, ${data.name.trim()}, ${data.domain.trim().toLowerCase()},
+        ${id}, ${context.userId}, ${data.name.trim()}, ${data.domain.trim().toLowerCase()}, ${data.dataDomain},
         ${data.locationId}, ${data.languageId}, ${data.platformId}, ${data.competitors}, ${data.notes}
       )
     `;
@@ -127,6 +128,7 @@ export const updateProject = createServerFn({ method: "POST" })
     const sql = await getSql();
     const { project, role } = await resolveAccess(sql, context.userId, context.email, data.id);
     if (!canWrite(role)) throw new Error("Forbidden");
+    // data_domain is intentionally immutable after create (AAX-55 / AAX-134).
     await sql`
       update projects set
         name = ${data.name ?? project.name},
