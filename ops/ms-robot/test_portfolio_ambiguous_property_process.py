@@ -37,8 +37,8 @@ def refuse_sync(*_args, **_kwargs):
 
 def discovery(_path):
     return {"sites": [
-        {"siteUrl": "sc-domain:example.com"},
-        {"siteUrl": "https://example.com/"},
+        {"siteUrl": "sc-domain:example.com", "permissionLevel": "siteOwner"},
+        {"siteUrl": "https://example.com/", "permissionLevel": "siteOwner"},
     ]}
 
 portfolio_gsc.create_or_run_sync = refuse_sync
@@ -73,7 +73,7 @@ def record_sync(project_id, provider, site, window, started):
     return {"status": "completed", "rows_written": 0, "error_class": None}, True
 
 def discovery(_path):
-    return {"sites": [{"siteUrl": "sc-domain:example.com"}]}
+    return {"sites": [{"siteUrl": "sc-domain:example.com", "permissionLevel": "siteOwner"}]}
 
 def no_monitor(*_args, **_kwargs):
     return {"activeSignals": [], "resolvedSignals": [], "checkedAt": "t", "sites": 0, "created": 0, "updated": 0, "resolved": 0}

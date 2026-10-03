@@ -158,7 +158,12 @@ export function Workspace({ id }: { id: string }) {
       {tab === "agents" && <AgentsPanel bundle={bundle} reload={reload} />}
       {tab === "progress" && <ProgressPanel bundle={bundle} />}
       {tab === "access" && <AccessPanel bundle={bundle} reload={reload} />}
-      {tab === "providers" && <ProviderAdminPanel projectId={bundle.project.id} />}
+      {tab === "providers" && (
+        <ProviderAdminPanel
+          key={`${bundle.project.id}:${bundle.project.role}:${bundle.project.keywordFilter}`}
+          projectId={bundle.project.id}
+        />
+      )}
       {tab === "connect" && <ConnectPanel bundle={bundle} reload={reload} />}
     </div>
   );

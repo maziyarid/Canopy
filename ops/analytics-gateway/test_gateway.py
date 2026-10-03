@@ -80,6 +80,23 @@ class GatewayTest(unittest.TestCase):
             try:
                 urllib.request.urlopen(f'http://127.0.0.1:{self.port}/health',timeout=.2); break
             except Exception: time.sleep(.05)
+    def test_ada_receipt_read_requires_auth_and_exact_project_site(self):
+        from ada_bridge_receipts import validate_event, persist_receipt
+        from test_ada_bridge_consumer import event
+        persist_receipt(str(self.db_path), validate_event(event()))
+        code, response = self.request('/v1/ada-events?site=example.com')
+        self.assertEqual(code, 200)
+        self.assertEqual(response['events'][0]['event_id'], 'event-1')
+        self.assertNotIn('payload', response['events'][0])
+        self.assertNotIn('envelope_sha256', response['events'][0])
+        self.assertNotIn('transient content only', json.dumps(response))
+        self.assertEqual(self.request('/v1/ada-events?site=example.com', auth=False)[0], 401)
+        self.assertEqual(self.request('/v1/ada-events?site=example.com', project=None)[0], 400)
+        self.assertEqual(self.request('/v1/ada-events?site=example.com', project='project-b')[1]['events'], [])
+        self.assertEqual(self.request('/v1/ada-events?site=other.example')[1]['events'], [])
+        self.assertEqual(self.request('/v1/ada-events?site=example.com&limit=101')[0], 400)
+        self.assertEqual(self.request('/v1/ada-events')[0], 400)
+
     def tearDown(self):
         self.proc.terminate(); self.proc.wait(timeout=5)
         self.google.shutdown(); self.google.server_close()

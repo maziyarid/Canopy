@@ -121,6 +121,20 @@ class PortfolioPermissionProcessTests(unittest.TestCase):
         self.assertEqual(payload["error"], "site_map_invalid")
         self.assertFalse(payload["retryCheckpoint"]["retryable"])
 
+    def test_mapped_restricted_permission_exits_before_sync(self):
+        child = RESTRICTED.replace("https://secret-property.example/", "https://example.com/")
+        proc = self._run(child)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        line = next(line for line in proc.stdout.splitlines() if line.startswith("RESULT "))
+        result = json.loads(line.removeprefix("RESULT "))
+        self.assertEqual(result["code"], 1)
+        self.assertEqual(result["called"]["sync"], 0)
+        payload = json.loads(proc.stdout.split("RESULT ", 1)[0].strip().splitlines()[-1])
+        self.assertEqual(payload["authorisedSites"], 0)
+        self.assertEqual(payload["unavailable"][0]["error"], "gsc_property_not_authorised")
+        self.assertFalse(payload["unavailable"][0]["retryCheckpoint"]["retryable"])
+        self.assertNotIn("https://example.com/", proc.stdout)
+
     def test_restricted_permission_exits_before_sync(self):
         proc = self._run(RESTRICTED)
         self.assertEqual(proc.returncode, 0, proc.stderr)

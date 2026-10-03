@@ -8,12 +8,14 @@ import {
   type ProviderSyncRun,
 } from "@/lib/analytics/contracts";
 import {
+  getAdaEventReceipts,
   getProviderStates,
   getProviderSyncRuns,
   requestProviderRefresh,
 } from "@/lib/analytics/gateway.server";
 import { studioAuth } from "./studio-auth";
 import { canAdminProviders, resolveAccess } from "./access";
+import { canReadAdaEvents, projectAdaEvents, type AdaEventView } from "./ada-events-view";
 
 export type ProviderAdminProvider = ProviderState & {
   accountRef: string;
@@ -34,6 +36,7 @@ export type ProviderAdminView = {
   generatedAt?: string;
   providers: ProviderAdminProvider[];
   runs: ProviderSyncRun[];
+  adaEvents?: { available: boolean; items: AdaEventView[]; generatedAt?: string };
 };
 
 const ProjectSchema = z.object({ projectId: z.string() });
@@ -135,6 +138,20 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       };
     });
 
+    let adaEvents: ProviderAdminView["adaEvents"];
+    if (canReadAdaEvents(role, filter)) {
+      try {
+        const response = await getAdaEventReceipts(data.projectId, project.domain);
+        adaEvents = {
+          available: true,
+          items: projectAdaEvents(response.events, data.projectId, project.domain),
+          generatedAt: response.generatedAt,
+        };
+      } catch {
+        adaEvents = { available: false, items: [] };
+      }
+    }
+
     return {
       projectId: data.projectId,
       site: project.domain,
@@ -143,6 +160,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       generatedAt,
       providers,
       runs,
+      adaEvents,
     };
   });
 
