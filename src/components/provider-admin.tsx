@@ -42,6 +42,9 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<ProviderKey | null>(null);
   const requestVersion = useRef(0);
+  const loading = useRef(false);
+  const activeRead = useRef<AbortController | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const ui =
     lang === "fa"
@@ -66,6 +69,10 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
           started: "شروع",
           rows: "رکورد",
           queued: "درخواست ثبت شد.",
+          loading: "در حال بررسی منابع داده…",
+          loadError:
+            "وضعیت منابع داده دریافت نشد. دوباره بررسی کنید؛ اگر مشکل ادامه داشت، دوباره وارد حساب کاربری شوید.",
+          retry: "بررسی دوباره منابع داده",
         }
       : {
           title: "Data providers",
@@ -88,18 +95,51 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
           started: "Started",
           rows: "Rows",
           queued: "Sync request recorded.",
+          loading: "Checking data providers…",
+          loadError:
+            "Provider status could not be loaded. Check again; if the problem continues, sign in again.",
+          retry: "Check providers again",
         };
 
   const load = useCallback(async () => {
+    if (loading.current) return;
+    loading.current = true;
+    setRefreshing(true);
     const version = ++requestVersion.current;
+    const controller = new AbortController();
+    activeRead.current = controller;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       setError("");
-      const response = await getProviderAdmin({ data: { projectId } });
+      const response = await Promise.race([
+        getProviderAdmin({ data: { projectId }, signal: controller.signal }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => {
+            controller.abort();
+            reject(new Error("provider_read_timeout"));
+          }, 20000);
+        }),
+      ]);
+      if (
+        !response ||
+        response.projectId !== projectId ||
+        !Array.isArray(response.providers) ||
+        !Array.isArray(response.runs)
+      ) {
+        throw new Error("invalid_provider_read");
+      }
       if (version === requestVersion.current) setData(response);
-    } catch (err) {
+    } catch {
       if (version === requestVersion.current) {
         setData(null);
-        setError(err instanceof Error ? err.message : "Provider admin unavailable");
+        setError("unavailable");
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (version === requestVersion.current) {
+        activeRead.current = null;
+        loading.current = false;
+        setRefreshing(false);
       }
     }
   }, [projectId]);
@@ -108,19 +148,44 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
     void load();
     return () => {
       requestVersion.current += 1;
+      activeRead.current?.abort();
+      activeRead.current = null;
+      loading.current = false;
     };
   }, [load]);
 
   if ((!data || data.projectId !== projectId) && !error) {
     return (
-      <div className="grid min-h-48 place-items-center text-muted">
-        <RefreshCw className="size-5 animate-spin" />
+      <div
+        role="status"
+        className="grid min-h-48 place-items-center content-center gap-2 text-muted"
+      >
+        <RefreshCw
+          aria-hidden="true"
+          className="mx-auto size-5 animate-spin motion-reduce:animate-none"
+        />
+        <p className="text-sm">{ui.loading}</p>
       </div>
     );
   }
 
   if (!data || data.projectId !== projectId) {
-    return <p className="rounded-xl bg-bad/10 p-4 text-sm text-bad">{error}</p>;
+    return (
+      <div className="rounded-xl bg-bad/10 p-4">
+        <p role="alert" className="text-sm text-bad">
+          {ui.loadError}
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          className="mt-3 min-h-11"
+          disabled={refreshing}
+          onClick={() => void load()}
+        >
+          {ui.retry}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -129,6 +194,7 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
         <AdaEventsPanel
           data={data.adaEvents}
           lang={lang}
+          refreshing={refreshing}
           onRefresh={() => {
             void load();
           }}

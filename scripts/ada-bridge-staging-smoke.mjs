@@ -67,8 +67,37 @@ async function ownerView(page, lang, label) {
   );
   assert.equal((await page.locator("body").innerText()).includes("other-tenant-hidden"), false);
   assert.equal((await page.locator("body").innerText()).includes("other-site-hidden"), false);
-  assert.equal(await panel.getByRole("button").count(), 1);
-  await panel.getByRole("button").click();
+  const search = panel.getByRole("searchbox", {
+    name: lang === "fa" ? "جستجوی رویدادها" : "Search events",
+  });
+  await search.fill("incident-visible");
+  assert.equal(await panel.locator("li").count(), 1);
+  await search.fill("no-matching-event");
+  assert.equal(await panel.locator("li").count(), 0);
+  await panel
+    .getByRole("button", { name: lang === "fa" ? "پاک کردن جستجو" : "Clear search", exact: true })
+    .click();
+  assert.equal(await search.inputValue(), "");
+  assert.equal(await search.evaluate((el) => el === document.activeElement), true);
+  await panel
+    .getByRole("button", { name: lang === "fa" ? "تایید نشده" : "Unconfirmed", exact: false })
+    .click();
+  assert.equal(await panel.locator("li").count(), 1);
+  await panel.getByRole("button", { name: lang === "fa" ? "همه" : "All", exact: false }).click();
+  assert.equal(await panel.locator("li").count(), 2);
+  const details = panel.locator("details").first();
+  await details.locator("summary").focus();
+  await details.locator("summary").press("Enter");
+  assert.equal(await details.getAttribute("open"), "");
+  assert.match(await details.innerText(), /example\.com/);
+  await details.locator("summary").press("Enter");
+  assert.equal(await details.getAttribute("open"), null);
+  await panel
+    .getByRole("button", {
+      name: lang === "fa" ? "بررسی دوباره رویدادها" : "Check events again",
+      exact: true,
+    })
+    .click();
   await panel.getByText("incident-visible", { exact: true }).waitFor();
   await panel.scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(directory, `${label}.png`), fullPage: false });
