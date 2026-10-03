@@ -202,7 +202,12 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     empty_proof = (root / "ops/ms-robot/test_portfolio_empty_label_host_process.py").read_text(encoding="utf-8")
     if "test_empty_label_hosts_exit_before_discovery" not in empty_proof:
         raise PromotionReadinessError("empty_label_host_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed"]
+    if "ord(char) < 32" not in source or "ord(char) == 127" not in source:
+        raise PromotionReadinessError("control_host_not_rejected")
+    control_proof = (root / "ops/ms-robot/test_portfolio_control_host_process.py").read_text(encoding="utf-8")
+    if "test_control_and_nbsp_hosts_exit_before_discovery" not in control_proof:
+        raise PromotionReadinessError("control_host_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed"]
 
 
 

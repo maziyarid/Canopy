@@ -38,9 +38,11 @@ def decode_host(host):
 
 def assert_hostname(host):
     # One decode must leave a hostname, not a second identity via scheme, path,
-    # backslash, whitespace, or an empty label. IPv6 keeps internal colons.
-    # Do not echo the raw key.
+    # backslash, whitespace, control characters, or an empty label. IPv6 keeps
+    # internal colons. Do not echo the raw key.
     if not host or any(char in host for char in "/\\@ \t\r\n"):
+        raise SystemExit("invalid site host")
+    if any(ord(char) < 32 or ord(char) == 127 for char in host):
         raise SystemExit("invalid site host")
     if host.startswith(".") or ".." in host:
         raise SystemExit("invalid site host")
@@ -56,9 +58,11 @@ def normalise_host(host):
         return ""
     host = assert_hostname(host)
     try:
-        return host.encode("idna").decode("ascii")
+        canonical = host.encode("idna").decode("ascii")
     except UnicodeError as exc:
         raise SystemExit("invalid site host") from exc
+    # IDNA can map Unicode spaces onto ASCII space. Re-check the canonical form.
+    return assert_hostname(canonical)
 
 
 def bare_host(value):
