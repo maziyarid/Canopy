@@ -189,7 +189,15 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     ipv6_proof = (root / "ops/ms-robot/test_portfolio_ipv6_port_conflict_process.py").read_text(encoding="utf-8")
     if "test_ipv6_bracket_port_conflicts_with_url_host_before_discovery" not in ipv6_proof:
         raise PromotionReadinessError("ipv6_port_conflict_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed"]
+    if "def assert_hostname(" not in source:
+        raise PromotionReadinessError("decoded_host_residue_not_rejected")
+    residue_proof = (root / "ops/ms-robot/test_portfolio_decoded_host_residue_process.py").read_text(encoding="utf-8")
+    if "test_decoded_scheme_and_path_exit_before_discovery" not in residue_proof:
+        raise PromotionReadinessError("decoded_host_residue_process_proof_missing")
+    puny_proof = (root / "ops/ms-robot/test_portfolio_punycode_conflict_process.py").read_text(encoding="utf-8")
+    if "test_unicode_and_punycode_conflict_before_discovery" not in puny_proof:
+        raise PromotionReadinessError("punycode_conflict_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed"]
 
 
 

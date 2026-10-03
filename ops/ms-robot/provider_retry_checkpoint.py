@@ -82,6 +82,7 @@ def sync_error_class(message: str | None) -> str:
         or "empty site" in lowered
         or "invalid project id" in lowered
         or "more than one project" in lowered
+        or "invalid site host" in lowered
         or "site_map_invalid" in lowered
     ):
         return "site_map_invalid"
