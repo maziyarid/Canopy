@@ -212,7 +212,12 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     mapped_proof = (root / "ops/ms-robot/test_portfolio_ipv4_mapped_conflict_process.py").read_text(encoding="utf-8")
     if "test_ipv4_mapped_host_conflicts_with_dotted_before_discovery" not in mapped_proof:
         raise PromotionReadinessError("ipv4_mapped_conflict_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed"]
+    if "def integer_ipv4(" not in source or 'lower.startswith("0x")' not in source:
+        raise PromotionReadinessError("ipv4_dword_host_not_normalised_before_conflict")
+    dword_proof = (root / "ops/ms-robot/test_portfolio_ipv4_dword_conflict_process.py").read_text(encoding="utf-8")
+    if "test_ipv4_dword_and_hex_conflict_with_dotted_before_discovery" not in dword_proof:
+        raise PromotionReadinessError("ipv4_dword_conflict_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed"]
 
 
 

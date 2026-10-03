@@ -53,11 +53,33 @@ def assert_hostname(host):
 
 
 
+def integer_ipv4(text):
+    # A decimal dword or 0x hex form is the same address as dotted IPv4.
+    # Short numeric labels stay hostnames. Do not echo the raw key.
+    raw = str(text or "").strip()
+    lower = raw.lower()
+    if lower.startswith("0x"):
+        digits = lower[2:]
+        if not digits or any(ch not in "0123456789abcdef" for ch in digits):
+            return None
+        value = int(digits, 16)
+    elif raw.isdigit() and len(raw) >= 4:
+        value = int(raw, 10)
+    else:
+        return None
+    if value > 0xFFFFFFFF:
+        raise SystemExit("invalid site host")
+    return str(ipaddress.IPv4Address(value))
+
+
 def canonical_ip(host):
-    # Dotted IPv4, leading-zero octets, and IPv4-mapped IPv6 are one site key.
+    # Dotted IPv4, leading-zero octets, dword/hex forms, and IPv4-mapped IPv6 are one site key.
     # Fail closed on an unparsable mapped form. Do not echo the raw key.
     text = str(host or "")
     lower = text.lower()
+    aliased = integer_ipv4(text)
+    if aliased:
+        return aliased
     if lower.startswith("::ffff:"):
         mapped = text[7:]
         try:
