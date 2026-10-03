@@ -105,7 +105,19 @@ def check_provider_retry_gate(root: Path) -> list[str]:
     portfolio = (root / "ops/analytics-gateway/portfolio_gsc.py").read_text(encoding="utf-8")
     if "site_map_missing" not in portfolio:
         raise PromotionReadinessError("portfolio_site_map_checkpoint_missing")
-    return ["provider_retry_checkpoint_fail_closed", "gateway_sync_failure_checkpoint_wired"]
+    recovery = (root / "ops/ms-robot/provider_job_recovery.py").read_text(encoding="utf-8")
+    if "SCHEDULED_PORTFOLIO_SYNC_ENABLED" not in recovery or "scheduled_portfolio_sync_forbidden" not in recovery:
+        raise PromotionReadinessError("provider_job_recovery_enables_scheduled_sync")
+    if "def recover_stale_running" not in recovery:
+        raise PromotionReadinessError("provider_job_recovery_missing")
+    proof = (root / "ops/ms-robot/test_provider_job_recovery.py").read_text(encoding="utf-8")
+    if "test_fail_closed_class_is_not_retried_after_restart" not in proof:
+        raise PromotionReadinessError("provider_job_recovery_proof_missing")
+    return [
+        "provider_retry_checkpoint_fail_closed",
+        "gateway_sync_failure_checkpoint_wired",
+        "provider_job_recovery_fail_closed",
+    ]
 
 
 def check_client_note_order_gate(root: Path) -> list[str]:
