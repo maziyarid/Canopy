@@ -153,6 +153,46 @@ def record_attempt_failure(
         connection.close()
 
 
+def heartbeat_job(path: Path, job_id: str, now: datetime | None = None) -> dict:
+    """Refresh a running job only while its persisted class is not fail-closed.
+
+    A fail-closed class must not stay alive through heartbeat. The persisted
+    class is not cleared. Scheduled portfolio sync stays disabled.
+    """
+    if not job_id:
+        raise ProviderJobRecoveryError("job_identity_required")
+    stamp = _stamp(now)
+    connection = _connect(path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute("select * from provider_jobs where id=?", (job_id,)).fetchone()
+        if row is None:
+            raise ProviderJobRecoveryError("job_missing")
+        classification = str(row["error_class"] or "").strip()
+        if row["stage"] == "failed_closed" or classification in FAIL_CLOSED:
+            raise ProviderJobRecoveryError("fail_closed_heartbeat_forbidden")
+        if row["stage"] != "running":
+            raise ProviderJobRecoveryError("heartbeat_requires_running")
+        updated = connection.execute(
+            """
+            update provider_jobs
+            set heartbeat_at=?, updated_at=?
+            where id=? and stage='running' and error_class not in ('not_configured', 'adapter_not_implemented', 'site_map_missing', 'site_map_invalid', 'gsc_property_not_authorised', 'ambiguous_schema', 'unknown')
+            """,
+            (stamp, stamp, job_id),
+        )
+        if updated.rowcount != 1:
+            raise ProviderJobRecoveryError("fail_closed_heartbeat_forbidden")
+        current = connection.execute("select * from provider_jobs where id=?", (job_id,)).fetchone()
+        connection.execute("COMMIT")
+        return dict(current)
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+    finally:
+        connection.close()
+
+
 def recover_stale_running(
     path: Path,
     now: datetime | None = None,

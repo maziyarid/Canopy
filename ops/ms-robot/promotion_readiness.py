@@ -114,11 +114,15 @@ def check_provider_retry_gate(root: Path) -> list[str]:
         raise PromotionReadinessError("provider_job_recovery_class_not_persisted")
     if "error_class: str = \"provider_unavailable\"" in recovery:
         raise PromotionReadinessError("provider_job_recovery_uses_caller_default")
+    if "def heartbeat_job" not in recovery or "fail_closed_heartbeat_forbidden" not in recovery:
+        raise PromotionReadinessError("provider_job_heartbeat_not_fail_closed")
     proof = (root / "ops/ms-robot/test_provider_job_recovery.py").read_text(encoding="utf-8")
     if "test_fail_closed_class_is_not_retried_after_restart" not in proof:
         raise PromotionReadinessError("provider_job_recovery_proof_missing")
     if "test_recovery_uses_persisted_class_not_caller_default" not in proof:
         raise PromotionReadinessError("persisted_error_class_proof_missing")
+    if "test_heartbeat_refuses_persisted_fail_closed_class" not in proof:
+        raise PromotionReadinessError("fail_closed_heartbeat_proof_missing")
     return [
         "provider_retry_checkpoint_fail_closed",
         "gateway_sync_failure_checkpoint_wired",

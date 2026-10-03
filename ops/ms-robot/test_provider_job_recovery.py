@@ -3,7 +3,13 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from provider_job_recovery import record_attempt_failure, record_running, recover_stale_running
+from provider_job_recovery import (
+    ProviderJobRecoveryError,
+    heartbeat_job,
+    record_attempt_failure,
+    record_running,
+    recover_stale_running,
+)
 from provider_retry_checkpoint import SCHEDULED_PORTFOLIO_SYNC_ENABLED
 
 
@@ -94,6 +100,27 @@ class ProviderJobRecoveryTest(unittest.TestCase):
             )
             self.assertEqual(recovered[0]["stage"], "failed_closed")
             self.assertEqual(recovered[0]["error_class"], "unknown")
+
+    def test_heartbeat_refuses_persisted_fail_closed_class(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-6", "gsc", "project-a", attempt=1, now=started)
+            alive = heartbeat_job(path, "job-6", now=started + timedelta(seconds=5))
+            self.assertEqual(alive["stage"], "running")
+            self.assertEqual(alive["error_class"], "")
+            record_attempt_failure(path, "job-6", "timeout", now=started)
+            still_alive = heartbeat_job(path, "job-6", now=started + timedelta(seconds=15))
+            self.assertEqual(still_alive["error_class"], "timeout")
+            record_attempt_failure(path, "job-6", "site_map_missing", now=started)
+            with self.assertRaises(ProviderJobRecoveryError) as raised:
+                heartbeat_job(path, "job-6", now=started + timedelta(seconds=30))
+            self.assertEqual(str(raised.exception), "fail_closed_heartbeat_forbidden")
+            recovered = recover_stale_running(path, now=started + timedelta(seconds=120))
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            self.assertEqual(recovered[0]["error_class"], "site_map_missing")
+            with self.assertRaises(ProviderJobRecoveryError):
+                heartbeat_job(path, "job-6", now=started + timedelta(seconds=200))
 
 
 if __name__ == "__main__":
