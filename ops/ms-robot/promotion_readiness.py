@@ -230,7 +230,16 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
 
     if "test_authorised_property_url_is_synced" not in property_proof:
         raise PromotionReadinessError("authorised_property_url_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed"]
+    # siteRestrictedUser and siteUnverifiedUser are not a sync grant. A missing
+    # permissionLevel is not an implicit owner. Owner and full-user remain eligible.
+    if 'WRITABLE_GSC_PERMISSIONS=frozenset({"siteOwner", "siteFullUser"})' not in source:
+        raise PromotionReadinessError("writable_gsc_permissions_gate_missing")
+    if "item.get(\"permissionLevel\") not in WRITABLE_GSC_PERMISSIONS" not in source:
+        raise PromotionReadinessError("writable_gsc_permissions_not_applied")
+    permission_proof = (root / "ops/ms-robot/test_portfolio_permission_process.py").read_text(encoding="utf-8")
+    if "test_restricted_permission_exits_before_sync" not in permission_proof:
+        raise PromotionReadinessError("writable_gsc_permission_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed", "writable_gsc_permission_fail_closed"]
 
 
 

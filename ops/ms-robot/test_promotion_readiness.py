@@ -197,6 +197,41 @@ class PromotionReadinessTest(unittest.TestCase):
                 check_portfolio_map_gate(root)
             self.assertIn("ipv6_port_conflict_process_proof_missing", str(caught.exception))
 
+    def test_writable_gsc_permission_gate_missing_fails_closed(self):
+        repo = Path(__file__).resolve().parents[2]
+        proofs = [
+            "ops/analytics-gateway/portfolio_gsc.py",
+            "ops/ms-robot/test_portfolio_ambiguous_property_process.py",
+            "ops/ms-robot/test_portfolio_control_host_process.py",
+            "ops/ms-robot/test_portfolio_decoded_host_residue_process.py",
+            "ops/ms-robot/test_portfolio_discovery_payload_process.py",
+            "ops/ms-robot/test_portfolio_empty_label_host_process.py",
+            "ops/ms-robot/test_portfolio_invalid_project_id_process.py",
+            "ops/ms-robot/test_portfolio_ipv4_dword_conflict_process.py",
+            "ops/ms-robot/test_portfolio_ipv4_mapped_conflict_process.py",
+            "ops/ms-robot/test_portfolio_ipv6_port_conflict_process.py",
+            "ops/ms-robot/test_portfolio_padded_project_id_process.py",
+            "ops/ms-robot/test_portfolio_percent_host_conflict_process.py",
+            "ops/ms-robot/test_portfolio_permission_process.py",
+            "ops/ms-robot/test_portfolio_port_idna_conflict_process.py",
+            "ops/ms-robot/test_portfolio_punycode_conflict_process.py",
+            "ops/ms-robot/test_portfolio_scheme_less_path_conflict_process.py",
+            "ops/ms-robot/test_portfolio_trailing_dot_site_conflict_process.py",
+            "ops/ms-robot/test_portfolio_www_site_conflict_process.py",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel in proofs:
+                dest = root / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                body = (repo / rel).read_text(encoding="utf-8")
+                if rel.endswith("portfolio_gsc.py"):
+                    body = body.replace("WRITABLE_GSC_PERMISSIONS", "REMOVED_GSC_PERMISSIONS")
+                dest.write_text(body, encoding="utf-8")
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_portfolio_map_gate(root)
+            self.assertIn("writable_gsc_permissions_gate_missing", str(caught.exception))
+
     def test_sqlite_coordinator_applying_0008_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
