@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_sqlite_coordinator_skips_postgres_0008, check_upstream_tree_reconciliation, check_migrations
+from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_portfolio_map_gate, check_sqlite_coordinator_skips_postgres_0008, check_upstream_tree_reconciliation, check_migrations
 
 
 REQUIRED = {
@@ -37,6 +37,7 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertIn("whitespace_project_id_fail_closed", report["checks"])
         self.assertIn("trailing_dot_conflict_fail_closed", report["checks"])
         self.assertIn("port_idna_conflict_fail_closed", report["checks"])
+        self.assertIn("ipv6_port_conflict_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
     def test_missing_migration_fails_closed(self):
@@ -161,6 +162,34 @@ class PromotionReadinessTest(unittest.TestCase):
                 check_migrations(root)
             self.assertIn("migration_0008_renumbered_onto_pr4", str(caught.exception))
 
+
+    def test_ipv6_port_conflict_proof_missing_fails_closed(self):
+        repo = Path(__file__).resolve().parents[2]
+        proofs = [
+            "ops/analytics-gateway/portfolio_gsc.py",
+            "ops/ms-robot/test_portfolio_invalid_project_id_process.py",
+            "ops/ms-robot/test_portfolio_padded_project_id_process.py",
+            "ops/ms-robot/test_portfolio_www_site_conflict_process.py",
+            "ops/ms-robot/test_portfolio_trailing_dot_site_conflict_process.py",
+            "ops/ms-robot/test_portfolio_scheme_less_path_conflict_process.py",
+            "ops/ms-robot/test_portfolio_port_idna_conflict_process.py",
+            "ops/ms-robot/test_portfolio_ipv6_port_conflict_process.py",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel in proofs:
+                dest = root / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                body = (repo / rel).read_text(encoding="utf-8")
+                if rel.endswith("test_portfolio_ipv6_port_conflict_process.py"):
+                    body = body.replace(
+                        "test_ipv6_bracket_port_conflicts_with_url_host_before_discovery",
+                        "removed_ipv6_proof",
+                    )
+                dest.write_text(body, encoding="utf-8")
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_portfolio_map_gate(root)
+            self.assertIn("ipv6_port_conflict_process_proof_missing", str(caught.exception))
 
     def test_sqlite_coordinator_applying_0008_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
