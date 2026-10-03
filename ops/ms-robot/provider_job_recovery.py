@@ -99,6 +99,20 @@ def record_running(
             classification = str(existing["error_class"] or "").strip()
             if existing["stage"] == "failed_closed" or classification in FAIL_CLOSED:
                 raise ProviderJobRecoveryError("fail_closed_reclaim_forbidden")
+        blocked = connection.execute(
+            f"""
+            select id from provider_jobs
+            where provider=? and project_id=? and id!=?
+              and (
+                stage='failed_closed'
+                or error_class in ({",".join("?" for _ in FAIL_CLOSED)})
+              )
+            limit 1
+            """,
+            (provider, project_id, job_id, *sorted(FAIL_CLOSED)),
+        ).fetchone()
+        if blocked is not None:
+            raise ProviderJobRecoveryError("fail_closed_identity_reuse_forbidden")
         connection.execute(
             """
             insert into provider_jobs (

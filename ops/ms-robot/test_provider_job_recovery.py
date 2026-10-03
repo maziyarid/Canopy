@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -137,6 +138,27 @@ class ProviderJobRecoveryTest(unittest.TestCase):
             self.assertEqual(str(raised.exception), "fail_closed_reclaim_forbidden")
             second = recover_stale_running(path, now=started + timedelta(seconds=240))
             self.assertEqual(second, [])
+
+    def test_new_job_id_cannot_inherit_failed_closed_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 4, 2, 0, tzinfo=timezone.utc)
+            record_running(path, "job-7", "gsc", "project-a", attempt=1, now=started)
+            record_attempt_failure(path, "job-7", "gsc_property_not_authorised", now=started)
+            recovered = recover_stale_running(path, now=started + timedelta(seconds=120))
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            with self.assertRaises(ProviderJobRecoveryError) as raised:
+                record_running(path, "job-8", "gsc", "project-a", attempt=1, now=started + timedelta(seconds=130))
+            self.assertEqual(str(raised.exception), "fail_closed_identity_reuse_forbidden")
+            other_project = record_running(path, "job-9", "gsc", "project-b", attempt=1, now=started)
+            other_provider = record_running(path, "job-10", "ga4", "project-a", attempt=1, now=started)
+            self.assertEqual(other_project["project_id"], "project-b")
+            self.assertEqual(other_provider["provider"], "ga4")
+            connection = sqlite3.connect(path)
+            preserved = connection.execute("select stage, error_class from provider_jobs where id='job-7'").fetchone()
+            connection.close()
+            self.assertEqual(preserved[0], "failed_closed")
+            self.assertEqual(preserved[1], "gsc_property_not_authorised")
 
 if __name__ == "__main__":
     unittest.main()
