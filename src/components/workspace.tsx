@@ -1,6 +1,7 @@
 import { Badge, Button, Field, Input, Textarea } from "@/components/ui";
 import { Spark } from "@/components/spark";
 import { ProviderAdminPanel } from "@/components/provider-admin";
+import { attachAmbientDataDomain, readAmbientDataDomain, writeAmbientDataDomain, type DataDomain } from "@/lib/ambient-data-domain";
 import { cn } from "@/lib/cn";
 import { AGENT_ROSTER, type CopyKey } from "@/lib/i18n";
 import { LANGUAGES, LOCATIONS, locationLabel } from "@/lib/locations";
@@ -52,6 +53,11 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 
+
+function withAmbient<T extends Record<string, unknown>>(payload: T) {
+  return attachAmbientDataDomain(payload, readAmbientDataDomain());
+}
+
 const TAB_IDS: { id: ProjectTab; owner?: boolean; hideClient?: boolean }[] = [
   { id: "overview" },
   { id: "keywords" },
@@ -70,17 +76,22 @@ export function Workspace({ id }: { id: string }) {
   const [bundle, setBundle] = useState<ProjectBundle | null>(null);
   const [tab, setTab] = useState<ProjectTab>("overview");
   const [err, setErr] = useState<string | null>(null);
+  const [ambient, setAmbient] = useState<DataDomain | "">("");
 
   async function reload() {
-    const data = await getProjectBundle({ data: { id } });
+    const data = await getProjectBundle({ data: withAmbient({ id }) });
     setBundle(data);
   }
+
+  useEffect(() => {
+    setAmbient(readAmbientDataDomain() ?? "");
+  }, []);
 
   useEffect(() => {
     setBundle(null);
     setErr(null);
     reload().catch((e) => setErr(e instanceof Error ? e.message : "Error"));
-  }, [id]);
+  }, [id, ambient]);
 
   if (err) {
     return (
@@ -119,7 +130,27 @@ export function Workspace({ id }: { id: string }) {
             {bundle.project.domain || "—"} · {locationLabel(bundle.project.locationId, lang === "fa")}
           </p>
         </div>
-        <Badge tone={role === "client" ? "paper" : "primary"}>{t(role)}</Badge>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted" htmlFor="ambient-data-domain">
+            {lang === "fa" ? "حوزه زمینه" : "Workspace domain"}
+          </label>
+          <select
+            id="ambient-data-domain"
+            className="h-9 rounded-md bg-raised px-2 text-sm shadow-[var(--shadow-border)]"
+            value={ambient}
+            onChange={(e) => {
+              const next = e.target.value as DataDomain | "";
+              writeAmbientDataDomain(next);
+              setAmbient(next);
+            }}
+          >
+            <option value="">{lang === "fa" ? "بدون زمینه" : "No ambient domain"}</option>
+            <option value="medical">{lang === "fa" ? "پزشکی" : "Medical"}</option>
+            <option value="thesis">{lang === "fa" ? "پایان‌نامه" : "Thesis"}</option>
+            <option value="other">{lang === "fa" ? "سایر" : "Other"}</option>
+          </select>
+          <Badge tone={role === "client" ? "paper" : "primary"}>{t(role)}</Badge>
+        </div>
       </div>
       {role === "client" ? (
         <p className="rounded-lg bg-raised px-3 py-2 text-sm text-muted">{t("clientBanner")}</p>
@@ -270,7 +301,7 @@ function KeywordsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =
             e.preventDefault();
             const list = seed.split(/[,،\n]/).map((s) => s.trim()).filter(Boolean);
             if (!list.length) return;
-            run(t("addSeeds"), () => addSeeds({ data: { projectId: bundle.project.id, seeds: list } }));
+            run(t("addSeeds"), () => addSeeds({ data: withAmbient({ projectId: bundle.project.id, seeds: list } }));
             setSeed("");
           }}
         >
@@ -289,7 +320,7 @@ function KeywordsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =
               size="sm"
               variant="ghost"
               disabled={Boolean(busy)}
-              onClick={() => run(t("scoreList"), () => scoreKeywords({ data: { projectId: bundle.project.id, keywords: picked.length ? picked : rows.map((r) => r.keyword) } }))}
+              onClick={() => run(t("scoreList"), () => scoreKeywords({ data: withAmbient({ projectId: bundle.project.id, keywords: picked.length ? picked : rows.map((r) => r.keyword) } }))}
             >
               {busy === t("scoreList") ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {t("scoreList")}
@@ -301,7 +332,7 @@ function KeywordsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =
               onClick={() => {
                 const kw = picked[0] ?? rows[0]?.keyword;
                 if (!kw) return toast.error(t("nothingYet"));
-                run(t("expandRelated"), () => expandRelated({ data: { projectId: bundle.project.id, seed: kw } }));
+                run(t("expandRelated"), () => expandRelated({ data: withAmbient({ projectId: bundle.project.id, seed: kw } }));
               }}
             >
               {t("expandRelated")}
@@ -310,7 +341,7 @@ function KeywordsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =
               size="sm"
               variant="ghost"
               disabled={Boolean(busy) || !picked.length}
-              onClick={() => run(t("addToTrack"), () => trackSelected({ data: { projectId: bundle.project.id, keywords: picked } }))}
+              onClick={() => run(t("addToTrack"), () => trackSelected({ data: withAmbient({ projectId: bundle.project.id, keywords: picked } }))}
             >
               {t("addToTrack")}
             </Button>
@@ -364,7 +395,7 @@ function KeywordsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =
                       value={row.status}
                       onChange={(e) =>
                         updateKeywordStatus({
-                          data: { projectId: bundle.project.id, id: row.id, status: e.target.value as KeywordStatus },
+                          data: withAmbient({ projectId: bundle.project.id, id: row.id, status: e.target.value as KeywordStatus }),
                         }).then(reload)
                       }
                       className="h-8 rounded-sm bg-transparent text-xs"
@@ -411,7 +442,7 @@ function TrackerPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =>
           onClick={async () => {
             setBusy(true);
             try {
-              await refreshRanks({ data: { projectId: bundle.project.id } });
+              await refreshRanks({ data: withAmbient({ projectId: bundle.project.id }) });
               await reload();
               toast.success(t("refreshRanks"));
             } catch (err) {
@@ -492,7 +523,7 @@ function TrackerPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =>
                 onClick={async () => {
                   setSerpBusy(true);
                   try {
-                    await fetchSerp({ data: { projectId: bundle.project.id, keyword: serpKw } });
+                    await fetchSerp({ data: withAmbient({ projectId: bundle.project.id, keyword: serpKw } });
                     await reload();
                     toast.success(t("features"));
                   } catch (err) {
@@ -542,7 +573,7 @@ function ResearchPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =
           onSubmit={(e) => {
             e.preventDefault();
             if (!rival.trim()) return;
-            run(t("pullCompetitor"), () => pullCompetitor({ data: { projectId: bundle.project.id, url: rival.trim() } }));
+            run(t("pullCompetitor"), () => pullCompetitor({ data: withAmbient({ projectId: bundle.project.id, url: rival.trim() } }));
           }}
         >
           <Input value={rival} onChange={(e) => setRival(e.target.value)} placeholder={t("competitorDomain")} />
@@ -562,7 +593,7 @@ function ResearchPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =
             size="sm"
             variant="ghost"
             disabled={Boolean(busy)}
-            onClick={() => run(t("runGap"), () => runGap({ data: { projectId: bundle.project.id } }))}
+            onClick={() => run(t("runGap"), () => runGap({ data: withAmbient({ projectId: bundle.project.id }) }))}
           >
             {t("runGap")}
           </Button>
@@ -642,7 +673,7 @@ function AgentsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () => 
                     <Button
                       size="sm"
                       onClick={async () => {
-                        await addSeeds({ data: { projectId: bundle.project.id, seeds: m.playbook!.seeds } });
+                        await addSeeds({ data: withAmbient({ projectId: bundle.project.id, seeds: m.playbook!.seeds } });
                         await reload();
                         toast.success(t("writeSeeds"));
                       }}
@@ -716,7 +747,7 @@ function AgentsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () => 
                   const kw = bundle.keywords[0]?.keyword;
                   if (!kw) return;
                   try {
-                    await writeBrief({ data: { projectId: bundle.project.id, keyword: kw } });
+                    await writeBrief({ data: withAmbient({ projectId: bundle.project.id, keyword: kw } });
                     await reload();
                     toast.success(t("briefs"));
                   } catch (err) {
@@ -854,7 +885,7 @@ function AccessPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () => 
                 size="sm"
                 variant="danger"
                 onClick={async () => {
-                  await revokeMember({ data: { projectId: bundle.project.id, id: a.id } });
+                  await revokeMember({ data: withAmbient({ projectId: bundle.project.id, id: a.id } });
                   await reload();
                 }}
               >
@@ -871,7 +902,7 @@ function AccessPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () => 
           e.preventDefault();
           try {
             await inviteMember({
-              data: { projectId: bundle.project.id, email, role, keywordFilter: filter },
+              data: withAmbient({ projectId: bundle.project.id, email, role, keywordFilter: filter }),
             });
             setEmail("");
             setFilter("");
@@ -935,7 +966,7 @@ function ConnectPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =>
         onSubmit={async (e) => {
           e.preventDefault();
           await updateProject({
-            data: { id: bundle.project.id, domain, competitors, locationId: loc, languageId: langId },
+            data: withAmbient({ id: bundle.project.id, domain, competitors, locationId: loc, languageId: langId }),
           });
           await reload();
           toast.success(t("saved"));
@@ -981,7 +1012,7 @@ function ConnectPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =>
             variant="danger"
             onClick={async () => {
               if (!window.confirm(t("delete"))) return;
-              await deleteProject({ data: { id: bundle.project.id } });
+              await deleteProject({ data: withAmbient({ id: bundle.project.id }) });
               await nav({ to: "/" });
             }}
           >
@@ -1037,7 +1068,7 @@ function ConnectPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =>
                 variant="ghost"
                 onClick={async () => {
                   try {
-                    await testMonday({ data: { projectId: bundle.project.id } });
+                    await testMonday({ data: withAmbient({ projectId: bundle.project.id }) });
                     toast.success(t("testWebhook"));
                   } catch (err) {
                     toast.error(err instanceof Error ? err.message : "Error");

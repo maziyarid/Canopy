@@ -1,3 +1,4 @@
+import { attachAmbientDataDomain, readAmbientDataDomain } from "@/lib/ambient-data-domain";
 import { Badge, Button } from "@/components/ui";
 import { useLocale } from "@/lib/locale";
 import type { ProviderKey } from "@/lib/analytics/contracts";
@@ -91,7 +92,7 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
   const load = useCallback(async () => {
     try {
       setError("");
-      setData(await getProviderAdmin({ data: { projectId } }));
+      setData(await getProviderAdmin({ data: attachAmbientDataDomain({ projectId }, readAmbientDataDomain()) }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Provider admin unavailable");
     }
@@ -187,7 +188,7 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
                 setBusy(provider.provider);
                 try {
                   await requestProviderSync({
-                    data: { projectId, providers: [provider.provider], window: "28d" },
+                    data: attachAmbientDataDomain({ projectId, providers: [provider.provider], window: "28d" }, readAmbientDataDomain()),
                   });
                   toast.success(ui.queued);
                   await load();
