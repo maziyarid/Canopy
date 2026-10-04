@@ -174,6 +174,23 @@ describe("AAX-55 applyAmbientDataDomain", () => {
   });
 });
 
+describe("AAX-55 SEO dashboard attaches ambient domain on project reads", () => {
+  it("forwards session ambient domain into SEO, content and ClickUp project calls", () => {
+    const source = readFileSync(new URL("../../components/seo-dashboard.tsx", import.meta.url), "utf8");
+    assert.match(source, /attachAmbientDataDomain/);
+    assert.match(source, /readAmbientDataDomain/);
+    for (const call of [
+      "aggregateSEOData(withAmbient(",
+      "getContentStats(withAmbient(",
+      "listPublishedContent(withAmbient(",
+      "getSEOTimeline(withAmbient(",
+      "syncClickUpWithProject(withAmbient(",
+    ]) {
+      assert.equal(source.includes(call), true, call);
+    }
+  });
+});
+
 describe("AAX-55 SEO, published-content, research, agent, provider-admin, monday, invites, projects and clickup ambient wiring", () => {
   it("passes optional ambient domain into every resolveAccess call", () => {
     const seo = readFileSync(new URL("./seo-sources.ts", import.meta.url), "utf8");

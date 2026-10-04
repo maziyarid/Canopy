@@ -4,6 +4,7 @@ import { getClickUpSettings, getClickUpTasks, syncClickUpWithProject } from "@/l
 import { getSEOData, getSEOTimeline, saveSEOData, aggregateSEOData } from "@/lib/server/seo-sources";
 import { getContentStats, getContentTimeline, listPublishedContent } from "@/lib/server/published-content";
 import { listProjects } from "@/lib/server/projects";
+import { attachAmbientDataDomain, readAmbientDataDomain } from "@/lib/ambient-data-domain";
 import type { Project } from "@/lib/types";
 import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -21,6 +22,11 @@ const DATA_SOURCES: { value: DataSource; label: { en: string; fa: string } }[] =
   { value: "moz", label: { en: "Moz", fa: "Moz" } },
   { value: "semrush", label: { en: "SEMrush", fa: "SEMrush" } },
 ];
+
+
+function withAmbient<T extends Record<string, unknown>>(payload: T) {
+  return attachAmbientDataDomain(payload, readAmbientDataDomain());
+}
 
 export function SEODashboard() {
   const t = useT();
@@ -68,10 +74,10 @@ export function SEODashboard() {
     setLoading(true);
     try {
       const [seo, contentStats, contentList, timeline, tasks] = await PromiseAllSettled([
-        aggregateSEOData({ projectId: project.id, keyword: "", sources: ["google-search-console", "bing-webmaster", "ubersuggest"] }),
-        getContentStats({ projectId: project.id, days: 30 }),
-        listPublishedContent({ projectId: project.id, limit: 20 }),
-        getSEOTimeline({ projectId: project.id, days: 30 }),
+        aggregateSEOData(withAmbient({ projectId: project.id, keyword: "", sources: ["google-search-console", "bing-webmaster", "ubersuggest"] })),
+        getContentStats(withAmbient({ projectId: project.id, days: 30 })),
+        listPublishedContent(withAmbient({ projectId: project.id, limit: 20 })),
+        getSEOTimeline(withAmbient({ projectId: project.id, days: 30 })),
         clickUpSettings?.apiKey && clickUpSettings.listId 
           ? getClickUpTasks({ apiKey: clickUpSettings.apiKey, listId: clickUpSettings.listId, limit: 10 })
           : Promise.resolve({ ok: true, data: [] }),
@@ -96,11 +102,11 @@ export function SEODashboard() {
     }
 
     try {
-      const result = await syncClickUpWithProject({
+      const result = await syncClickUpWithProject(withAmbient({
         projectId: selectedProject.id,
         apiKey: clickUpSettings.apiKey,
         listId: clickUpSettings.listId,
-      });
+      }));
       
       if (result.ok) {
         toast.success(`Synced ${result.totalTasks} tasks to ClickUp`);
