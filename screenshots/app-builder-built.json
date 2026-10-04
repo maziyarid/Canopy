@@ -7,9 +7,9 @@
       "status": 200,
       "title": "Canopy",
       "hasCanvas": false,
-      "bodyTextLen": 1333,
-      "bodyTextHash": "e14bd25cde98398d87801283dfb023dbacdadf7f85b744ed48861f93337d4293",
-      "bodyTextPrefix": "Canopy Sheet Agents Apps Script API Setup Lookups 412/500 · SERP",
+      "bodyTextLen": 1085,
+      "bodyTextHash": "e0333a493fc0a23e1b3bc003eb429001ebf3be7a24168e75cf27e80e77211122",
+      "bodyTextPrefix": "Canopy MΛZ STUDIO فارسی Sign in MΛZ STUDIO Keyword research and ",
       "horizontalOverflow": false,
       "consoleErrors": [],
       "pageErrors": [],
@@ -21,9 +21,9 @@
       "status": 200,
       "title": "Canopy",
       "hasCanvas": false,
-      "bodyTextLen": 1274,
-      "bodyTextHash": "e067dcbd18592139baac3b20162cf92724f1778cef87f137afb0af2e75f29d9d",
-      "bodyTextPrefix": "Canopy Connect Mangools Sheet Agents Apps Script API Setup WORKB",
+      "bodyTextLen": 1074,
+      "bodyTextHash": "345994e6e7081bff4dc3e84537bb187d0047bb0ed4b6628eb826f19dbfdfc8fe",
+      "bodyTextPrefix": "Canopy فارسی Sign in MΛZ STUDIO Keyword research and SERP tracki",
       "horizontalOverflow": false,
       "consoleErrors": [],
       "pageErrors": [],
@@ -33,6 +33,8 @@
   "brandWarnings": [],
   "authWarnings": [],
   "verdictFile": "/workspace/screenshots/app-builder-built.json",
-  "divergesFromBaseline": false,
-  "baselineReasons": []
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text changed (0 -> 1085 chars, hash mismatch)"
+  ]
 }

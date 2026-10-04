@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Ms Robot portfolio Search Console monitor daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=ms-robot-gsc-monitor.service
+
+[Install]
+WantedBy=timers.target

@@ -1,14 +1,12 @@
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import { databaseRuntime } from "./database-runtime";
 
 /** Which database backend is active. */
 export type DbSource = "neon" | "pglite";
 
 // An empty/whitespace DATABASE_URL (an easy misconfig in deploy UIs) must mean
 // "unset" — otherwise production would silently run on the PGLite fallback.
-const rawDatabaseUrl =
-  typeof process !== "undefined" ? process.env.DATABASE_URL : undefined;
-const databaseUrl =
-  rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : undefined;
+const { databaseUrl, pgliteDataDir } = databaseRuntime(process.env);
 
 /**
  * Active backend: real **Neon** when `DATABASE_URL` is set (deployed / configured
@@ -107,11 +105,12 @@ function createNeonSql(): Promise<Sql> {
 
 async function createPgliteSql(): Promise<Sql> {
   // Embedded Postgres, imported on demand so it never loads on the Neon path.
-  // One in-memory instance per process, shared across HMR module instances, so
-  // data survives source edits (it resets on dev-server restart).
+  // A configured local directory persists between restarts. Development without
+  // a directory remains in memory. Run one writer process per local directory.
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
     const pg = new PGlite({
+      dataDir: pgliteDataDir,
       parsers: {
         [OID_INT8]: Number,
         [OID_DATE]: identity,

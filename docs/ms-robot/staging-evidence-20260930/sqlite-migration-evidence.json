@@ -1,0 +1,17 @@
+{
+  "countsBefore": {
+    "provider_state": 8,
+    "provider_metric": 12187,
+    "provider_snapshot": 14,
+    "sync_run": 81
+  },
+  "countsAfter": {
+    "provider_state": 8,
+    "provider_metric": 12187,
+    "provider_snapshot": 14,
+    "sync_run": 81
+  },
+  "legacyScopePreserved": true,
+  "concurrentMigrationStarts": 4,
+  "integrity": "ok"
+}

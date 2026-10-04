@@ -1,0 +1,40 @@
+[Unit]
+Description=Project Ms Robot analytics events into ADA control-core
+After=network-online.target ms-robot-bridge.service maziyar-control-core.service
+Wants=network-online.target
+Requires=ms-robot-bridge.service maziyar-control-core.service
+
+[Service]
+Type=oneshot
+User=maziyarid
+Group=maziyarid
+EnvironmentFile=/etc/ms-robot-bridge.env
+EnvironmentFile=/etc/maziyar-control-core.env
+Environment=MSROBOT_BRIDGE_URL=http://127.0.0.1:9110
+Environment=CONTROL_CORE_URL=http://127.0.0.1:8770
+Environment=MSROBOT_GSC_AGIFLOW_TASK_ID=01M31WS9MWB3EN2PM7HKA7Q11J
+UnsetEnvironment=CONTROL_DB_HOST CONTROL_DB_PORT CONTROL_DB_NAME CONTROL_DB_USER CONTROL_DB_PASSWORD
+UnsetEnvironment=CONTROL_BIND CONTROL_PORT CONTROL_ACTOR MISTRAL_API_KEY MISTRAL_DEFAULT_MODEL MISTRAL_API_BASE
+ExecStart=/usr/bin/python3 /srv/ms-robot-analytics/ada_event_projector.py
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+UMask=0077

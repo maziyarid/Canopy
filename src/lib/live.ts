@@ -7,10 +7,8 @@ async function call(path: string, init: {
   query?: Record<string, string | number>;
   body?: unknown;
 }) {
-  const apiKey = useCanopy.getState().settings.apiKey;
-  if (!apiKey) throw new Error("Add your Mangools API key in Setup.");
   const res = await mangoolsRequest({
-    data: { apiKey, path, method: init.method ?? "GET", query: init.query, body: init.body as never },
+    data: { path, method: init.method ?? "GET", query: init.query, body: init.body as never },
   });
   if (!("ok" in res) || !res.ok) {
     throw new Error("error" in res ? String(res.error) : "Mangools request failed");

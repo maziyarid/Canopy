@@ -1,0 +1,9 @@
+{
+  "phase": "verify",
+  "ownerSessionAndNotePersisted": true,
+  "clientGrantAndApprovedNotePersisted": true,
+  "unapprovedNotesHidden": true,
+  "anonymousReportBlocked": true,
+  "desktopMobileOverflow": false,
+  "pageErrors": []
+}

@@ -1,5 +1,4 @@
-import codeGs from "./Code.gs?raw";
-import appsJson from "./appsscript.json?raw";
-
-export const CODE_GS = codeGs;
-export const APPSSCRIPT_JSON = appsJson;
+export const SCRIPT_FILES = {
+  "Code.gs": "/canopy/Code.gs",
+  "appsscript.json": "/canopy/appsscript.json",
+} as const;
