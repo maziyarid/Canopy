@@ -316,6 +316,29 @@ def check_upstream_tree_reconciliation(root: Path) -> list[str]:
 
 
 
+def check_main_privacy_reconciliation(root: Path) -> list[str]:
+    """Fail closed if the unified tree drops main privacy/isolation markers.
+
+    This does not merge main. It requires the AAX-55 ambient-domain forwards
+    and the server-only analytics gateway boundary that landed on main in
+    7138ac36f320dd230576b27bd26bbbc461cabe74 to remain present.
+    """
+    workspace = (root / "src/components/workspace.tsx").read_text(encoding="utf-8")
+    if "runResearchAgent({\n        data: withAmbient(" not in workspace and "data: withAmbient(" not in workspace:
+        raise PromotionReadinessError("aax55_workspace_ambient_forward_missing")
+    if "pushMonday({\n                  data: withAmbient(" not in workspace and workspace.count("withAmbient(") < 2:
+        raise PromotionReadinessError("aax55_monday_ambient_forward_missing")
+    gateway = (root / "src/lib/analytics/gateway.server.ts").read_text(encoding="utf-8")
+    if "assertAppDataServerOnly(\"analytics/gateway.server\")" not in gateway:
+        raise PromotionReadinessError("gateway_server_only_boundary_missing")
+    if ".trim()" not in gateway:
+        raise PromotionReadinessError("gateway_config_trim_missing")
+    proof = root / "src/lib/analytics/gateway.server.test.ts"
+    if not proof.is_file() or "server-only" not in proof.read_text(encoding="utf-8"):
+        raise PromotionReadinessError("gateway_server_only_proof_missing")
+    return ["main_privacy_isolation_markers_present:7138ac36f320dd230576b27bd26bbbc461cabe74"]
+
+
 def check_sqlite_coordinator_skips_postgres_0008(root: Path) -> list[str]:
     """SQLite startup must not apply PostgreSQL migration 0008.
 
@@ -344,6 +367,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_journal_warning_copy_gate(root))
     checks.extend(check_upstream_tree_reconciliation(root))
     checks.extend(check_sqlite_coordinator_skips_postgres_0008(root))
+    checks.extend(check_main_privacy_reconciliation(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,

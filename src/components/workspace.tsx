@@ -645,13 +645,13 @@ function AgentsPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () => 
         .map((k) => `${k.keyword} (vol ${k.volume}, kd ${k.kd ?? "—"})`)
         .join("\n");
       const res = await runResearchAgent({
-        data: {
+        data: withAmbient({
           projectId: bundle.project.id,
           message,
           domain: bundle.project.domain,
           location: locationLabel(bundle.project.locationId, lang === "fa"),
           keywordsPreview: preview,
-        },
+        }),
       });
       if (!res.ok) {
         setMessages((m) => [...m, { role: "assistant", content: res.error }]);
@@ -810,7 +810,7 @@ function ProgressPanel({ bundle }: { bundle: ProjectBundle }) {
             onClick={async () => {
               try {
                 await pushMonday({
-                  data: {
+                  data: withAmbient({
                     projectId: bundle.project.id,
                     items: bundle.keywords.slice(0, 40).map((k) => ({
                       keyword: k.keyword,
@@ -819,7 +819,7 @@ function ProgressPanel({ bundle }: { bundle: ProjectBundle }) {
                       opportunity: k.opportunity,
                       rank: bundle.ranks.find((r) => r.keyword === k.keyword)?.rank ?? null,
                     })),
-                  },
+                  }),
                 });
                 toast.success(t("pushMonday"));
               } catch (err) {

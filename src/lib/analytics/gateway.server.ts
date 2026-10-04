@@ -8,12 +8,15 @@ import type {
   ProviderSyncRunsResponse,
 } from "./contracts";
 import type { GatewayMetricResponse } from "../server/reporting-ledger";
+import { assertAppDataServerOnly } from "../app-data/server-only.ts";
+
+assertAppDataServerOnly("analytics/gateway.server");
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 function getGatewayConfig() {
-  const baseUrl = process.env.ANALYTICS_GATEWAY_URL?.replace(/\/+$/, "");
-  const token = process.env.ANALYTICS_GATEWAY_TOKEN;
+  const baseUrl = process.env.ANALYTICS_GATEWAY_URL?.trim().replace(/\/+$/, "") ?? "";
+  const token = process.env.ANALYTICS_GATEWAY_TOKEN?.trim() ?? "";
 
   if (!baseUrl) throw new Error("ANALYTICS_GATEWAY_URL is not configured");
   if (!token) throw new Error("ANALYTICS_GATEWAY_TOKEN is not configured");

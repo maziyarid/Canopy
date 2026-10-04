@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_portfolio_map_gate, check_sqlite_coordinator_skips_postgres_0008, check_upstream_tree_reconciliation, check_migrations
+from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_portfolio_map_gate, check_sqlite_coordinator_skips_postgres_0008, check_upstream_tree_reconciliation, check_migrations, check_main_privacy_reconciliation
 
 
 REQUIRED = {
@@ -269,5 +269,13 @@ class PromotionReadinessTest(unittest.TestCase):
             with self.assertRaises(PromotionReadinessError) as caught:
                 check_portfolio_map_gate(root)
             self.assertIn("writable_gsc_permission_process_proof_missing", str(caught.exception))
+    def test_main_privacy_markers_required(self):
+        root = Path(__file__).resolve().parents[2]
+        checks = check_main_privacy_reconciliation(root)
+        self.assertIn("main_privacy_isolation_markers_present:7138ac36f320dd230576b27bd26bbbc461cabe74", checks)
+        report = assess(root)
+        self.assertIn("main_privacy_isolation_markers_present:7138ac36f320dd230576b27bd26bbbc461cabe74", report["checks"])
+        self.assertFalse(report["promotionAuthorised"])
+
 if __name__ == "__main__":
     unittest.main()
