@@ -13,11 +13,18 @@ export const inviteMember = createServerFn({ method: "POST" })
       email: z.string().email().max(200),
       role: z.enum(["editor", "client"]).default("client"),
       keywordFilter: z.string().max(800).default(""),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     }),
   )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { role } = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+      data.ambientDataDomain,
+    );
     if (role !== "owner") throw new Error("Forbidden");
     const email = data.email.toLowerCase().trim();
     const existing = await sql<{ id: string }>`
@@ -41,10 +48,22 @@ export const inviteMember = createServerFn({ method: "POST" })
 
 export const revokeMember = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), id: z.string() }))
+  .validator(
+    z.object({
+      projectId: z.string(),
+      id: z.string(),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
+    }),
+  )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { role } = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+      data.ambientDataDomain,
+    );
     if (role !== "owner") throw new Error("Forbidden");
     await sql`delete from project_access where id = ${data.id} and project_id = ${data.projectId}`;
     return { ok: true as const };

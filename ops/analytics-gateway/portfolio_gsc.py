@@ -13,6 +13,7 @@ from monitor_dispatch import bridge_event
 
 PROJECT_ID_PATTERN=re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RESERVED_PROJECT_IDS=frozenset({"legacy"})
+WRITABLE_GSC_PERMISSIONS=frozenset({"siteOwner", "siteFullUser"})
 
 
 def strip_port(host):
@@ -150,17 +151,18 @@ def project_site_map(env=os.environ):
     output={}
     for raw_site,raw_project in parsed.items():
         site=site_key(raw_site)
+        # Do not echo the raw map key. Classification stays on the stable phrases.
         if not isinstance(raw_project, str):
-            raise SystemExit(f"invalid project id for mapped site {site or raw_site}")
+            raise SystemExit("invalid project id for mapped site")
         project_id=raw_project.strip()
         if not site:
             raise SystemExit("MS_ROBOT_PROJECT_SITE_MAP_JSON contains an empty site")
         if project_id.lower() in RESERVED_PROJECT_IDS:
-            raise SystemExit(f"invalid project id for mapped site {site}: reserved project scope")
+            raise SystemExit("invalid project id for mapped site: reserved project scope")
         if not PROJECT_ID_PATTERN.fullmatch(project_id):
-            raise SystemExit(f"invalid project id for mapped site {site}")
+            raise SystemExit("invalid project id for mapped site")
         if site in output and output[site]!=project_id:
-            raise SystemExit(f"site {site} is mapped to more than one project")
+            raise SystemExit("site is mapped to more than one project")
         output[site]=project_id
     return output
 
@@ -196,7 +198,9 @@ def main():
     authorised={}
     for item in sites:
         site_url=item.get("siteUrl")
-        if not site_url:
+        # siteRestrictedUser and siteUnverifiedUser are not a sync grant.
+        # A missing permission is not an implicit owner. Do not echo siteUrl.
+        if not site_url or item.get("permissionLevel") not in WRITABLE_GSC_PERMISSIONS:
             continue
         key=site_key(site_url)
         bucket=authorised.setdefault(key, [])

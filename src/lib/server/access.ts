@@ -83,6 +83,7 @@ export async function resolveAccess(
   userId: string,
   email: string,
   projectId: string,
+  ambientDomain?: DataDomain | null,
 ): Promise<AccessCtx> {
   assertLaunchProject(userId, projectId);
   const projects = await sql<DbProject>`select * from projects where id = ${projectId}`;
@@ -91,6 +92,8 @@ export async function resolveAccess(
   // Ensure data_domain is always a valid enum even on pre-migration rows.
   const domain = (project.data_domain ?? "other") as DataDomain;
   const normalized: DbProject = { ...project, data_domain: domain };
+  // Production data-plane boundary: ambient workspace/source domain hard-denies cross-domain reads.
+  applyAmbientDataDomain(ambientDomain, normalized.data_domain);
   if (normalized.owner_id === userId) {
     return { role: "owner", filter: "", project: normalized };
   }

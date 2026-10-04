@@ -26,6 +26,7 @@ class DeployLayoutTest(unittest.TestCase):
                 "gateway.py",
                 "gsc_monitor.py",
                 "sqlite_migrations.py",
+                "ada_bridge_receipts.py",
                 "provider_retry_checkpoint.py",
                 "monitor_dispatch.py",
             ):
