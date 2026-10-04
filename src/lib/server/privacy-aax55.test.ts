@@ -174,6 +174,15 @@ describe("AAX-55 applyAmbientDataDomain", () => {
   });
 });
 
+describe("AAX-55 workspace agent and Monday calls attach ambient domain", () => {
+  it("forwards session ambient domain into research agent and Monday push", () => {
+    const source = readFileSync(new URL("../../components/workspace.tsx", import.meta.url), "utf8");
+    assert.match(source, /attachAmbientDataDomain/);
+    assert.match(source, /runResearchAgent\(\{\s*data: withAmbient\(/);
+    assert.match(source, /pushMonday\(\{\s*data: withAmbient\(/);
+  });
+});
+
 describe("AAX-55 SEO dashboard attaches ambient domain on project reads", () => {
   it("forwards session ambient domain into SEO, content and ClickUp project calls", () => {
     const source = readFileSync(new URL("../../components/seo-dashboard.tsx", import.meta.url), "utf8");
