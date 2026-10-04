@@ -1,6 +1,7 @@
 import { Badge, Button, Field, Input } from "@/components/ui";
 import { LANGUAGES, LOCATIONS } from "@/lib/locations";
 import { liveQuota } from "@/lib/live";
+import { saveSettings } from "@/lib/server/settings";
 import { useCanopy } from "@/lib/store";
 import { Check, ExternalLink, LoaderCircle } from "lucide-react";
 import { useState } from "react";
@@ -17,7 +18,7 @@ const STEPS = [
   {
     n: "02",
     title: "Paste it here to trial live calls",
-    body: "Stored only in this browser. Canopy proxies lookups from the Sheet tab so you can verify credits before wiring Google.",
+    body: "Saved server-side for your signed-in account. Ms Robot never returns the token to the browser.",
   },
   {
     n: "03",
@@ -49,14 +50,21 @@ export function Setup() {
   const quota = useCanopy((s) => s.quota);
   const resetDemo = useCanopy((s) => s.resetDemo);
   const [busy, setBusy] = useState(false);
-  const [keyDraft, setKeyDraft] = useState(settings.apiKey);
+  const [keyDraft, setKeyDraft] = useState("");
   const [done, setDone] = useState<Record<string, boolean>>({});
 
   async function testKey() {
-    patch({ apiKey: keyDraft.trim() });
+    const key = keyDraft.trim();
+    if (key.length < 8) {
+      toast.error("Add your Mangools API key in Connect.");
+      return;
+    }
+    patch({ apiKey: "" });
     setBusy(true);
     try {
+      await saveSettings({ data: { mangoolsKey: key } });
       const q = await liveQuota();
+      setKeyDraft("");
       toast.success(`Connected · ${q.lookups.remaining} lookups left`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not reach Mangools");
@@ -119,7 +127,7 @@ export function Setup() {
           }}
         >
           <h2 className="font-display text-lg font-medium">Mangools key</h2>
-          <Field label="API token" hint="Browser only. The Apps Script stores its own copy in Script Properties.">
+          <Field label="API token" hint="Saved to your account. Never returned to the browser after save.">
             <Input
               type="password"
               autoComplete="off"
