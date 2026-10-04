@@ -1,3 +1,4 @@
+import { assertUnrestrictedSession } from "./platform-launch-scope.server";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
@@ -10,6 +11,7 @@ import type { QuotaState, StudioSettings } from "@/lib/types";
 export const getSettings = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .handler(async ({ context }): Promise<StudioSettings> => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     const rows = await sql<{
       mangools_key: string;
@@ -37,6 +39,7 @@ export const saveSettings = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ context, data }) => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     const existing = await sql<{ mangools_key: string; monday_webhook: string }>`
       select mangools_key, monday_webhook from studio_settings where user_id = ${context.userId}
@@ -71,6 +74,7 @@ export const saveSettings = createServerFn({ method: "POST" })
 export const testQuota = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .handler(async ({ context }): Promise<QuotaState> => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     const rows = await sql<{ mangools_key: string }>`
       select mangools_key from studio_settings where user_id = ${context.userId}

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LaunchAcceptRouteImport } from './routes/launch.accept'
 import { Route as PIdRouteImport } from './routes/p.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LaunchAcceptRoute = LaunchAcceptRouteImport.update({
+  id: '/launch/accept',
+  path: '/launch/accept',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PIdRoute = PIdRouteImport.update({
@@ -38,12 +44,14 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/launch/accept': typeof LaunchAcceptRoute
   '/p/$id': typeof PIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/launch/accept': typeof LaunchAcceptRoute
   '/p/$id': typeof PIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/launch/accept': typeof LaunchAcceptRoute
   '/p/$id': typeof PIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/p/$id' | '/api/auth/$'
+  fullPaths: '/' | '/login' | '/launch/accept' | '/p/$id' | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/p/$id' | '/api/auth/$'
-  id: '__root__' | '/' | '/login' | '/p/$id' | '/api/auth/$'
+  to: '/' | '/login' | '/launch/accept' | '/p/$id' | '/api/auth/$'
+  id: '__root__' | '/' | '/login' | '/launch/accept' | '/p/$id' | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  LaunchAcceptRoute: typeof LaunchAcceptRoute
   PIdRoute: typeof PIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/launch/accept': {
+      id: '/launch/accept'
+      path: '/launch/accept'
+      fullPath: '/launch/accept'
+      preLoaderRoute: typeof LaunchAcceptRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/p/$id': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  LaunchAcceptRoute: LaunchAcceptRoute,
   PIdRoute: PIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

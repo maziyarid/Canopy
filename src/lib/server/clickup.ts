@@ -1,3 +1,4 @@
+import { assertUnrestrictedSession } from "./platform-launch-scope.server";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { Sql } from "@/lib/db";
@@ -16,20 +17,13 @@ export type { PublicClickUpSettings } from "./query-builders";
 
 const CLICKUP_API_URL = "https://api.clickup.com/api/v2";
 
-type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | Json[]
-  | { [key: string]: Json };
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 function jsonString(value: Json, key: string) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "";
   const field = value[key];
   return typeof field === "string" ? field : "";
 }
-
 
 const ClickUpAPIKeySchema = z.object({
   apiKey: z.string().min(1).optional(),
@@ -110,6 +104,7 @@ export const saveClickUpSettings = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .validator(ClickUpAPIKeySchema)
   .handler(async ({ context, data }) => {
+    assertUnrestrictedSession();
     const sql = await (await import("@/lib/db")).getSql();
     if (!context.userId) {
       throw new Error("Unauthorized");
@@ -135,12 +130,17 @@ export const saveClickUpSettings = createServerFn({ method: "POST" })
         updated_at = NOW()
     `;
 
-    return { ok: true as const, message: "ClickUp settings saved successfully", ...toPublicClickUpSettings(merged) };
+    return {
+      ok: true as const,
+      message: "ClickUp settings saved successfully",
+      ...toPublicClickUpSettings(merged),
+    };
   });
 
 export const getClickUpSettings = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .handler(async ({ context }): Promise<PublicClickUpSettings> => {
+    assertUnrestrictedSession();
     const sql = await (await import("@/lib/db")).getSql();
     if (!context.userId) {
       throw new Error("Unauthorized");
@@ -159,6 +159,7 @@ export const getClickUpSettings = createServerFn({ method: "GET" })
 export const getClickUpLists = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .handler(async ({ context }) => {
+    assertUnrestrictedSession();
     const sql = await (await import("@/lib/db")).getSql();
     if (!context.userId) {
       throw new Error("Unauthorized");
@@ -168,7 +169,10 @@ export const getClickUpLists = createServerFn({ method: "POST" })
       const json = await clickUpRequest(settings.api_key, "/team");
       return { ok: true as const, data: json };
     } catch (error) {
-      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown error" };
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     }
   });
 
@@ -176,6 +180,7 @@ export const getClickUpTasks = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .validator(GetTasksSchema)
   .handler(async ({ context, data }) => {
+    assertUnrestrictedSession();
     const sql = await (await import("@/lib/db")).getSql();
     if (!context.userId) {
       throw new Error("Unauthorized");
@@ -200,7 +205,10 @@ export const getClickUpTasks = createServerFn({ method: "POST" })
       );
       return { ok: true as const, data: json };
     } catch (error) {
-      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown error" };
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     }
   });
 
@@ -208,6 +216,7 @@ export const createClickUpTask = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .validator(CreateTaskSchema)
   .handler(async ({ context, data }) => {
+    assertUnrestrictedSession();
     const sql = await (await import("@/lib/db")).getSql();
     if (!context.userId) {
       throw new Error("Unauthorized");
@@ -221,24 +230,37 @@ export const createClickUpTask = createServerFn({ method: "POST" })
       const json = await createClickUpTaskInternal(settings.api_key, { ...data, listId });
       return { ok: true as const, data: json as Json };
     } catch (error) {
-      return { ok: false as const, error: error instanceof Error ? error.message : "Unknown error" };
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     }
   });
 
 export const syncClickUpWithProject = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({
-    projectId: z.string(),
-    listId: z.string().min(1).optional(),
-    keywordFilter: z.string().max(200).optional(),
-  }))
+  .validator(
+    z.object({
+      projectId: z.string(),
+      listId: z.string().min(1).optional(),
+      keywordFilter: z.string().max(200).optional(),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
+    }),
+  )
   .handler(async ({ context, data }) => {
+    assertUnrestrictedSession();
     const sql = await (await import("@/lib/db")).getSql();
     if (!context.userId) {
       throw new Error("Unauthorized");
     }
 
-    const access = await resolveAccess(sql, context.userId, context.email || "", data.projectId);
+    const access = await resolveAccess(
+      sql,
+      context.userId,
+      context.email || "",
+      data.projectId,
+      data.ambientDataDomain,
+    );
     if (!canWrite(access.role)) {
       throw new Error("Forbidden");
     }

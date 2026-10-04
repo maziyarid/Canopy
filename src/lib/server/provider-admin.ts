@@ -8,12 +8,15 @@ import {
   type ProviderSyncRun,
 } from "@/lib/analytics/contracts";
 import {
+  getAdaEventReceipts,
   getProviderStates,
   getProviderSyncRuns,
   requestProviderRefresh,
 } from "@/lib/analytics/gateway.server";
+import { redactForClient } from "./redact";
 import { studioAuth } from "./studio-auth";
 import { canAdminProviders, resolveAccess } from "./access";
+import { canReadAdaEvents, projectAdaEvents, type AdaEventView } from "./ada-events-view";
 
 export type ProviderAdminProvider = ProviderState & {
   accountRef: string;
@@ -34,13 +37,18 @@ export type ProviderAdminView = {
   generatedAt?: string;
   providers: ProviderAdminProvider[];
   runs: ProviderSyncRun[];
+  adaEvents?: { available: boolean; items: AdaEventView[]; generatedAt?: string };
 };
 
-const ProjectSchema = z.object({ projectId: z.string() });
+const ProjectSchema = z.object({
+  projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
+});
 const RefreshSchema = z.object({
   projectId: z.string(),
   providers: z.array(z.enum(PROVIDER_KEYS)).min(1).max(PROVIDER_KEYS.length),
   window: z.string().max(40).default("default"),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 type ConnectionRow = {
@@ -89,6 +97,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       context.userId,
       context.email,
       data.projectId,
+      data.ambientDataDomain,
     );
     if (!canAdminProviders(role, filter)) throw new Error("Forbidden");
     const rows = await sql<ConnectionRow>`
@@ -113,9 +122,9 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       states = providerResponse.providers;
       generatedAt = providerResponse.generatedAt;
       runs = runResponse.runs.filter((run) => run.site === project.domain);
-    } catch (error) {
+    } catch {
       runtimeAvailable = false;
-      runtimeError = error instanceof Error ? error.message : "Analytics gateway unavailable";
+      runtimeError = "Analytics gateway unavailable";
     }
 
     const stateMap = new Map(states.map((state) => [state.provider, state]));
@@ -124,6 +133,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       const connection = connectionMap.get(provider);
       return {
         ...state,
+        last_error: state.last_error ? redactForClient(state.last_error) : null,
         accountRef: connection?.account_ref ?? "",
         permissionTier: connection?.permission_tier ?? "read",
         scopes: parseScopes(connection?.scopes ?? "[]"),
@@ -131,9 +141,23 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
         connectionLastSuccess: connection?.last_success ?? null,
         connectionLastAttempt: connection?.last_attempt ?? null,
         connectionFreshness: connection?.freshness ?? null,
-        connectionError: connection?.last_error ?? "",
+        connectionError: redactForClient(connection?.last_error ?? ""),
       };
     });
+
+    let adaEvents: ProviderAdminView["adaEvents"];
+    if (canReadAdaEvents(role, filter)) {
+      try {
+        const response = await getAdaEventReceipts(data.projectId, project.domain);
+        adaEvents = {
+          available: true,
+          items: projectAdaEvents(response.events, data.projectId, project.domain),
+          generatedAt: response.generatedAt,
+        };
+      } catch {
+        adaEvents = { available: false, items: [] };
+      }
+    }
 
     return {
       projectId: data.projectId,
@@ -143,6 +167,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       generatedAt,
       providers,
       runs,
+      adaEvents,
     };
   });
 
@@ -156,6 +181,7 @@ export const requestProviderSync = createServerFn({ method: "POST" })
       context.userId,
       context.email,
       data.projectId,
+      data.ambientDataDomain,
     );
     if (!canAdminProviders(role, filter)) throw new Error("Forbidden");
     if (!project.domain.trim()) throw new Error("Project domain is required before provider sync");

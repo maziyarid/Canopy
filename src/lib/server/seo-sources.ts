@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { assertOperatorAccess } from "./operator-access";
 import { studioAuth } from "./studio-auth";
 import { buildSeoCacheUpsertQuery, buildSeoDataQuery, buildSeoTimelineQuery } from "./query-builders";
 
@@ -15,6 +16,7 @@ const DataSourceSchema = z.enum([
 
 const SEORecordSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   dataSource: DataSourceSchema,
   keyword: z.string().optional(),
   url: z.string().url().optional(),
@@ -25,6 +27,7 @@ const SEORecordSchema = z.object({
 
 const MultiSourceSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   keyword: z.string().min(1).max(100),
   sources: z.array(DataSourceSchema).optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -37,7 +40,15 @@ export const saveSEOData = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(
+      await resolveAccess(
+        sql,
+        context.userId || "",
+        context.email || "",
+        data.projectId,
+        data.ambientDataDomain,
+      ),
+    );
 
     const query = buildSeoCacheUpsertQuery({
       id: crypto.randomUUID(),
@@ -58,6 +69,7 @@ export const getSEOData = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .validator(z.object({
     projectId: z.string(),
+    ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     keyword: z.string().optional(),
     dataSource: DataSourceSchema.optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -66,7 +78,15 @@ export const getSEOData = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(
+      await resolveAccess(
+        sql,
+        context.userId || "",
+        context.email || "",
+        data.projectId,
+        data.ambientDataDomain,
+      ),
+    );
 
     const query = buildSeoDataQuery(data);
     const rows = await sql.query<{
@@ -105,11 +125,20 @@ export const aggregateSEOData = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(
+      await resolveAccess(
+        sql,
+        context.userId || "",
+        context.email || "",
+        data.projectId,
+        data.ambientDataDomain,
+      ),
+    );
 
     const cachedData = await getSEOData({
       data: {
         projectId: data.projectId,
+        ambientDataDomain: data.ambientDataDomain,
         keyword: data.keyword,
         startDate: data.startDate,
         endDate: data.endDate,
@@ -128,13 +157,22 @@ export const getSEOTimeline = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .validator(z.object({
     projectId: z.string(),
+    ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     metricName: z.string().optional(),
     days: z.number().int().min(1).max(365).default(30),
   }))
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    assertOperatorAccess(
+      await resolveAccess(
+        sql,
+        context.userId || "",
+        context.email || "",
+        data.projectId,
+        data.ambientDataDomain,
+      ),
+    );
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - data.days);

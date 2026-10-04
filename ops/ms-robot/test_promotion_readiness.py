@@ -248,5 +248,26 @@ class PromotionReadinessTest(unittest.TestCase):
                 check_sqlite_coordinator_skips_postgres_0008(root)
             self.assertIn("sqlite_coordinator_applies_postgres_0008", str(caught.exception))
 
+
+    def test_mapped_restricted_permission_proof_missing_fails_closed(self):
+        repo = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            gateway = root / "ops/analytics-gateway"
+            gateway.mkdir(parents=True)
+            (gateway / "portfolio_gsc.py").write_text(
+                (repo / "ops/analytics-gateway/portfolio_gsc.py").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            tests = root / "ops/ms-robot"
+            tests.mkdir(parents=True)
+            for source in (repo / "ops/ms-robot").glob("test_portfolio_*process.py"):
+                body = source.read_text(encoding="utf-8")
+                if source.name == "test_portfolio_permission_process.py":
+                    body = body.replace("test_mapped_restricted_permission_exits_before_sync", "removed_mapped_permission_proof")
+                (tests / source.name).write_text(body, encoding="utf-8")
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_portfolio_map_gate(root)
+            self.assertIn("writable_gsc_permission_process_proof_missing", str(caught.exception))
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,8 @@ import { useState, type FormEvent } from "react";
 
 export const Route = createFileRoute("/login")({ component: Login });
 
+const oauthEnabled = import.meta.env.VITE_GROK_OAUTH_ENABLED === "true";
+
 function Login() {
   const t = useT();
   const toggle = useLocale((s) => s.toggle);
@@ -67,7 +69,7 @@ function Login() {
         <h1 className="mt-5 font-display text-2xl font-semibold">{t("welcome")}</h1>
         <p className="mt-1 text-sm text-muted">{t("welcomeBody")}</p>
 
-        {authEnabled ? (
+        {authEnabled && oauthEnabled ? (
           <div className="mt-5 grid gap-2">
             {GROK_PROVIDERS.map((p) => (
               <Button
@@ -80,11 +82,13 @@ function Login() {
               </Button>
             ))}
           </div>
-        ) : (
+        ) : !authEnabled ? (
           <p className="mt-4 text-sm text-muted">Sign-in is disabled.</p>
-        )}
+        ) : null}
 
-        <p className="mt-5 text-center text-xs uppercase tracking-widest text-subtle">{t("orEmail")}</p>
+        {oauthEnabled ? (
+          <p className="mt-5 text-center text-xs uppercase tracking-widest text-subtle">{t("orEmail")}</p>
+        ) : null}
         <form className="mt-3 grid gap-3" onSubmit={onEmail}>
           {mode === "up" ? (
             <Field label={t("name")}>

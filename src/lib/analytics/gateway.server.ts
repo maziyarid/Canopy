@@ -51,8 +51,20 @@ async function gatewayFetch<T>(
   }
 }
 
-export async function getProviderMetricRows(projectId: string, provider: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse> {
+export async function getProviderMetricRows(
+  projectId: string,
+  provider: string,
+  site: string,
+  dataset: string,
+  start: string,
+  end: string,
+): Promise<GatewayMetricResponse> {
   const query = new URLSearchParams({ provider, site, dataset, start, end, limit: "367" });
+  return gatewayFetch(`/v1/metrics?${query}`, { headers: { "X-Ms-Robot-Project-Id": projectId } });
+}
+
+export async function getProviderSearchRows(projectId: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse> {
+  const query = new URLSearchParams({ provider: "gsc", site, dataset, start, end, limit: "2000" });
   return gatewayFetch(`/v1/metrics?${query}`, { headers: { "X-Ms-Robot-Project-Id": projectId } });
 }
 
@@ -89,14 +101,11 @@ export async function requestProviderRefresh(
   sources: ProviderKey[],
   window = "default",
 ): Promise<ProviderRefreshResult> {
-  return gatewayFetch<ProviderRefreshResult>(
-    `/v1/sites/${encodeURIComponent(site)}/refresh`,
-    {
-      method: "POST",
-      headers: { "X-Ms-Robot-Project-Id": projectId },
-      body: JSON.stringify({ sources, window }),
-    },
-  );
+  return gatewayFetch<ProviderRefreshResult>(`/v1/sites/${encodeURIComponent(site)}/refresh`, {
+    method: "POST",
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+    body: JSON.stringify({ sources, window }),
+  });
 }
 
 export async function requestAnalyticsRefresh(
@@ -113,4 +122,14 @@ export async function requestAnalyticsRefresh(
     ),
     queuedAt: result.queuedAt,
   };
+}
+
+export async function getAdaEventReceipts(
+  projectId: string,
+  site: string,
+): Promise<{ events: unknown; generatedAt: string }> {
+  const query = new URLSearchParams({ site, limit: "50" });
+  return gatewayFetch(`/v1/ada-events?${query}`, {
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+  });
 }
