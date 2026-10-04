@@ -322,19 +322,23 @@ def check_main_privacy_reconciliation(root: Path) -> list[str]:
     This does not merge main. It requires the AAX-55 ambient-domain forwards
     and the server-only analytics gateway boundary that landed on main in
     7138ac36f320dd230576b27bd26bbbc461cabe74 to remain present.
+
+    Other withAmbient() call sites must not satisfy this gate. Only the
+    research-agent and Monday push forwards are the restored markers.
     """
     workspace = (root / "src/components/workspace.tsx").read_text(encoding="utf-8")
-    if "runResearchAgent({\n        data: withAmbient(" not in workspace and "data: withAmbient(" not in workspace:
+    if not re.search(r"runResearchAgent\(\s*\{\s*data:\s*withAmbient\(", workspace):
         raise PromotionReadinessError("aax55_workspace_ambient_forward_missing")
-    if "pushMonday({\n                  data: withAmbient(" not in workspace and workspace.count("withAmbient(") < 2:
+    if not re.search(r"pushMonday\(\s*\{\s*data:\s*withAmbient\(", workspace):
         raise PromotionReadinessError("aax55_monday_ambient_forward_missing")
     gateway = (root / "src/lib/analytics/gateway.server.ts").read_text(encoding="utf-8")
     if "assertAppDataServerOnly(\"analytics/gateway.server\")" not in gateway:
         raise PromotionReadinessError("gateway_server_only_boundary_missing")
-    if ".trim()" not in gateway:
+    if "ANALYTICS_GATEWAY_URL?.trim()" not in gateway or "ANALYTICS_GATEWAY_TOKEN?.trim()" not in gateway:
         raise PromotionReadinessError("gateway_config_trim_missing")
     proof = root / "src/lib/analytics/gateway.server.test.ts"
-    if not proof.is_file() or "server-only" not in proof.read_text(encoding="utf-8"):
+    proof_text = proof.read_text(encoding="utf-8") if proof.is_file() else ""
+    if "server-only" not in proof_text or "ANALYTICS_GATEWAY_TOKEN is not configured" not in proof_text:
         raise PromotionReadinessError("gateway_server_only_proof_missing")
     return ["main_privacy_isolation_markers_present:7138ac36f320dd230576b27bd26bbbc461cabe74"]
 
