@@ -174,13 +174,14 @@ describe("AAX-55 applyAmbientDataDomain", () => {
   });
 });
 
-describe("AAX-55 SEO, published-content, research and agent ambient wiring", () => {
+describe("AAX-55 SEO, published-content, research, agent and provider-admin ambient wiring", () => {
   it("passes optional ambient domain into every resolveAccess call", () => {
     const seo = readFileSync(new URL("./seo-sources.ts", import.meta.url), "utf8");
     const published = readFileSync(new URL("./published-content.ts", import.meta.url), "utf8");
     const research = readFileSync(new URL("./research.ts", import.meta.url), "utf8");
     const agent = readFileSync(new URL("./agent.ts", import.meta.url), "utf8");
-    for (const source of [seo, published, research, agent]) {
+    const providerAdmin = readFileSync(new URL("./provider-admin.ts", import.meta.url), "utf8");
+    for (const source of [seo, published, research, agent, providerAdmin]) {
       const calls = source.match(/resolveAccess\([\s\S]*?\);/g) ?? [];
       assert.ok(calls.length > 0);
       for (const call of calls) {

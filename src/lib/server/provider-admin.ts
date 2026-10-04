@@ -36,11 +36,15 @@ export type ProviderAdminView = {
   runs: ProviderSyncRun[];
 };
 
-const ProjectSchema = z.object({ projectId: z.string() });
+const ProjectSchema = z.object({
+  projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
+});
 const RefreshSchema = z.object({
   projectId: z.string(),
   providers: z.array(z.enum(PROVIDER_KEYS)).min(1).max(PROVIDER_KEYS.length),
   window: z.string().max(40).default("default"),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 type ConnectionRow = {
@@ -89,6 +93,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
       context.userId,
       context.email,
       data.projectId,
+      data.ambientDataDomain,
     );
     if (!canAdminProviders(role, filter)) throw new Error("Forbidden");
     const rows = await sql<ConnectionRow>`
@@ -156,6 +161,7 @@ export const requestProviderSync = createServerFn({ method: "POST" })
       context.userId,
       context.email,
       data.projectId,
+      data.ambientDataDomain,
     );
     if (!canAdminProviders(role, filter)) throw new Error("Forbidden");
     if (!project.domain.trim()) throw new Error("Project domain is required before provider sync");
