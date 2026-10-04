@@ -90,7 +90,7 @@ export const updateKeywordStatus = createServerFn({ method: "POST" })
 
 export const scoreKeywords = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), keywords: z.array(z.string()).max(700).optional() }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
+  .validator(z.object({ projectId: z.string(), keywords: z.array(z.string()).max(700).optional(), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
@@ -151,7 +151,7 @@ export const scoreKeywords = createServerFn({ method: "POST" })
 
 export const expandRelated = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), seed: z.string().min(1).max(200) }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
+  .validator(z.object({ projectId: z.string(), seed: z.string().min(1).max(200), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
@@ -195,7 +195,7 @@ export const expandRelated = createServerFn({ method: "POST" })
 
 export const pullCompetitor = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), url: z.string().min(3).max(200) }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
+  .validator(z.object({ projectId: z.string(), url: z.string().min(3).max(200), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
@@ -223,7 +223,7 @@ export const pullCompetitor = createServerFn({ method: "POST" })
 
 export const runGap = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), competitors: z.array(z.string()).max(5).optional() }, ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
+  .validator(z.object({ projectId: z.string(), competitors: z.array(z.string()).max(5).optional(), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);

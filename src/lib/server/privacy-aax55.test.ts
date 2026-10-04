@@ -174,17 +174,19 @@ describe("AAX-55 applyAmbientDataDomain", () => {
   });
 });
 
-describe("AAX-55 SEO and published-content ambient wiring", () => {
+describe("AAX-55 SEO, published-content and research ambient wiring", () => {
   it("passes optional ambient domain into every resolveAccess call", () => {
     const seo = readFileSync(new URL("./seo-sources.ts", import.meta.url), "utf8");
     const published = readFileSync(new URL("./published-content.ts", import.meta.url), "utf8");
-    for (const source of [seo, published]) {
+    const research = readFileSync(new URL("./research.ts", import.meta.url), "utf8");
+    for (const source of [seo, published, research]) {
       const calls = source.match(/resolveAccess\([\s\S]*?\);/g) ?? [];
       assert.ok(calls.length > 0);
       for (const call of calls) {
         assert.match(call, /data\.ambientDataDomain/);
       }
       assert.match(source, /ambientDataDomain: z\.enum\(\["medical", "thesis", "other"\]\)\.optional\(\)/);
+      assert.equal(source.includes("}, ambientDataDomain"), false);
     }
   });
 });
