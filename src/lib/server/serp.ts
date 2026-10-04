@@ -15,10 +15,10 @@ function num(v: unknown) {
 
 export const trackSelected = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), keywords: z.array(z.string()).max(80) }))
+  .validator(z.object({ projectId: z.string(), keywords: z.array(z.string()).max(80), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const device = Number(project.platform_id) === 2 ? "mobile" : "desktop";
     const now = stamp();
@@ -48,10 +48,10 @@ export const trackSelected = createServerFn({ method: "POST" })
 
 export const refreshRanks = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string() }))
+  .validator(z.object({ projectId: z.string(), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const key = await ownerMangoolsKey(sql, project.owner_id);
     const device = Number(project.platform_id) === 2 ? "mobile" : "desktop";
@@ -122,10 +122,10 @@ export const refreshRanks = createServerFn({ method: "POST" })
 
 export const fetchSerp = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), keyword: z.string().min(1).max(200) }))
+  .validator(z.object({ projectId: z.string(), keyword: z.string().min(1).max(200), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
     if (!canWrite(role)) throw new Error("Forbidden");
     const key = await ownerMangoolsKey(sql, project.owner_id);
     if (!key) throw new Error("Add your Mangools API key in Connect.");

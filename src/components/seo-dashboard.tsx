@@ -2,14 +2,15 @@ import { Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 import { useLocale, useT } from "@/lib/locale";
 import { getClickUpSettings, getClickUpTasks, saveClickUpSettings, syncClickUpWithProject, type PublicClickUpSettings } from "@/lib/server/clickup";
 import { getSettings, saveSettings } from "@/lib/server/settings";
-import { getSEOData, getSEOTimeline, saveSEOData, aggregateSEOData } from "@/lib/server/seo-sources";
-import { getContentStats, getContentTimeline, listPublishedContent } from "@/lib/server/published-content";
+import { getSEOTimeline, aggregateSEOData } from "@/lib/server/seo-sources";
+import { getContentStats, listPublishedContent } from "@/lib/server/published-content";
 import { listProjects } from "@/lib/server/projects";
+import { attachAmbientDataDomain, readAmbientDataDomain } from "@/lib/ambient-data-domain";
 import type { Project } from "@/lib/types";
 import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Calendar, ExternalLink, FileText, Globe, LineChart as LineChartIcon, Plus, RefreshCw, Settings, TrendingUp, Users, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ExternalLink, FileText, Globe, LineChart as LineChartIcon, Plus, RefreshCw, Settings, TrendingUp, Users, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type DataSource = "google-search-console" | "bing-webmaster" | "ubersuggest" | "ahrefs" | "moz" | "semrush" | "manual";
@@ -22,6 +23,11 @@ const DATA_SOURCES: { value: DataSource; label: { en: string; fa: string } }[] =
   { value: "moz", label: { en: "Moz", fa: "Moz" } },
   { value: "semrush", label: { en: "SEMrush", fa: "SEMrush" } },
 ];
+
+
+function withAmbient<T extends Record<string, unknown>>(payload: T) {
+  return attachAmbientDataDomain(payload, readAmbientDataDomain());
+}
 
 export function SEODashboard() {
   const t = useT();
@@ -53,7 +59,7 @@ export function SEODashboard() {
     contentType: "blog",
   });
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [projectsData, settings, studio] = await Promise.all([
@@ -70,24 +76,24 @@ export function SEODashboard() {
         clickUpListId: settings.listId || form.clickUpListId,
       }));
 
-      if (projectsData.length > 0 && !selectedProject) {
-        setSelectedProject(projectsData[0]);
+      if (projectsData.length > 0) {
+        setSelectedProject((current) => current ?? projectsData[0]);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load data");
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function loadProjectData(project: Project) {
+  const loadProjectData = useCallback(async (project: Project) => {
     setLoading(true);
     try {
       const [seo, contentStats, contentList, timeline, tasks] = await Promise.allSettled([
-        aggregateSEOData({ projectId: project.id, keyword: "", sources: ["google-search-console", "bing-webmaster", "ubersuggest"] }),
-        getContentStats({ projectId: project.id, days: 30 }),
-        listPublishedContent({ projectId: project.id, limit: 20 }),
-        getSEOTimeline({ projectId: project.id, days: 30 }),
+        aggregateSEOData(withAmbient({ projectId: project.id, keyword: "", sources: ["google-search-console", "bing-webmaster", "ubersuggest"] })),
+        getContentStats(withAmbient({ projectId: project.id, days: 30 })),
+        listPublishedContent(withAmbient({ projectId: project.id, limit: 20 })),
+        getSEOTimeline(withAmbient({ projectId: project.id, days: 30 })),
         clickUpSettings?.hasApiKey && clickUpSettings.listId
           ? getClickUpTasks({ listId: clickUpSettings.listId, limit: 10 })
           : Promise.resolve({ ok: true, data: [] }),
@@ -103,7 +109,7 @@ export function SEODashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [clickUpSettings?.hasApiKey, clickUpSettings?.listId]);
 
   async function handleSyncClickUp() {
     if (!selectedProject || !clickUpSettings?.hasApiKey || !clickUpSettings.listId) {
@@ -112,10 +118,10 @@ export function SEODashboard() {
     }
 
     try {
-      const result = await syncClickUpWithProject({
+      const result = await syncClickUpWithProject(withAmbient({
         projectId: selectedProject.id,
         listId: clickUpSettings.listId,
-      });
+      }));
 
       if (result.ok) {
         toast.success(
@@ -216,14 +222,14 @@ export function SEODashboard() {
   }
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   useEffect(() => {
     if (selectedProject) {
-      loadProjectData(selectedProject);
+      void loadProjectData(selectedProject);
     }
-  }, [selectedProject, clickUpSettings]);
+  }, [selectedProject, loadProjectData]);
 
   if (loading && projects.length === 0) {
     return (
@@ -235,12 +241,6 @@ export function SEODashboard() {
       </div>
     );
   }
-
-  // Get translation for data source
-  const getSourceLabel = (source: DataSource) => {
-    const found = DATA_SOURCES.find(s => s.value === source);
-    return found ? (lang === "fa" ? found.label.fa : found.label.en) : source;
-  };
 
   // Prepare chart data from timeline
   const chartData = Object.entries(timelineData).map(([date, metrics]) => {
