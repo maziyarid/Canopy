@@ -174,7 +174,7 @@ describe("AAX-55 applyAmbientDataDomain", () => {
   });
 });
 
-describe("AAX-55 SEO, published-content, research, agent, provider-admin, monday, invites and projects ambient wiring", () => {
+describe("AAX-55 SEO, published-content, research, agent, provider-admin, monday, invites, projects and clickup ambient wiring", () => {
   it("passes optional ambient domain into every resolveAccess call", () => {
     const seo = readFileSync(new URL("./seo-sources.ts", import.meta.url), "utf8");
     const published = readFileSync(new URL("./published-content.ts", import.meta.url), "utf8");
@@ -184,7 +184,8 @@ describe("AAX-55 SEO, published-content, research, agent, provider-admin, monday
     const monday = readFileSync(new URL("./monday.ts", import.meta.url), "utf8");
     const invites = readFileSync(new URL("./invites.ts", import.meta.url), "utf8");
     const projects = readFileSync(new URL("./projects.ts", import.meta.url), "utf8");
-    for (const source of [seo, published, research, agent, providerAdmin, monday, invites, projects]) {
+    const clickup = readFileSync(new URL("./clickup.ts", import.meta.url), "utf8");
+    for (const source of [seo, published, research, agent, providerAdmin, monday, invites, projects, clickup]) {
       const calls = source.match(/resolveAccess\([\s\S]*?\);/g) ?? [];
       assert.ok(calls.length > 0);
       for (const call of calls) {

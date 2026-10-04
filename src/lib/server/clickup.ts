@@ -175,13 +175,14 @@ export const syncClickUpWithProject = createServerFn({ method: "POST" })
     apiKey: z.string().min(1),
     listId: z.string().min(1),
     keywordFilter: z.string().optional(),
+    ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   }))
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     
-    // Verify project access
+    // Verify project access. Optional ambient domain fails closed before keyword reads.
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     // Get keywords from project
     const keywords = await sql<{ keyword: string; status: string; volume: number }>`
