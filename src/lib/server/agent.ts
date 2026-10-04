@@ -10,6 +10,7 @@ const AgentSchema = z.object({
   domain: z.string().max(200).optional(),
   location: z.string().max(80).optional(),
   keywordsPreview: z.string().max(2500).optional(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 export const runResearchAgent = createServerFn({ method: "POST" })
@@ -18,7 +19,7 @@ export const runResearchAgent = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     if (data.projectId) {
       const sql = await getSql();
-      await resolveAccess(sql, context.userId, context.email, data.projectId);
+      await resolveAccess(sql, context.userId, context.email, data.projectId, data.ambientDataDomain);
     }
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
@@ -121,6 +122,7 @@ function extractJson(text: string) {
 const BriefSchema = z.object({
   projectId: z.string(),
   keyword: z.string().min(1).max(200),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 export const writeBrief = createServerFn({ method: "POST" })
@@ -133,6 +135,7 @@ export const writeBrief = createServerFn({ method: "POST" })
       context.userId,
       context.email,
       data.projectId,
+      data.ambientDataDomain,
     );
     if (!canWrite(role)) throw new Error("Forbidden");
 
