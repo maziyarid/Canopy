@@ -347,3 +347,95 @@ export function buildClientReportView(input: {
     acquisitionStatus: acquisitionView?.status ?? null,
   };
 }
+
+export const CLIENT_DASHBOARD_TRANSPORT = "local_view_model_only" as const;
+export const DISABLED_REPORTING_ROUTE = "/api/v1/reporting/snapshot";
+
+export type DashboardAccess = {
+  role: ReportRole;
+  boundProjectId: string;
+  requestedProjectId?: string | null;
+  reportingConfigured: boolean;
+};
+
+export class ClientDashboardScopeError extends Error {
+  readonly code = "client_supplied_scope_rejected";
+  constructor() {
+    super("client_supplied_scope_rejected");
+    this.name = "ClientDashboardScopeError";
+  }
+}
+
+export function assertDashboardScope(access: DashboardAccess): void {
+  const requested = access.requestedProjectId?.trim();
+  if (requested && requested !== access.boundProjectId) {
+    throw new ClientDashboardScopeError();
+  }
+}
+
+export type GatedClientDashboard = ClientReportView & {
+  transport: typeof CLIENT_DASHBOARD_TRANSPORT;
+  remoteRoute: null;
+  reportingConfigured: boolean;
+};
+
+function emptyClientDashboard(access: DashboardAccess, site: string, periodLabel: string): GatedClientDashboard {
+  return {
+    projectId: access.boundProjectId,
+    site,
+    periodLabel,
+    comparisonLabel: null,
+    sections: [],
+    channels: groupAcquisitionChannels([]),
+    acquisitionStatus: "unavailable",
+    transport: CLIENT_DASHBOARD_TRANSPORT,
+    remoteRoute: null,
+    reportingConfigured: false,
+  };
+}
+
+/**
+ * AAX-80 adapter. Uses the local view-model only.
+ * The public reporting route stays disabled (PR #17); this function must not fetch it.
+ */
+export function buildGatedClientDashboard(input: {
+  access: DashboardAccess;
+  site: string;
+  periodLabel: string;
+  comparisonLabel?: string | null;
+  grants?: string[];
+  sections: SnapshotSection[];
+  now?: number;
+  fetchImpl?: (input: string) => Promise<unknown>;
+}): GatedClientDashboard {
+  assertDashboardScope(input.access);
+  if (input.fetchImpl) {
+    throw new Error("client_dashboard_remote_route_forbidden");
+  }
+  if (!input.access.reportingConfigured) {
+    return emptyClientDashboard(input.access, input.site, input.periodLabel);
+  }
+  const view = buildClientReportView({
+    projectId: input.access.boundProjectId,
+    site: input.site,
+    periodLabel: input.periodLabel,
+    comparisonLabel: input.comparisonLabel,
+    role: input.access.role,
+    grants: input.grants,
+    sections: input.sections,
+    now: input.now,
+  });
+  const sections = view.sections
+    .filter((section) => input.access.role !== "client" || section.key !== "providerHealth")
+    .map((section) =>
+      input.access.role === "client" ? { ...section, reasonCode: null, status: normalizeClientStatus(section.status) } : section,
+    );
+  return {
+    ...view,
+    projectId: input.access.boundProjectId,
+    sections,
+    transport: CLIENT_DASHBOARD_TRANSPORT,
+    remoteRoute: null,
+    reportingConfigured: true,
+  };
+}

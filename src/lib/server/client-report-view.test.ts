@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   applySectionFreshness,
   buildClientReportView,
+  buildGatedClientDashboard,
+  DISABLED_REPORTING_ROUTE,
   channelMeasuredTotal,
   classifyChannel,
   clientLabelForStatus,
@@ -230,5 +232,77 @@ describe("AAX-80 client report view", () => {
 
   it("redacts credential-shaped strings", () => {
     assert.equal(redactClientText("api_key=sk_live_example"), "api_key=<redacted>");
+  });
+});
+
+describe("AAX-80 gated client dashboard", () => {
+  it("rejects a client-supplied project id that differs from the server binding", () => {
+    assert.throws(
+      () =>
+        buildGatedClientDashboard({
+          access: {
+            role: "client",
+            boundProjectId: "project-a",
+            requestedProjectId: "project-b",
+            reportingConfigured: true,
+          },
+          site: "example.com",
+          periodLabel: "2026-09-01..2026-09-28",
+          sections: [section({})],
+          now: NOW,
+        }),
+      /client_supplied_scope_rejected/,
+    );
+  });
+
+  it("fails closed and does not call the disabled reporting route when unconfigured", async () => {
+    let called = 0;
+    const view = buildGatedClientDashboard({
+      access: { role: "client", boundProjectId: "project-a", reportingConfigured: false },
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      sections: [section({ reasonCode: "provider_secret_ref" })],
+      now: NOW,
+      fetchImpl: undefined,
+    });
+    assert.equal(view.reportingConfigured, false);
+    assert.equal(view.remoteRoute, null);
+    assert.equal(view.transport, "local_view_model_only");
+    assert.equal(view.sections.length, 0);
+    assert.equal(view.acquisitionStatus, "unavailable");
+    assert.equal(called, 0);
+    assert.equal(DISABLED_REPORTING_ROUTE, "/api/v1/reporting/snapshot");
+  });
+
+  it("refuses a fetch implementation so the disabled route cannot be activated here", () => {
+    assert.throws(
+      () =>
+        buildGatedClientDashboard({
+          access: { role: "client", boundProjectId: "project-a", reportingConfigured: true },
+          site: "example.com",
+          periodLabel: "2026-09-01..2026-09-28",
+          sections: [section({})],
+          fetchImpl: async () => ({ ok: true }),
+        }),
+      /client_dashboard_remote_route_forbidden/,
+    );
+  });
+
+  it("strips reason codes and provider health from the client role", () => {
+    const view = buildGatedClientDashboard({
+      access: { role: "client", boundProjectId: "project-a", requestedProjectId: "project-a", reportingConfigured: true },
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      grants: ["search", "providerHealth"],
+      sections: [
+        section({ reasonCode: "quota_state_internal", warning: "bearer secret-token" }),
+        section({ key: "providerHealth", status: "degraded", reasonCode: "sync_ledger" }),
+      ],
+      now: NOW,
+    });
+    assert.equal(view.projectId, "project-a");
+    assert.equal(view.sections.some((item) => item.key === "providerHealth"), false);
+    assert.equal(view.sections.every((item) => item.reasonCode === null), true);
+    assert.equal(view.sections[0]?.warning?.includes("secret-token"), false);
   });
 });
