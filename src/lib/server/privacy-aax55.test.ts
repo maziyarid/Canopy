@@ -4,6 +4,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   redactCredentials,
   redactPii,
@@ -170,5 +171,20 @@ describe("AAX-55 applyAmbientDataDomain", () => {
       () => applyAmbientDataDomain("other", "medical"),
       (err: Error) => err.message === "Project not found",
     );
+  });
+});
+
+describe("AAX-55 SEO and published-content ambient wiring", () => {
+  it("passes optional ambient domain into every resolveAccess call", () => {
+    const seo = readFileSync(new URL("./seo-sources.ts", import.meta.url), "utf8");
+    const published = readFileSync(new URL("./published-content.ts", import.meta.url), "utf8");
+    for (const source of [seo, published]) {
+      const calls = source.match(/resolveAccess\([\s\S]*?\);/g) ?? [];
+      assert.ok(calls.length > 0);
+      for (const call of calls) {
+        assert.match(call, /data\.ambientDataDomain/);
+      }
+      assert.match(source, /ambientDataDomain: z\.enum\(\["medical", "thesis", "other"\]\)\.optional\(\)/);
+    }
   });
 });

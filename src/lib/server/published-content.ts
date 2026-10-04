@@ -6,6 +6,7 @@ const ContentTypeSchema = z.enum(["blog", "page", "product", "video", "podcast",
 
 const CreateContentSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   url: z.string().url(),
   title: z.string().min(1).max(500),
   keyword: z.string().min(1).max(200),
@@ -32,6 +33,7 @@ const UpdateContentSchema = CreateContentSchema.omit({ projectId: true }).partia
 
 const ListContentSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   keyword: z.string().optional(),
   contentType: ContentTypeSchema.optional(),
   status: z.enum(["draft", "published", "updated", "archived"]).optional(),
@@ -43,11 +45,13 @@ const ListContentSchema = z.object({
 
 const DeleteContentSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   id: z.string(),
 });
 
 const ContentStatsSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   days: z.number().int().min(1).max(365).default(30),
 });
 
@@ -59,7 +63,7 @@ export const createPublishedContent = createServerFn({ method: "POST" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     const id = crypto.randomUUID();
     const publishDate = data.publishDate || new Date().toISOString().split("T")[0];
@@ -109,7 +113,7 @@ export const updatePublishedContent = createServerFn({ method: "POST" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     // Check if content exists and belongs to project
     const existing = await sql<{ project_id: string }>`
@@ -183,7 +187,7 @@ export const listPublishedContent = createServerFn({ method: "GET" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     let query = `
       SELECT * FROM published_content 
@@ -240,13 +244,13 @@ export const listPublishedContent = createServerFn({ method: "GET" })
 
 export const getPublishedContent = createServerFn({ method: "GET" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string(), id: z.string() }))
+  .validator(z.object({ projectId: z.string(), id: z.string(), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await (await import("@/lib/db")).getSql();
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     const content = await sql<{
       id: string;
@@ -306,7 +310,7 @@ export const deletePublishedContent = createServerFn({ method: "POST" })
     
     // Verify project access
     const { resolveAccess, canWrite } = await import("./access");
-    const access = await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    const access = await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
     if (!canWrite(access.role)) {
       throw new Error("Forbidden: Only owners and editors can delete content");
     }
@@ -330,7 +334,7 @@ export const getContentStats = createServerFn({ method: "GET" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - data.days);
@@ -409,7 +413,7 @@ export const getContentTimeline = createServerFn({ method: "GET" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - data.days);

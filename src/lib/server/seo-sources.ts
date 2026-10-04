@@ -42,6 +42,7 @@ const BingWebmasterSchema = z.object({
 // Generic SEO data schema
 const SEORecordSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   dataSource: DataSourceSchema,
   keyword: z.string().optional(),
   url: z.string().url().optional(),
@@ -53,6 +54,7 @@ const SEORecordSchema = z.object({
 // Multi-source SEO data fetch
 const MultiSourceSchema = z.object({
   projectId: z.string(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
   keyword: z.string().min(1).max(100),
   sources: z.array(DataSourceSchema).optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -68,7 +70,7 @@ export const saveSEOData = createServerFn({ method: "POST" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     await sql`
       INSERT INTO seo_data_cache (id, project_id, data_source, keyword, url, metric_name, metric_value, data_date, created_at)
@@ -85,6 +87,7 @@ export const getSEOData = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .validator(z.object({
     projectId: z.string(),
+    ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     keyword: z.string().optional(),
     dataSource: DataSourceSchema.optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -95,7 +98,7 @@ export const getSEOData = createServerFn({ method: "GET" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     let query = `
       SELECT * FROM seo_data_cache 
@@ -154,7 +157,7 @@ export const aggregateSEOData = createServerFn({ method: "POST" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     // Get existing data from cache
     const cachedData = await getSEOData({
@@ -181,6 +184,7 @@ export const getSEOTimeline = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .validator(z.object({
     projectId: z.string(),
+    ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     metricName: z.string().optional(),
     days: z.number().int().min(1).max(365).default(30),
   }))
@@ -189,7 +193,7 @@ export const getSEOTimeline = createServerFn({ method: "GET" })
     
     // Verify project access
     const { resolveAccess } = await import("./access");
-    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId);
+    await resolveAccess(sql, context.userId || "", context.email || "", data.projectId, data.ambientDataDomain);
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - data.days);
