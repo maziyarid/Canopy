@@ -1,14 +1,16 @@
 import { Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 import { useLocale, useT } from "@/lib/locale";
-import { getClickUpSettings, getClickUpTasks, syncClickUpWithProject } from "@/lib/server/clickup";
-import { getSEOData, getSEOTimeline, saveSEOData, aggregateSEOData } from "@/lib/server/seo-sources";
-import { getContentStats, getContentTimeline, listPublishedContent } from "@/lib/server/published-content";
+import { getClickUpSettings, getClickUpTasks, saveClickUpSettings, syncClickUpWithProject, type PublicClickUpSettings } from "@/lib/server/clickup";
+import { getSettings, saveSettings } from "@/lib/server/settings";
+import { getSEOTimeline, aggregateSEOData } from "@/lib/server/seo-sources";
+import { getContentStats, listPublishedContent } from "@/lib/server/published-content";
 import { listProjects } from "@/lib/server/projects";
+import { attachAmbientDataDomain, readAmbientDataDomain } from "@/lib/ambient-data-domain";
 import type { Project } from "@/lib/types";
 import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Calendar, ExternalLink, FileText, Globe, LineChart as LineChartIcon, Plus, RefreshCw, Settings, TrendingUp, Users, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ExternalLink, FileText, Globe, LineChart as LineChartIcon, Plus, RefreshCw, Settings, TrendingUp, Users, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type DataSource = "google-search-console" | "bing-webmaster" | "ubersuggest" | "ahrefs" | "moz" | "semrush" | "manual";
@@ -22,6 +24,11 @@ const DATA_SOURCES: { value: DataSource; label: { en: string; fa: string } }[] =
   { value: "semrush", label: { en: "SEMrush", fa: "SEMrush" } },
 ];
 
+
+function withAmbient<T extends Record<string, unknown>>(payload: T) {
+  return attachAmbientDataDomain(payload, readAmbientDataDomain());
+}
+
 export function SEODashboard() {
   const t = useT();
   const lang = useLocale((s) => s.lang);
@@ -34,8 +41,16 @@ export function SEODashboard() {
   const [timelineData, setTimelineData] = useState<Record<string, any>>({});
   const [contentList, setContentList] = useState<any[]>([]);
   const [clickUpTasks, setClickUpTasks] = useState<any[]>([]);
-  const [clickUpSettings, setClickUpSettings] = useState<{ apiKey: string; listId: string } | null>(null);
+  const [clickUpSettings, setClickUpSettings] = useState<PublicClickUpSettings | null>(null);
+  const [studioSettings, setStudioSettings] = useState<{ hasKey: boolean; mondayWebhook: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [savingSources, setSavingSources] = useState(false);
+  const [sourceForm, setSourceForm] = useState({
+    mangoolsKey: "",
+    mondayWebhook: "",
+    clickUpApiKey: "",
+    clickUpListId: "",
+  });
   const [showContentModal, setShowContentModal] = useState(false);
   const [newContent, setNewContent] = useState({
     url: "",
@@ -44,36 +59,43 @@ export function SEODashboard() {
     contentType: "blog",
   });
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [projectsData, settings] = await Promise.all([
+      const [projectsData, settings, studio] = await Promise.all([
         listProjects(),
         getClickUpSettings(),
+        getSettings(),
       ]);
       setProjects(projectsData);
       setClickUpSettings(settings);
+      setStudioSettings(studio);
+      setSourceForm((form) => ({
+        ...form,
+        mondayWebhook: studio.mondayWebhook || form.mondayWebhook,
+        clickUpListId: settings.listId || form.clickUpListId,
+      }));
 
-      if (projectsData.length > 0 && !selectedProject) {
-        setSelectedProject(projectsData[0]);
+      if (projectsData.length > 0) {
+        setSelectedProject((current) => current ?? projectsData[0]);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load data");
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function loadProjectData(project: Project) {
+  const loadProjectData = useCallback(async (project: Project) => {
     setLoading(true);
     try {
-      const [seo, contentStats, contentList, timeline, tasks] = await PromiseAllSettled([
-        aggregateSEOData({ projectId: project.id, keyword: "", sources: ["google-search-console", "bing-webmaster", "ubersuggest"] }),
-        getContentStats({ projectId: project.id, days: 30 }),
-        listPublishedContent({ projectId: project.id, limit: 20 }),
-        getSEOTimeline({ projectId: project.id, days: 30 }),
-        clickUpSettings?.apiKey && clickUpSettings.listId 
-          ? getClickUpTasks({ apiKey: clickUpSettings.apiKey, listId: clickUpSettings.listId, limit: 10 })
+      const [seo, contentStats, contentList, timeline, tasks] = await Promise.allSettled([
+        aggregateSEOData(withAmbient({ projectId: project.id, keyword: "", sources: ["google-search-console", "bing-webmaster", "ubersuggest"] })),
+        getContentStats(withAmbient({ projectId: project.id, days: 30 })),
+        listPublishedContent(withAmbient({ projectId: project.id, limit: 20 })),
+        getSEOTimeline(withAmbient({ projectId: project.id, days: 30 })),
+        clickUpSettings?.hasApiKey && clickUpSettings.listId
+          ? getClickUpTasks({ listId: clickUpSettings.listId, limit: 10 })
           : Promise.resolve({ ok: true, data: [] }),
       ]);
 
@@ -87,29 +109,99 @@ export function SEODashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [clickUpSettings?.hasApiKey, clickUpSettings?.listId]);
 
   async function handleSyncClickUp() {
-    if (!selectedProject || !clickUpSettings?.apiKey || !clickUpSettings.listId) {
+    if (!selectedProject || !clickUpSettings?.hasApiKey || !clickUpSettings.listId) {
       toast.error("Please configure ClickUp settings first");
       return;
     }
 
     try {
-      const result = await syncClickUpWithProject({
+      const result = await syncClickUpWithProject(withAmbient({
         projectId: selectedProject.id,
-        apiKey: clickUpSettings.apiKey,
         listId: clickUpSettings.listId,
-      });
-      
+      }));
+
       if (result.ok) {
-        toast.success(`Synced ${result.totalTasks} tasks to ClickUp`);
+        toast.success(
+          `Synced ${result.created} tasks to ClickUp` +
+            (result.skipped ? `, skipped ${result.skipped}` : ""),
+        );
         await loadProjectData(selectedProject);
       } else {
-        toast.error(result.error || "Sync failed");
+        toast.error(
+          result.error ||
+            `Sync failed (${result.created} created, ${result.failed} failed, ${result.skipped} skipped)`,
+        );
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Sync failed");
+    }
+  }
+
+  async function handleSaveSources() {
+    setSavingSources(true);
+    try {
+      const mangoolsKey = sourceForm.mangoolsKey.trim();
+      const mondayWebhook = sourceForm.mondayWebhook.trim();
+      const clickUpApiKey = sourceForm.clickUpApiKey.trim();
+      const clickUpListId = sourceForm.clickUpListId.trim();
+      const jobs: Promise<unknown>[] = [];
+      if (mangoolsKey || mondayWebhook !== (studioSettings?.mondayWebhook ?? "")) {
+        jobs.push(
+          saveSettings({
+            data: {
+              ...(mangoolsKey ? { mangoolsKey } : {}),
+              mondayWebhook,
+            },
+          }),
+        );
+      }
+      if (clickUpApiKey || clickUpListId !== (clickUpSettings?.listId ?? "")) {
+        jobs.push(
+          saveClickUpSettings({
+            ...(clickUpApiKey ? { apiKey: clickUpApiKey } : {}),
+            ...(clickUpListId ? { listId: clickUpListId } : {}),
+          }),
+        );
+      }
+      if (!jobs.length) {
+        toast.error("Enter at least one data source setting");
+        return;
+      }
+      const results = await Promise.allSettled(jobs);
+      const [nextClickUp, nextStudio] = await Promise.all([getClickUpSettings(), getSettings()]);
+      setClickUpSettings(nextClickUp);
+      setStudioSettings(nextStudio);
+      setSourceForm({
+        mangoolsKey: "",
+        mondayWebhook: nextStudio.mondayWebhook,
+        clickUpApiKey: "",
+        clickUpListId: nextClickUp.listId,
+      });
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      const saved = results.length - failures.length;
+      if (failures.length && !saved) {
+        const reason = failures[0]?.reason;
+        toast.error(reason instanceof Error ? reason.message : "Failed to save settings");
+        return;
+      }
+      if (failures.length) {
+        const reason = failures[0]?.reason;
+        toast.error(
+          reason instanceof Error
+            ? `Some settings saved. ${reason.message}`
+            : "Some settings saved, others failed",
+        );
+        return;
+      }
+      toast.success("Settings saved");
+      setShowSettings(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save settings");
+    } finally {
+      setSavingSources(false);
     }
   }
 
@@ -130,14 +222,14 @@ export function SEODashboard() {
   }
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   useEffect(() => {
     if (selectedProject) {
-      loadProjectData(selectedProject);
+      void loadProjectData(selectedProject);
     }
-  }, [selectedProject, clickUpSettings]);
+  }, [selectedProject, loadProjectData]);
 
   if (loading && projects.length === 0) {
     return (
@@ -149,12 +241,6 @@ export function SEODashboard() {
       </div>
     );
   }
-
-  // Get translation for data source
-  const getSourceLabel = (source: DataSource) => {
-    const found = DATA_SOURCES.find(s => s.value === source);
-    return found ? (lang === "fa" ? found.label.fa : found.label.en) : source;
-  };
 
   // Prepare chart data from timeline
   const chartData = Object.entries(timelineData).map(([date, metrics]) => {
@@ -206,7 +292,15 @@ export function SEODashboard() {
             <Settings className="size-4" />
             {t("settings") || "Settings"}
           </Button>
-          <Button onClick={() => setShowSettings(true)}>
+          <Button onClick={() => {
+            setSourceForm({
+              mangoolsKey: "",
+              mondayWebhook: studioSettings?.mondayWebhook ?? "",
+              clickUpApiKey: "",
+              clickUpListId: clickUpSettings?.listId ?? "",
+            });
+            setShowSettings(true);
+          }}>
             <Globe className="size-4" />
             {t("connectSources") || "Connect Sources"}
           </Button>
@@ -228,7 +322,7 @@ export function SEODashboard() {
                 </div>
               </div>
             </Card>
-            
+
             <Card className="p-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -240,7 +334,7 @@ export function SEODashboard() {
                 </div>
               </div>
             </Card>
-            
+
             <Card className="p-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -252,7 +346,7 @@ export function SEODashboard() {
                 </div>
               </div>
             </Card>
-            
+
             <Card className="p-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -330,7 +424,7 @@ export function SEODashboard() {
                   {t("addContent") || "Add Content"}
                 </Button>
               </div>
-              
+
               <div className="mt-4 space-y-3">
                 {contentList.length > 0 ? (
                   contentList.slice(0, 5).map((content) => (
@@ -354,7 +448,7 @@ export function SEODashboard() {
                   </div>
                 )}
               </div>
-              
+
               {contentList.length > 5 && (
                 <Button variant="quiet" className="mt-4 w-full" onClick={() => loadProjectData(selectedProject)}>
                   {t("loadMore") || "Load More"}
@@ -365,14 +459,14 @@ export function SEODashboard() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-lg font-semibold">{t("clickUpTasks") || "ClickUp Tasks"}</h2>
-                {clickUpSettings?.apiKey && clickUpSettings.listId && (
+                {clickUpSettings?.hasApiKey && clickUpSettings.listId && (
                   <Button size="sm" onClick={handleSyncClickUp}>
                     <RefreshCw className="size-4" />
                     {t("sync") || "Sync"}
                   </Button>
                 )}
               </div>
-              
+
               <div className="mt-4 space-y-3">
                 {clickUpTasks.length > 0 ? (
                   clickUpTasks.slice(0, 5).map((task) => (
@@ -391,7 +485,7 @@ export function SEODashboard() {
                   ))
                 ) : (
                   <div className="grid h-32 place-items-center text-muted">
-                    {clickUpSettings?.apiKey && clickUpSettings.listId 
+                    {clickUpSettings?.hasApiKey && clickUpSettings.listId
                       ? (t("noTasks") || "No tasks found")
                       : (t("connectClickUp") || "Connect ClickUp to see tasks")}
                   </div>
@@ -404,14 +498,14 @@ export function SEODashboard() {
           <Card className="p-6">
             <h2 className="font-display text-lg font-semibold">{t("dataSources") || "Data Sources"}</h2>
             <p className="mt-1 text-sm text-muted">{t("connectedSources") || "Connected data sources providing SEO insights"}</p>
-            
+
             <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
               {DATA_SOURCES.map((source) => {
                 // Check if we have data from this source
-                const hasData = Object.values(seoData).some((d: any) => 
+                const hasData = Object.values(seoData).some((d: any) =>
                   Object.keys(d || {}).some(k => Object.keys(d[k] || {}).includes(source.value))
                 );
-                
+
                 return (
                   <div key={source.value} className="flex items-center gap-3 rounded-lg bg-raised p-3">
                     <div className={`size-3 rounded-full ${hasData ? "bg-green-500" : "bg-gray-400"}`} />
@@ -443,32 +537,49 @@ export function SEODashboard() {
                 <X className="size-4" />
               </Button>
             </div>
-            
+
             <div className="mt-4 space-y-4">
               <p className="text-sm text-muted">
                 {t("connectSourcesDesc") || "Connect your SEO data sources to get comprehensive insights. Clients will only see the data you grant them access to."}
               </p>
-              
+
               <div className="space-y-3">
                 <Field label="Mangools API Key">
-                  <Input type="password" placeholder={t("enterMangoolsKey") || "Enter Mangools API Key"} />
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    value={sourceForm.mangoolsKey}
+                    onChange={(e) => setSourceForm({ ...sourceForm, mangoolsKey: e.target.value })}
+                    placeholder={studioSettings?.hasKey ? "••••••••" : (t("enterMangoolsKey") || "Enter Mangools API Key")}
+                  />
                 </Field>
                 <Field label="Monday.com Webhook">
-                  <Input placeholder={t("enterMondayWebhook") || "Enter Monday.com Webhook URL"} />
+                  <Input
+                    value={sourceForm.mondayWebhook}
+                    onChange={(e) => setSourceForm({ ...sourceForm, mondayWebhook: e.target.value })}
+                    placeholder={t("enterMondayWebhook") || "Enter Monday.com Webhook URL"}
+                  />
                 </Field>
                 <Field label="ClickUp API Key">
-                  <Input type="password" placeholder={t("enterClickUpKey") || "Enter ClickUp API Key"} />
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    value={sourceForm.clickUpApiKey}
+                    onChange={(e) => setSourceForm({ ...sourceForm, clickUpApiKey: e.target.value })}
+                    placeholder={clickUpSettings?.hasApiKey ? "••••••••" : (t("enterClickUpKey") || "Enter ClickUp API Key")}
+                  />
                 </Field>
                 <Field label="ClickUp List ID">
-                  <Input placeholder={t("enterClickUpList") || "Enter ClickUp List ID"} />
+                  <Input
+                    value={sourceForm.clickUpListId}
+                    onChange={(e) => setSourceForm({ ...sourceForm, clickUpListId: e.target.value })}
+                    placeholder={t("enterClickUpList") || "Enter ClickUp List ID"}
+                  />
                 </Field>
               </div>
-              
-              <Button className="w-full mt-6" onClick={() => {
-                toast.success("Settings saved!");
-                setShowSettings(false);
-              }}>
-                {t("saveSettings") || "Save Settings"}
+
+              <Button className="w-full mt-6" onClick={() => void handleSaveSources()} disabled={savingSources}>
+                {savingSources ? (t("saving") || "Saving...") : (t("saveSettings") || "Save Settings")}
               </Button>
             </div>
           </Card>
@@ -485,34 +596,34 @@ export function SEODashboard() {
                 <X className="size-4" />
               </Button>
             </div>
-            
+
             <form className="mt-4 space-y-4" onSubmit={handleCreateContent}>
               <Field label={t("url") || "URL"}>
-                <Input 
-                  value={newContent.url} 
-                  onChange={(e) => setNewContent({ ...newContent, url: e.target.value })} 
+                <Input
+                  value={newContent.url}
+                  onChange={(e) => setNewContent({ ...newContent, url: e.target.value })}
                   placeholder="https://example.com/my-post"
                   required
                 />
               </Field>
               <Field label={t("title") || "Title"}>
-                <Input 
-                  value={newContent.title} 
-                  onChange={(e) => setNewContent({ ...newContent, title: e.target.value })} 
+                <Input
+                  value={newContent.title}
+                  onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
                   placeholder={t("contentTitle") || "Content Title"}
                   required
                 />
               </Field>
               <Field label={t("keyword") || "Keyword"}>
-                <Input 
-                  value={newContent.keyword} 
-                  onChange={(e) => setNewContent({ ...newContent, keyword: e.target.value })} 
+                <Input
+                  value={newContent.keyword}
+                  onChange={(e) => setNewContent({ ...newContent, keyword: e.target.value })}
                   placeholder={t("targetKeyword") || "Target Keyword"}
                   required
                 />
               </Field>
               <Field label={t("contentType") || "Content Type"}>
-                <Select 
+                <Select
                   value={newContent.contentType}
                   onValueChange={(value) => setNewContent({ ...newContent, contentType: value })}
                 >
@@ -528,7 +639,7 @@ export function SEODashboard() {
                   </Select.Content>
                 </Select>
               </Field>
-              
+
               <div className="flex gap-2">
                 <Button type="button" variant="ghost" onClick={() => setShowContentModal(false)}>
                   {t("cancel") || "Cancel"}
@@ -543,9 +654,4 @@ export function SEODashboard() {
       )}
     </div>
   );
-}
-
-// Helper for Promise.allSettled that preserves types
-function PromiseAllSettled<T extends any[]>(promises: T): Promise<{ status: "fulfilled"; value: Awaited<T[number]> } | { status: "rejected"; reason: any }[]> {
-  return Promise.allSettled(promises) as any;
 }

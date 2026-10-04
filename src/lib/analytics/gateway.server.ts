@@ -7,6 +7,7 @@ import type {
   ProviderRefreshResult,
   ProviderSyncRunsResponse,
 } from "./contracts";
+import type { GatewayMetricResponse } from "../server/reporting-ledger";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -42,10 +43,7 @@ async function gatewayFetch<T>(
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(
-        `Analytics gateway request failed (${response.status} ${response.statusText})${body ? `: ${body.slice(0, 500)}` : ""}`,
-      );
+      throw new Error(`Analytics gateway request failed (${response.status})`);
     }
     return (await response.json()) as T;
   } finally {
@@ -53,43 +51,69 @@ async function gatewayFetch<T>(
   }
 }
 
+export async function getProviderMetricRows(
+  projectId: string,
+  provider: string,
+  site: string,
+  dataset: string,
+  start: string,
+  end: string,
+): Promise<GatewayMetricResponse> {
+  const query = new URLSearchParams({ provider, site, dataset, start, end, limit: "367" });
+  return gatewayFetch(`/v1/metrics?${query}`, { headers: { "X-Ms-Robot-Project-Id": projectId } });
+}
+
+export async function getProviderSearchRows(projectId: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse> {
+  const query = new URLSearchParams({ provider: "gsc", site, dataset, start, end, limit: "2000" });
+  return gatewayFetch(`/v1/metrics?${query}`, { headers: { "X-Ms-Robot-Project-Id": projectId } });
+}
+
 export async function getAnalyticsSnapshot(
+  projectId: string,
   site: string,
   window = "7d",
 ): Promise<AnalyticsSnapshot> {
   return gatewayFetch<AnalyticsSnapshot>(
     `/v1/sites/${encodeURIComponent(site)}/snapshot?window=${encodeURIComponent(window)}`,
+    { headers: { "X-Ms-Robot-Project-Id": projectId } },
   );
 }
 
-export async function getProviderStates(): Promise<ProviderListResponse> {
-  return gatewayFetch<ProviderListResponse>("/v1/providers");
+export async function getProviderStates(projectId: string): Promise<ProviderListResponse> {
+  return gatewayFetch<ProviderListResponse>("/v1/providers", {
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+  });
 }
 
-export async function getProviderSyncRuns(limit = 50): Promise<ProviderSyncRunsResponse> {
+export async function getProviderSyncRuns(
+  projectId: string,
+  limit = 50,
+): Promise<ProviderSyncRunsResponse> {
   const bounded = Math.max(1, Math.min(200, Math.trunc(limit)));
-  return gatewayFetch<ProviderSyncRunsResponse>(`/v1/sync-runs?limit=${bounded}`);
+  return gatewayFetch<ProviderSyncRunsResponse>(`/v1/sync-runs?limit=${bounded}`, {
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+  });
 }
 
 export async function requestProviderRefresh(
+  projectId: string,
   site: string,
   sources: ProviderKey[],
   window = "default",
 ): Promise<ProviderRefreshResult> {
-  return gatewayFetch<ProviderRefreshResult>(
-    `/v1/sites/${encodeURIComponent(site)}/refresh`,
-    {
-      method: "POST",
-      body: JSON.stringify({ sources, window }),
-    },
-  );
+  return gatewayFetch<ProviderRefreshResult>(`/v1/sites/${encodeURIComponent(site)}/refresh`, {
+    method: "POST",
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+    body: JSON.stringify({ sources, window }),
+  });
 }
 
 export async function requestAnalyticsRefresh(
+  projectId: string,
   site: string,
   sources: AnalyticsSource[] = ["gsc", "ga4", "clarity"],
 ): Promise<AnalyticsRefreshResult> {
-  const result = await requestProviderRefresh(site, sources);
+  const result = await requestProviderRefresh(projectId, site, sources);
   return {
     site: result.site,
     accepted: result.accepted.filter(
@@ -98,4 +122,14 @@ export async function requestAnalyticsRefresh(
     ),
     queuedAt: result.queuedAt,
   };
+}
+
+export async function getAdaEventReceipts(
+  projectId: string,
+  site: string,
+): Promise<{ events: unknown; generatedAt: string }> {
+  const query = new URLSearchParams({ site, limit: "50" });
+  return gatewayFetch(`/v1/ada-events?${query}`, {
+    headers: { "X-Ms-Robot-Project-Id": projectId },
+  });
 }

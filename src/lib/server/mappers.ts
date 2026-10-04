@@ -1,3 +1,4 @@
+import { parseReportSections } from "./report-sections";
 import type {
   AccessRow,
   BriefRow,
@@ -116,6 +117,7 @@ export function mapAccess(r: Record<string, unknown>): AccessRow {
     userId: r.user_id ? String(r.user_id) : null,
     role: (String(r.role) as Role) || "client",
     keywordFilter: String(r.keyword_filter ?? ""),
+    reportSections: parseReportSections(r.report_sections),
     createdAt: String(r.created_at ?? ""),
   };
 }

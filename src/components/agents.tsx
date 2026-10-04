@@ -8,7 +8,7 @@ import { LoaderCircle, Send } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-export function Agents() {
+export function Agents({ projectId }: { projectId: string }) {
   const messages = useCanopy((s) => s.messages);
   const addMessage = useCanopy((s) => s.addMessage);
   const addSeeds = useCanopy((s) => s.addSeeds);
@@ -30,7 +30,7 @@ export function Agents() {
         .map((k) => `${k.keyword} (vol ${k.volume}, kd ${k.kd ?? "—"})`)
         .join("\n");
       const res = await runResearchAgent({
-        data: {
+        data: { projectId,
           message,
           domain: settings.domain,
           location: locationLabel(settings.locationId),

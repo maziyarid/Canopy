@@ -34,6 +34,7 @@ export type ProviderState = {
 
 export type ProviderSyncRun = {
   id: string;
+  project_id: string;
   provider: ProviderKey;
   site: string;
   window: string;

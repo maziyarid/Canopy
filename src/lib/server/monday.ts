@@ -57,11 +57,18 @@ export const pushMonday = createServerFn({ method: "POST" })
           }),
         )
         .max(80),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     }),
   )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+      data.ambientDataDomain,
+    );
     if (!canWrite(role)) throw new Error("Forbidden");
     const result = await queueMonday(sql, project.owner_id, data.projectId, "task_export", {
       event: "task_export",
@@ -80,10 +87,21 @@ export const pushMonday = createServerFn({ method: "POST" })
 
 export const testMonday = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ projectId: z.string() }))
+  .validator(
+    z.object({
+      projectId: z.string(),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
+    }),
+  )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const { project, role } = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+      data.ambientDataDomain,
+    );
     if (role !== "owner") throw new Error("Forbidden");
     const result = await queueMonday(sql, project.owner_id, data.projectId, "test", {
       event: "test",

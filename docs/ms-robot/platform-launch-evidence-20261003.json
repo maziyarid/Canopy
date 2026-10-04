@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-03",
+  "scope": "isolated platform-to-built-product acceptance",
+  "synthetic_platform_session": true,
+  "real_pocket_id_login": "separate Stage5 acceptance",
+  "production_changed": false,
+  "product_source_baseline": "ae8908b9e6114849af7606c93eae13f21a109db6",
+  "tests": {
+    "platform_foundation": 54,
+    "platform_shell": 51,
+    "product_scripts": 199,
+    "product_typescript": 208,
+    "product_launch": 24,
+    "browser_scenarios": 2,
+    "total": 538
+  },
+  "build": "pass",
+  "typecheck": "pass",
+  "lint": {
+    "errors": 0,
+    "existing_warnings": 9
+  },
+  "review": {
+    "nine_lenses_completed": true,
+    "findings_resolved": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "open_gaps": [],
+    "cross_model": "not run; peer CLIs unavailable; in-process adversarial review completed"
+  },
+  "built_browser_checks": {
+    "actual_built_handler": true,
+    "actual_desktop_project_rendered": true,
+    "actual_mobile_project_rendered": true,
+    "exact_browser_post": true,
+    "clean_project_redirect": true,
+    "product_host_cookie": true,
+    "actual_project_rpc_allowed": true,
+    "exact_rpc_observed": true,
+    "foreign_project_rpc_denied": true,
+    "anonymous_rpc_denied": true,
+    "replay_denied": true,
+    "null_origin_denied": true,
+    "browser_cannot_redeem": true,
+    "global_settings_write_denied": true,
+    "real_get_session": true,
+    "real_signout": true,
+    "stale_signed_cache_rpc_denied": true,
+    "stale_signed_cache_session_denied": true
+  },
+  "tanstack_error_contract": {
+    "http_status": 200,
+    "header": "x-tss-serialized: true",
+    "decoded_foreign_or_global_error": "Launch unavailable",
+    "decoded_anonymous_or_stale_error": "Unauthorized"
+  },
+  "activation": "disabled by default; live reviewed mappings, private credentials and promotion gates remain required"
+}

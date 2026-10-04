@@ -1,14 +1,17 @@
+import { assertUnrestrictedSession } from "./platform-launch-scope.server";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { mapQuota } from "@/lib/map-api";
 import { studioAuth } from "./studio-auth";
 import { mangoolsFetch } from "./mangools";
+import { commitMangoolsKey } from "./mangools-bind";
 import type { QuotaState, StudioSettings } from "@/lib/types";
 
 export const getSettings = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .handler(async ({ context }): Promise<StudioSettings> => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     const rows = await sql<{
       mangools_key: string;
@@ -36,14 +39,19 @@ export const saveSettings = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ context, data }) => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     const existing = await sql<{ mangools_key: string; monday_webhook: string }>`
       select mangools_key, monday_webhook from studio_settings where user_id = ${context.userId}
     `;
-    const key =
-      data.mangoolsKey && data.mangoolsKey !== "••••••••"
-        ? data.mangoolsKey.trim()
-        : (existing[0]?.mangools_key ?? "");
+    const key = await commitMangoolsKey({
+      existingKey: existing[0]?.mangools_key ?? "",
+      candidateKey: data.mangoolsKey,
+      validate: async (candidate) => {
+        const res = await mangoolsFetch({ apiKey: candidate, path: "/kwfinder/limits" });
+        return res.ok ? true : { ok: false, error: res.error };
+      },
+    });
     const hook = data.mondayWebhook ?? existing[0]?.monday_webhook ?? "";
     const loc = data.defaultLocationId ?? 2840;
     const lang = data.defaultLanguageId ?? 1000;
@@ -66,6 +74,7 @@ export const saveSettings = createServerFn({ method: "POST" })
 export const testQuota = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .handler(async ({ context }): Promise<QuotaState> => {
+    assertUnrestrictedSession();
     const sql = await getSql();
     const rows = await sql<{ mangools_key: string }>`
       select mangools_key from studio_settings where user_id = ${context.userId}
