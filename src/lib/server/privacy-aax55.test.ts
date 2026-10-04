@@ -4,6 +4,7 @@
  */
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   redactCredentials,
   redactPii,
@@ -42,9 +43,14 @@ describe("AAX-55 redactCredentials", () => {
 });
 
 describe("AAX-55 redactPii", () => {
-  const oldKey = process.env.PII_REDACTION_KEY;
-  before(() => { process.env.PII_REDACTION_KEY = "test-only-redaction-key-at-least-32-characters"; });
-  after(() => { if (oldKey === undefined) delete process.env.PII_REDACTION_KEY; else process.env.PII_REDACTION_KEY = oldKey; });
+  const oldPepper = process.env.MS_ROBOT_PII_PEPPER;
+  before(() => {
+    process.env.MS_ROBOT_PII_PEPPER = "test-only-redaction-key-at-least-32-characters";
+  });
+  after(() => {
+    if (oldPepper === undefined) delete process.env.MS_ROBOT_PII_PEPPER;
+    else process.env.MS_ROBOT_PII_PEPPER = oldPepper;
+  });
   it("replaces email with stable hash ref", () => {
     const raw = "contact patient@example.com for follow-up";
     const out = redactPii(raw);
@@ -71,11 +77,26 @@ describe("AAX-55 redactPii", () => {
     assert.match(out, /pii:[0-9a-f]{64}/);
   });
 
-  it("uses the complete keyed SHA-256 digest", () => {
+  it("hash is full keyed SHA-256 and not a public truncation", () => {
     const out = redactPii("secret@clinic.ir");
     const m = out.match(/pii:([0-9a-f]+)/);
     assert.ok(m);
     assert.equal(m![1].length, 64);
+    assert.doesNotMatch(out, /ms-robot-pii-v1/);
+  });
+
+  it("production fails closed without a server pepper", () => {
+    const previousNode = process.env.NODE_ENV;
+    const previousPepper = process.env.MS_ROBOT_PII_PEPPER;
+    process.env.NODE_ENV = "production";
+    delete process.env.MS_ROBOT_PII_PEPPER;
+    try {
+      assert.throws(() => redactPii("patient@example.com"), /MS_ROBOT_PII_PEPPER is required/);
+    } finally {
+      process.env.NODE_ENV = previousNode;
+      if (previousPepper === undefined) delete process.env.MS_ROBOT_PII_PEPPER;
+      else process.env.MS_ROBOT_PII_PEPPER = previousPepper;
+    }
   });
 });
 
@@ -158,5 +179,45 @@ describe("AAX-55 applyAmbientDataDomain", () => {
       () => applyAmbientDataDomain("other", "medical"),
       (err: Error) => err.message === "Project not found",
     );
+  });
+});
+
+describe("AAX-55 SEO dashboard attaches ambient domain on project reads", () => {
+  it("forwards session ambient domain into SEO, content and ClickUp project calls", () => {
+    const source = readFileSync(new URL("../../components/seo-dashboard.tsx", import.meta.url), "utf8");
+    assert.match(source, /attachAmbientDataDomain/);
+    assert.match(source, /readAmbientDataDomain/);
+    for (const call of [
+      "aggregateSEOData(withAmbient(",
+      "getContentStats(withAmbient(",
+      "listPublishedContent(withAmbient(",
+      "getSEOTimeline(withAmbient(",
+      "syncClickUpWithProject(withAmbient(",
+    ]) {
+      assert.equal(source.includes(call), true, call);
+    }
+  });
+});
+
+describe("AAX-55 SEO, published-content, research, agent, provider-admin, monday, invites, projects and clickup ambient wiring", () => {
+  it("passes optional ambient domain into every resolveAccess call", () => {
+    const seo = readFileSync(new URL("./seo-sources.ts", import.meta.url), "utf8");
+    const published = readFileSync(new URL("./published-content.ts", import.meta.url), "utf8");
+    const research = readFileSync(new URL("./research.ts", import.meta.url), "utf8");
+    const agent = readFileSync(new URL("./agent.ts", import.meta.url), "utf8");
+    const providerAdmin = readFileSync(new URL("./provider-admin.ts", import.meta.url), "utf8");
+    const monday = readFileSync(new URL("./monday.ts", import.meta.url), "utf8");
+    const invites = readFileSync(new URL("./invites.ts", import.meta.url), "utf8");
+    const projects = readFileSync(new URL("./projects.ts", import.meta.url), "utf8");
+    const clickup = readFileSync(new URL("./clickup.ts", import.meta.url), "utf8");
+    for (const source of [seo, published, research, agent, providerAdmin, monday, invites, projects, clickup]) {
+      const calls = source.match(/resolveAccess\([\s\S]*?\);/g) ?? [];
+      assert.ok(calls.length > 0);
+      for (const call of calls) {
+        assert.match(call, /data\.ambientDataDomain/);
+      }
+      assert.match(source, /ambientDataDomain: z\.enum\(\["medical", "thesis", "other"\]\)\.optional\(\)/);
+      assert.equal(source.includes("}, ambientDataDomain"), false);
+    }
   });
 });

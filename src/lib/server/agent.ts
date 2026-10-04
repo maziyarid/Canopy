@@ -11,6 +11,7 @@ const AgentSchema = z.object({
   domain: z.string().max(200).optional(),
   location: z.string().max(80).optional(),
   keywordsPreview: z.string().max(2500).optional(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 export const runResearchAgent = createServerFn({ method: "POST" })
@@ -18,9 +19,17 @@ export const runResearchAgent = createServerFn({ method: "POST" })
   .validator(AgentSchema)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const access = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+      data.ambientDataDomain,
+    );
     assertOperatorAccess(access);
-    if (access.project.data_domain === "medical") return { ok: false as const, error: "Medical AI processing is not configured." };
+    if (access.project.data_domain === "medical") {
+      return { ok: false as const, error: "Medical AI processing is not configured." };
+    }
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
       return { ok: false as const, error: "AI is not available in this environment." };
@@ -122,6 +131,7 @@ function extractJson(text: string) {
 const BriefSchema = z.object({
   projectId: z.string(),
   keyword: z.string().min(1).max(200),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 export const writeBrief = createServerFn({ method: "POST" })
@@ -134,6 +144,7 @@ export const writeBrief = createServerFn({ method: "POST" })
       context.userId,
       context.email,
       data.projectId,
+      data.ambientDataDomain,
     );
     assertOperatorAccess(access);
     const { project } = access;

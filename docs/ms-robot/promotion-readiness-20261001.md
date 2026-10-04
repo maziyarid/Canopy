@@ -91,3 +91,8 @@ The analytics SQLite coordinator does not read `migrations/*.sql`. After `ensure
 `sc-domain:example.com` and `https://example.com/` are different Search Console properties that share a host. Discovery that returns both for a mapped host is `site_map_invalid` before `create_or_run_sync`, and the raw property URLs are not echoed. A single authorised property is synced with its original `siteUrl`, not the canonical host. Process proof: `test_ambiguous_gsc_properties_exit_before_sync` and `test_authorised_property_url_is_synced`. Promotion readiness fails closed if that rejection or proof is removed. Scheduled portfolio sync stays disabled. This does not merge main or deploy.
 
 - 2026-10-03: malformed GSC discovery (`sites` not a list, or a non-object entry) fails closed as `site_map_invalid` before sync. Payload is not echoed. Scheduled portfolio sync stays disabled.
+
+
+## 2026-10-03 writable GSC permission
+
+`siteRestrictedUser`, `siteUnverifiedUser`, and a missing `permissionLevel` are not a sync grant. `WRITABLE_GSC_PERMISSIONS` is only `siteOwner` and `siteFullUser`. Restricted discovery stays `gsc_property_not_authorised` before `create_or_run_sync`, and the raw property URL is not echoed. Process proofs: `test_restricted_permission_exits_before_sync` protects foreign-property URL privacy; `test_mapped_restricted_permission_exits_before_sync` proves that even a mapped property cannot sync with restricted permission. Promotion readiness fails closed if that allow-list or proof is removed. Scheduled portfolio sync stays disabled. Status remains `not_promotable`. This does not merge main or deploy.
