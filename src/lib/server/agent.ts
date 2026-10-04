@@ -1,24 +1,34 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
+import { assertOperatorAccess } from "./operator-access";
 import { studioAuth } from "./studio-auth";
-import { canWrite, nid, resolveAccess } from "./access";
+import { nid, resolveAccess } from "./access";
 
 const AgentSchema = z.object({
-  projectId: z.string().optional(),
+  projectId: z.string().min(1).max(80),
   message: z.string().min(1).max(4000),
   domain: z.string().max(200).optional(),
   location: z.string().max(80).optional(),
   keywordsPreview: z.string().max(2500).optional(),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 export const runResearchAgent = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .validator(AgentSchema)
   .handler(async ({ context, data }) => {
-    if (data.projectId) {
-      const sql = await getSql();
-      await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const sql = await getSql();
+    const access = await resolveAccess(
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+      data.ambientDataDomain,
+    );
+    assertOperatorAccess(access);
+    if (access.project.data_domain === "medical") {
+      return { ok: false as const, error: "Medical AI processing is not configured." };
     }
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) {
@@ -121,6 +131,7 @@ function extractJson(text: string) {
 const BriefSchema = z.object({
   projectId: z.string(),
   keyword: z.string().min(1).max(200),
+  ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
 });
 
 export const writeBrief = createServerFn({ method: "POST" })
@@ -128,13 +139,15 @@ export const writeBrief = createServerFn({ method: "POST" })
   .validator(BriefSchema)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(
+    const access = await resolveAccess(
       sql,
       context.userId,
       context.email,
       data.projectId,
+      data.ambientDataDomain,
     );
-    if (!canWrite(role)) throw new Error("Forbidden");
+    assertOperatorAccess(access);
+    const { project } = access;
 
     const rows = await sql<{ volume: number; kd: number | null; cpc: number }>`
       select volume, kd, cpc from keywords

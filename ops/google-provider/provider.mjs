@@ -93,10 +93,10 @@ function validateDimensions(value) {
 function normaliseSearchRows(rows = []) {
   return rows.map((row) => ({
     keys: Array.isArray(row.keys) ? row.keys.map(String) : [],
-    clicks: Number(row.clicks || 0),
-    impressions: Number(row.impressions || 0),
-    ctr: Number(row.ctr || 0),
-    position: Number(row.position || 0),
+    clicks: typeof row.clicks === "number" && Number.isFinite(row.clicks) && row.clicks >= 0 ? row.clicks : null,
+    impressions: typeof row.impressions === "number" && Number.isFinite(row.impressions) && row.impressions >= 0 ? row.impressions : null,
+    ctr: typeof row.ctr === "number" && Number.isFinite(row.ctr) && row.ctr >= 0 ? row.ctr : null,
+    position: typeof row.position === "number" && Number.isFinite(row.position) && row.position >= 0 ? row.position : null,
   }));
 }
 

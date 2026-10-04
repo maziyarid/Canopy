@@ -244,6 +244,7 @@ export const syncClickUpWithProject = createServerFn({ method: "POST" })
       projectId: z.string(),
       listId: z.string().min(1).optional(),
       keywordFilter: z.string().max(200).optional(),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
     }),
   )
   .handler(async ({ context, data }) => {
@@ -253,7 +254,13 @@ export const syncClickUpWithProject = createServerFn({ method: "POST" })
       throw new Error("Unauthorized");
     }
 
-    const access = await resolveAccess(sql, context.userId, context.email || "", data.projectId);
+    const access = await resolveAccess(
+      sql,
+      context.userId,
+      context.email || "",
+      data.projectId,
+      data.ambientDataDomain,
+    );
     if (!canWrite(access.role)) {
       throw new Error("Forbidden");
     }

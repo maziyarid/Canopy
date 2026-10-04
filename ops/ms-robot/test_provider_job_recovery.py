@@ -1,0 +1,164 @@
+import sqlite3
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from provider_job_recovery import (
+    ProviderJobRecoveryError,
+    heartbeat_job,
+    record_attempt_failure,
+    record_running,
+    recover_stale_running,
+)
+from provider_retry_checkpoint import SCHEDULED_PORTFOLIO_SYNC_ENABLED
+
+
+class ProviderJobRecoveryTest(unittest.TestCase):
+    def test_stale_running_job_is_recovered_once_and_not_scheduled(self):
+        self.assertFalse(SCHEDULED_PORTFOLIO_SYNC_ENABLED)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-1", "gsc", "project-a", attempt=1, now=started)
+            record_attempt_failure(path, "job-1", "timeout", now=started)
+            fresh = recover_stale_running(path, now=started + timedelta(seconds=10), error_class="site_map_missing")
+            self.assertEqual(fresh, [])
+            recovered = recover_stale_running(
+                path,
+                now=started + timedelta(seconds=120),
+                error_class="timeout",
+            )
+            self.assertEqual(len(recovered), 1)
+            self.assertEqual(recovered[0]["stage"], "retry_wait")
+            self.assertEqual(recovered[0]["error_class"], "timeout")
+            self.assertEqual(recovered[0]["attempt"], 1)
+            again = recover_stale_running(
+                path,
+                now=started + timedelta(seconds=180),
+                error_class="timeout",
+            )
+            self.assertEqual(again, [])
+
+    def test_fail_closed_class_is_not_retried_after_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-2", "gsc", "project-a", attempt=1, now=started)
+            record_attempt_failure(path, "job-2", "site_map_missing", now=started)
+            recovered = recover_stale_running(
+                path,
+                now=started + timedelta(seconds=120),
+                error_class="timeout",
+            )
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            self.assertFalse(recovered[0]["id"] == "")
+            second = recover_stale_running(
+                path,
+                now=started + timedelta(seconds=240),
+                error_class="site_map_missing",
+            )
+            self.assertEqual(second, [])
+
+    def test_attempt_bound_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-3", "ga4", "project-b", attempt=3, now=started)
+            record_attempt_failure(path, "job-3", "rate_limited", now=started)
+            recovered = recover_stale_running(
+                path,
+                now=started + timedelta(seconds=120),
+                error_class="timeout",
+            )
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            self.assertEqual(recovered[0]["attempt"], 3)
+
+
+    def test_recovery_uses_persisted_class_not_caller_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-4", "gsc", "project-a", attempt=1, now=started)
+            record_attempt_failure(path, "job-4", "gsc_property_not_authorised", now=started)
+            recovered = recover_stale_running(
+                path,
+                now=started + timedelta(seconds=120),
+                error_class="timeout",
+            )
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            self.assertEqual(recovered[0]["error_class"], "gsc_property_not_authorised")
+
+    def test_missing_persisted_class_fails_closed_as_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-5", "gsc", "project-a", attempt=1, now=started)
+            recovered = recover_stale_running(
+                path,
+                now=started + timedelta(seconds=120),
+                error_class="timeout",
+            )
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            self.assertEqual(recovered[0]["error_class"], "unknown")
+
+    def test_heartbeat_refuses_persisted_fail_closed_class(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-6", "gsc", "project-a", attempt=1, now=started)
+            alive = heartbeat_job(path, "job-6", now=started + timedelta(seconds=5))
+            self.assertEqual(alive["stage"], "running")
+            self.assertEqual(alive["error_class"], "")
+            record_attempt_failure(path, "job-6", "timeout", now=started)
+            still_alive = heartbeat_job(path, "job-6", now=started + timedelta(seconds=15))
+            self.assertEqual(still_alive["error_class"], "timeout")
+            record_attempt_failure(path, "job-6", "site_map_missing", now=started)
+            with self.assertRaises(ProviderJobRecoveryError) as raised:
+                heartbeat_job(path, "job-6", now=started + timedelta(seconds=30))
+            self.assertEqual(str(raised.exception), "fail_closed_heartbeat_forbidden")
+            recovered = recover_stale_running(path, now=started + timedelta(seconds=120))
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            self.assertEqual(recovered[0]["error_class"], "site_map_missing")
+            with self.assertRaises(ProviderJobRecoveryError):
+                heartbeat_job(path, "job-6", now=started + timedelta(seconds=200))
+
+
+
+    def test_record_running_refuses_failed_closed_reclaim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
+            record_running(path, "job-7", "gsc", "project-a", attempt=1, now=started)
+            record_attempt_failure(path, "job-7", "site_map_missing", now=started)
+            recovered = recover_stale_running(path, now=started + timedelta(seconds=120))
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            with self.assertRaises(ProviderJobRecoveryError) as raised:
+                record_running(path, "job-7", "gsc", "project-a", attempt=1, now=started + timedelta(seconds=130))
+            self.assertEqual(str(raised.exception), "fail_closed_reclaim_forbidden")
+            second = recover_stale_running(path, now=started + timedelta(seconds=240))
+            self.assertEqual(second, [])
+
+    def test_new_job_id_cannot_inherit_failed_closed_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 4, 2, 0, tzinfo=timezone.utc)
+            record_running(path, "job-7", "gsc", "project-a", attempt=1, now=started)
+            record_attempt_failure(path, "job-7", "gsc_property_not_authorised", now=started)
+            recovered = recover_stale_running(path, now=started + timedelta(seconds=120))
+            self.assertEqual(recovered[0]["stage"], "failed_closed")
+            with self.assertRaises(ProviderJobRecoveryError) as raised:
+                record_running(path, "job-8", "gsc", "project-a", attempt=1, now=started + timedelta(seconds=130))
+            self.assertEqual(str(raised.exception), "fail_closed_identity_reuse_forbidden")
+            other_project = record_running(path, "job-9", "gsc", "project-b", attempt=1, now=started)
+            other_provider = record_running(path, "job-10", "ga4", "project-a", attempt=1, now=started)
+            self.assertEqual(other_project["project_id"], "project-b")
+            self.assertEqual(other_provider["provider"], "ga4")
+            connection = sqlite3.connect(path)
+            preserved = connection.execute("select stage, error_class from provider_jobs where id='job-7'").fetchone()
+            connection.close()
+            self.assertEqual(preserved[0], "failed_closed")
+            self.assertEqual(preserved[1], "gsc_property_not_authorised")
+
+if __name__ == "__main__":
+    unittest.main()

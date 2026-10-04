@@ -128,6 +128,7 @@ export const updateProject = createServerFn({ method: "POST" })
   .validator(
     z.object({
       id: z.string(),
+      ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional(),
       name: z.string().min(1).max(120).optional(),
       domain: z.string().max(200).optional(),
       locationId: z.number().int().optional(),
@@ -141,7 +142,7 @@ export const updateProject = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.id);
+    const { project, role } = await resolveAccess(sql, context.userId, context.email, data.id, data.ambientDataDomain);
     if (!canWrite(role)) throw new Error("Forbidden");
     // data_domain is intentionally immutable after create (AAX-55 / AAX-134).
     await sql`
@@ -162,10 +163,10 @@ export const updateProject = createServerFn({ method: "POST" })
 
 export const deleteProject = createServerFn({ method: "POST" })
   .middleware([studioAuth])
-  .validator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string(), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const { role } = await resolveAccess(sql, context.userId, context.email, data.id);
+    const { role } = await resolveAccess(sql, context.userId, context.email, data.id, data.ambientDataDomain);
     if (role !== "owner") throw new Error("Forbidden");
     await sql`delete from keywords where project_id = ${data.id}`;
     await sql`delete from rank_history where project_id = ${data.id}`;
@@ -183,7 +184,7 @@ export const deleteProject = createServerFn({ method: "POST" })
 
 export const getProjectBundle = createServerFn({ method: "GET" })
   .middleware([studioAuth])
-  .validator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string(), ambientDataDomain: z.enum(["medical", "thesis", "other"]).optional() }))
   .handler(async ({ context, data }): Promise<ProjectBundle> => {
     const sql = await getSql();
     await linkInvites(sql, context.userId, context.email);
@@ -192,6 +193,7 @@ export const getProjectBundle = createServerFn({ method: "GET" })
       context.userId,
       context.email,
       data.id,
+      data.ambientDataDomain,
     );
     const kwRows =
       await sql`select * from keywords where project_id = ${data.id} order by opportunity desc`;

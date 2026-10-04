@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import json, os, re, sqlite3, uuid
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -7,6 +8,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 from gsc_monitor import ensure_schema as ensure_monitor_schema, list_investigations, run_monitor
 from sqlite_migrations import ensure_analytics_schema
+from ada_bridge_receipts import list_receipts, ReceiptError
 import sys
 from pathlib import Path
 # Deployed unit runs this file from /srv/ms-robot-analytics/gateway.py.
@@ -221,6 +223,13 @@ def upsert_metric(c,project_id,provider,site,dataset,data_date,dimensions,metric
       (vals,freshness,run_id,stamp,project_id,provider,site,dataset,data_date,dims))
     return 'updated'
 
+def gsc_metrics(row):
+    values={key:row.get(key) for key in ('clicks','impressions','position')}
+    if not all(isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) and value>=0 for value in values.values()):
+        return None
+    values['ctr']=values['clicks']/values['impressions'] if values['impressions'] else None
+    return values
+
 def run_gsc_sync(project_id,site,window,run_id):
     start_date,end_date=window_dates(window)
     sites_payload=google_request('/v1/sites')
@@ -230,7 +239,7 @@ def run_gsc_sync(project_id,site,window,run_id):
         'dimensions':['date'],'rowLimit':5000,'type':'web'})
     query_page=google_request('/v1/gsc/search-analytics','POST',{
         'siteUrl':property_url,'startDate':start_date,'endDate':end_date,
-        'dimensions':['query','page'],'rowLimit':1000,'type':'web'})
+        'dimensions':['date','query','page'],'rowLimit':5000,'type':'web'})
     sitemaps=google_request('/v1/gsc/sitemaps?siteUrl='+quote(property_url,safe=''))
     stamp=now(); received=len(daily.get('rows',[]))+len(query_page.get('rows',[])); inserted=0; updated=0; skipped=0
     with db() as c:
@@ -239,17 +248,23 @@ def run_gsc_sync(project_id,site,window,run_id):
             if not keys:
                 skipped+=1
                 continue
-            metrics={k:row.get(k,0) for k in ('clicks','impressions','ctr','position')}
+            metrics=gsc_metrics(row)
+            if metrics is None:
+                skipped+=1
+                continue
             outcome=upsert_metric(c,project_id,'gsc',site,'site_daily',str(keys[0]),{'date':str(keys[0])},metrics,end_date,run_id,stamp)
             inserted+=outcome=='inserted'; updated+=outcome=='updated'
         for row in query_page.get('rows',[]):
             keys=row.get('keys') or []
-            if len(keys)<2:
+            if len(keys)!=3 or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',str(keys[0])) or not start_date<=str(keys[0])<=end_date:
                 skipped+=1
                 continue
-            metrics={k:row.get(k,0) for k in ('clicks','impressions','ctr','position')}
-            outcome=upsert_metric(c,project_id,'gsc',site,'query_page',end_date,
-                          {'query':str(keys[0]),'page':str(keys[1])},metrics,end_date,run_id,stamp)
+            metrics=gsc_metrics(row)
+            if metrics is None:
+                skipped+=1
+                continue
+            outcome=upsert_metric(c,project_id,'gsc',site,'query_page_daily',str(keys[0]),
+                          {'query':str(keys[1]),'page':str(keys[2])},metrics,end_date,run_id,stamp)
             inserted+=outcome=='inserted'; updated+=outcome=='updated'
         c.execute('''insert into provider_snapshot(project_id,provider,site,dataset,payload,freshness,sync_run_id,updated_at)
                      values(?,'gsc',?,'sitemaps',?,?,?,?)
@@ -265,7 +280,7 @@ def run_gsc_sync(project_id,site,window,run_id):
         'requested_start':start_date,'requested_end':end_date,
         'rows_received':received,'rows_inserted':inserted,'rows_updated':updated,
         'rows_skipped':skipped,'rows_written':inserted+updated,
-        'data_freshness':end_date,'resource_ref':property_url,
+        'data_freshness':max((str(row.get('keys',[''])[0]) for row in daily.get('rows',[]) if row.get('keys') and start_date<=str(row['keys'][0])<=end_date and gsc_metrics(row) is not None),default=None),'resource_ref':property_url,
         'cursor_before':'','cursor_after':'','rate_limit_state':'','quota_state':'',
     }
 
@@ -326,10 +341,10 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
                        int(result.get('rows_updated',0)),int(result.get('rows_skipped',0)),
                        int(result.get('rows_written',0)),result.get('rate_limit_state',''),
                        result.get('quota_state',''),freshness,finished,CODE_VERSION,run_id,project_id))
-            c.execute('''update provider_state set status='ok',auth_type=?,
+            c.execute('''update provider_state set status=?,auth_type=?,
                          last_success=?,last_attempt=?,last_error=null,freshness=?,updated_at=?
                          where project_id=? and provider=?''',
-                      ('service_account' if provider=='gsc' else '',finished,started,freshness,finished,
+                      ('degraded' if result.get('rows_skipped',0) else 'ok','service_account' if provider=='gsc' else '',finished,started,freshness,finished,
                        project_id,provider))
             row=c.execute(
                 'select * from sync_run where id=? and project_id=?',
@@ -448,7 +463,7 @@ def metric_coverage(project_id,provider,site,dataset,start,end):
     with db() as c:
         rows=c.execute('''select distinct requested_start,requested_end from sync_run
                           where project_id=? and provider=? and site=? and status='completed'
-                            and rows_skipped=0 and requested_start<=? and requested_end>=?
+                            and rows_skipped=0 and data_freshness>=requested_end and requested_start<=? and requested_end>=?
                           order by requested_start,requested_end''',(project_id,provider,site,end,start)).fetchall()
     ranges=[]
     for row in rows:
@@ -509,6 +524,16 @@ class H(BaseHTTPRequestHandler):
         if not self.guard(): return
         project_id=self.project_scope()
         if project_id is None: return
+        if u.path=='/v1/ada-events':
+            query=parse_qs(u.query)
+            try:
+                limit=int(query.get('limit',['50'])[0])
+                events=list_receipts(DB,project_id,query.get('site',[''])[0],limit)
+            except (ReceiptError,TypeError,ValueError):
+                self.sendj(400,{'error':'invalid_event_scope_or_limit'}); return
+            except (sqlite3.Error,OSError):
+                self.sendj(503,{'error':'event_receipts_unavailable'}); return
+            self.sendj(200,{'events':events,'generatedAt':now()}); return
         if u.path=='/v1/providers':
             self.sendj(200,{'providers':safe_provider_rows(project_id),'generatedAt':now()}); return
         if u.path=='/v1/sync-runs':
@@ -535,9 +560,9 @@ class H(BaseHTTPRequestHandler):
                     self.sendj(400,{'error':'invalid_date_range'}); return
             try: limit=max(1,min(2000,int(q.get('limit',['500'])[0])))
             except Exception: limit=500
-            rows=metric_rows(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],limit,start,end)
+            rows=metric_rows(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],limit+1,start,end)
             coverage=metric_coverage(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],start,end)
-            self.sendj(200,{'rows':rows,'coverage':coverage,'generatedAt':now()}); return
+            self.sendj(200,{'rows':rows[:limit],'truncated':len(rows)>limit,'coverage':coverage,'generatedAt':now()}); return
         if u.path=='/v1/investigations':
             q=parse_qs(u.query)
             try: limit=max(1,min(500,int(q.get('limit',['100'])[0])))

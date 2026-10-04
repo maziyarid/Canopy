@@ -105,7 +105,29 @@ def check_provider_retry_gate(root: Path) -> list[str]:
     portfolio = (root / "ops/analytics-gateway/portfolio_gsc.py").read_text(encoding="utf-8")
     if "site_map_missing" not in portfolio:
         raise PromotionReadinessError("portfolio_site_map_checkpoint_missing")
-    return ["provider_retry_checkpoint_fail_closed", "gateway_sync_failure_checkpoint_wired"]
+    recovery = (root / "ops/ms-robot/provider_job_recovery.py").read_text(encoding="utf-8")
+    if "SCHEDULED_PORTFOLIO_SYNC_ENABLED" not in recovery or "scheduled_portfolio_sync_forbidden" not in recovery:
+        raise PromotionReadinessError("provider_job_recovery_enables_scheduled_sync")
+    if "def recover_stale_running" not in recovery:
+        raise PromotionReadinessError("provider_job_recovery_missing")
+    if "def record_attempt_failure" not in recovery or "persisted = str(row[\"error_class\"] or \"\").strip()" not in recovery:
+        raise PromotionReadinessError("provider_job_recovery_class_not_persisted")
+    if "error_class: str = \"provider_unavailable\"" in recovery:
+        raise PromotionReadinessError("provider_job_recovery_uses_caller_default")
+    if "def heartbeat_job" not in recovery or "fail_closed_heartbeat_forbidden" not in recovery:
+        raise PromotionReadinessError("provider_job_heartbeat_not_fail_closed")
+    proof = (root / "ops/ms-robot/test_provider_job_recovery.py").read_text(encoding="utf-8")
+    if "test_fail_closed_class_is_not_retried_after_restart" not in proof:
+        raise PromotionReadinessError("provider_job_recovery_proof_missing")
+    if "test_recovery_uses_persisted_class_not_caller_default" not in proof:
+        raise PromotionReadinessError("persisted_error_class_proof_missing")
+    if "test_heartbeat_refuses_persisted_fail_closed_class" not in proof:
+        raise PromotionReadinessError("fail_closed_heartbeat_proof_missing")
+    return [
+        "provider_retry_checkpoint_fail_closed",
+        "gateway_sync_failure_checkpoint_wired",
+        "provider_job_recovery_fail_closed",
+    ]
 
 
 def check_client_note_order_gate(root: Path) -> list[str]:
@@ -230,7 +252,19 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
 
     if "test_authorised_property_url_is_synced" not in property_proof:
         raise PromotionReadinessError("authorised_property_url_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed"]
+    # siteRestrictedUser and siteUnverifiedUser are not a sync grant. A missing
+    # permissionLevel is not an implicit owner. Owner and full-user remain eligible.
+    if 'WRITABLE_GSC_PERMISSIONS=frozenset({"siteOwner", "siteFullUser"})' not in source:
+        raise PromotionReadinessError("writable_gsc_permissions_gate_missing")
+    if "item.get(\"permissionLevel\") not in WRITABLE_GSC_PERMISSIONS" not in source:
+        raise PromotionReadinessError("writable_gsc_permissions_not_applied")
+    permission_proof = (root / "ops/ms-robot/test_portfolio_permission_process.py").read_text(encoding="utf-8")
+    if any(proof not in permission_proof for proof in (
+        "test_restricted_permission_exits_before_sync",
+        "test_mapped_restricted_permission_exits_before_sync",
+    )):
+        raise PromotionReadinessError("writable_gsc_permission_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed", "writable_gsc_permission_fail_closed"]
 
 
 

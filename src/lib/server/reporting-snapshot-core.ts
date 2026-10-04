@@ -65,6 +65,7 @@ export type ReportingSnapshot = {
   correlationId: string;
   sections: SnapshotSection[];
   providerHealth: SnapshotSection;
+  comparisonSections?: SnapshotSection[];
 };
 
 export type LedgerRow = {
@@ -132,6 +133,7 @@ export function stableSnapshotBody(
     period: snapshot.period,
     comparison: snapshot.comparison,
     sections: snapshot.sections,
+    ...(snapshot.comparisonSections ? { comparisonSections: snapshot.comparisonSections } : {}),
     providerHealth: snapshot.providerHealth,
   };
 }

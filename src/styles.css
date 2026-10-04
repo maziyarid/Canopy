@@ -22,6 +22,10 @@
   --color-warn: #e0c36a;
   --color-bad: #e07a6a;
   --color-info: #0ea5ff;
+  --color-scrollbar-thumb: var(--color-muted);
+  --color-scrollbar-track: var(--color-bg);
+  --color-scrollbar-hover: var(--color-fg);
+  --color-scrollbar-active: var(--color-primary);
 
   --font-display: "Poppins", "Vazirmatn", "Segoe UI", sans-serif;
   --font-sans: "Inter", "Vazirmatn", "Segoe UI", system-ui, sans-serif;
@@ -40,6 +44,43 @@
 }
 
 @layer base {
+  * {
+    scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+    scrollbar-width: auto;
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-scrollbar-thumb);
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--color-scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-scrollbar-hover);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background: var(--color-scrollbar-active);
+  }
+
+  @media (forced-colors: active) {
+    * {
+      scrollbar-color: auto;
+    }
+    ::-webkit-scrollbar-track {
+      background: Canvas;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: CanvasText;
+      border-color: Canvas;
+    }
+  }
+
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -128,8 +169,16 @@ html[dir="rtl"] h3 {
 
 .maz-grid {
   background-image:
-    linear-gradient(to right, color-mix(in oklab, var(--color-primary) 7%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in oklab, var(--color-primary) 7%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--color-primary) 7%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--color-primary) 7%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse at 20% 0%, black 20%, transparent 70%);
 }

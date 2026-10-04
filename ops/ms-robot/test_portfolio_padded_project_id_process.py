@@ -33,7 +33,7 @@ def fake_google(path, *_args, **_kwargs):
     seen["google"] += 1
     if path != "/v1/sites":
         raise AssertionError("unexpected google path " + str(path))
-    return {"sites": [{"siteUrl": "https://example.com/"}]}
+    return {"sites": [{"siteUrl": "https://example.com/", "permissionLevel": "siteOwner"}]}
 
 def fake_sync(project_id, provider, site, window, started, request_key=None):
     seen["projects"].append(project_id)
