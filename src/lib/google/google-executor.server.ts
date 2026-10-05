@@ -70,13 +70,12 @@ function previewSummary(result: unknown) {
     ? row.containerVersion as Record<string, unknown>
     : {};
   const count = (key: string) => Array.isArray(version[key]) ? (version[key] as unknown[]).length : 0;
-  const sync = row.syncStatus && typeof row.syncStatus === "object"
-    ? Object.fromEntries(
-        Object.entries(row.syncStatus as Record<string, unknown>)
-          .filter(([, value]) => typeof value === "boolean")
-          .slice(0, 20),
-      )
-    : {};
+  const sync: Record<string, boolean> = {};
+  if (row.syncStatus && typeof row.syncStatus === "object") {
+    for (const [key, value] of Object.entries(row.syncStatus as Record<string, unknown>).slice(0, 20)) {
+      if (typeof value === "boolean") sync[key] = value;
+    }
+  }
   return {
     compilerError: Boolean(row.compilerError),
     syncStatus: sync,
@@ -155,6 +154,12 @@ export async function executeGovernedGoogleAction(
       ? { method: sensitiveToken.method, tokenHash: sensitiveToken.tokenHash }
       : preview ?? executed.result;
     const rollback = googleRollbackPlan(contract, executed.result);
+    const rollbackView = {
+      mode: rollback.mode,
+      action: rollback.action ?? null,
+      note: rollback.note,
+      payloadHash: rollback.payload ? googlePayloadHash(rollback.payload) : null,
+    };
 
     await completeGoogleAction(sql, proposal, actorRef, {
       providerRequestId: executed.requestId,
@@ -181,7 +186,7 @@ export async function executeGovernedGoogleAction(
         },
       } : {}),
       ...(preview ? { preview } : {}),
-      rollback,
+      rollback: rollbackView,
     };
   } catch (error) {
     await failGoogleAction(
