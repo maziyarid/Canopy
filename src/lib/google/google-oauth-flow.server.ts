@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Sql } from "../db.ts";
 import type { AccessCtx } from "../server/access.ts";
 import { parseVaultKeyring } from "../social/vault-keyring.server.ts";
-import { storeCredential } from "../social/vault-store.server.ts";
+import { replaceCredential, storeCredential } from "../social/vault-store.server.ts";
 import { validateConnectionScopes, type GoogleResourceBinding } from "./google-governance-core.ts";
 import type { GoogleProvider } from "./google-capabilities.ts";
 
@@ -155,30 +155,64 @@ export async function completeGoogleOAuthConnection(
   if (!expected.every((scope) => granted.includes(scope))) throw new Error("google_oauth_scope_mismatch");
 
   const keyring = parseVaultKeyring(env);
-  const stored = await storeCredential(sql, keyring, {
-    projectId: record.project_id,
-    provider: "google:" + record.provider,
-    label: record.profile_mode + " OAuth refresh token",
-    plaintext: JSON.stringify({ refreshToken: token.refresh_token }),
-    actorRef: record.actor_ref,
-  });
-
-  const id = crypto.randomUUID();
-  await sql.query(
-    "insert into google_connection_profiles " +
-      "(id,project_id,provider,profile_mode,account_ref,credential_ref,auth_type,scopes,resource_bindings,status,token_expires_at,created_by) " +
-      "values($1,$2,$3,$4,'',$5,'oauth2',$6,'[]','pending',$7,$8)",
-    [
-      id,
-      record.project_id,
-      record.provider,
-      record.profile_mode,
-      stored.credentialRef,
-      JSON.stringify(granted),
-      token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null,
-      record.actor_ref,
-    ],
+  const existing = await sql.query<{ id: string; credential_ref: string }>(
+    "select id,credential_ref from google_connection_profiles " +
+      "where project_id=$1 and provider=$2 and profile_mode=$3 order by created_at limit 1",
+    [record.project_id, record.provider, record.profile_mode],
   );
+
+  let id: string;
+  if (existing[0]) {
+    id = existing[0].id;
+    await replaceCredential(sql, keyring, {
+      credentialRef: existing[0].credential_ref,
+      projectId: record.project_id,
+      provider: "google:" + record.provider,
+      plaintext: JSON.stringify({ refreshToken: token.refresh_token }),
+      actorRef: record.actor_ref,
+    });
+    await sql.query(
+      "update google_connection_profiles set account_ref='',auth_type='oauth2',scopes=$4," +
+        "resource_bindings='[]',status='pending',token_expires_at=$5,last_verified_at=null,updated_at=now() " +
+        "where id=$1 and project_id=$2 and provider=$3",
+      [
+        id,
+        record.project_id,
+        record.provider,
+        JSON.stringify(granted),
+        token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null,
+      ],
+    );
+    await sql.query(
+      "update google_capability_grants set status='revoked',updated_at=now() " +
+        "where project_id=$1 and connection_profile_id=$2 and status='active'",
+      [record.project_id, id],
+    );
+  } else {
+    const stored = await storeCredential(sql, keyring, {
+      projectId: record.project_id,
+      provider: "google:" + record.provider,
+      label: record.profile_mode + " OAuth refresh token",
+      plaintext: JSON.stringify({ refreshToken: token.refresh_token }),
+      actorRef: record.actor_ref,
+    });
+    id = crypto.randomUUID();
+    await sql.query(
+      "insert into google_connection_profiles " +
+        "(id,project_id,provider,profile_mode,account_ref,credential_ref,auth_type,scopes,resource_bindings,status,token_expires_at,created_by) " +
+        "values($1,$2,$3,$4,'',$5,'oauth2',$6,'[]','pending',$7,$8)",
+      [
+        id,
+        record.project_id,
+        record.provider,
+        record.profile_mode,
+        stored.credentialRef,
+        JSON.stringify(granted),
+        token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null,
+        record.actor_ref,
+      ],
+    );
+  }
   await sql.query(
     "insert into operation_receipts " +
       "(id,project_id,actor_ref,operation,target_ref,status,approval_ref,idempotency_key,evidence) " +
