@@ -8,7 +8,7 @@ const proposal: GoogleGovernedProposal = {
   provider:"gsc",capability:"google.gsc.site.remove",action:"gsc.site.remove",
   resourceType:"gsc_site",resourceRef:"sc-domain:example.com",payload:{},
   payloadHash:"a".repeat(64),deterministicDiff:{operation:"delete",resourceRef:"sc-domain:example.com",fields:{}},
-  snapshotHash:"",approvalPolicy:"ada",approvalRef:"",idempotencyKey:"i",status:"pending_approval",expiresAt:"2026-10-05T12:00:00Z",
+  snapshotHash:"",approvalPolicy:"ada",approvalRef:"",approvalRequestRef:"",idempotencyKey:"i",status:"pending_approval",expiresAt:"2026-10-05T12:00:00Z",
 };
 
 test("approval bridge is loopback-only and sends metadata-only proposal", async () => {
