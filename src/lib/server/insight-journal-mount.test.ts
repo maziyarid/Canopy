@@ -279,6 +279,42 @@ describe("AAX-82 insight journal mount", () => {
     }
   });
 
+  it("redacts client beside-placement site and period metadata", () => {
+    const poisonedSite = "https://example.com api_key=site-secret";
+    const poisonedStart = "2026-09-01 access_token=start-secret";
+    const poisonedEnd = "2026-09-28 refresh_token=end-secret";
+    const poisonedSnapshot: ReportingSnapshotLike = {
+      ...snapshot,
+      site: poisonedSite,
+      period: { start: poisonedStart, end: poisonedEnd },
+    };
+    const approved = approveForClient(
+      createInsight(
+        draft({
+          evidenceRefs: [{
+            ...clicks,
+            site: poisonedSite,
+            periodStart: poisonedStart,
+            periodEnd: poisonedEnd,
+          }],
+        }),
+      ),
+      "human:editor",
+    );
+    const model = mountInsightJournal({
+      insights: [approved],
+      snapshot: poisonedSnapshot,
+      role: "client",
+    });
+    assert.equal(model.beside.length, 1);
+    const placement = model.beside[0];
+    const exposed = `${placement.site} ${placement.periodStart} ${placement.periodEnd}`;
+    assert.equal(exposed.includes("site-secret"), false);
+    assert.equal(exposed.includes("start-secret"), false);
+    assert.equal(exposed.includes("end-secret"), false);
+    assert.match(exposed, /<redacted>/);
+  });
+
   it("redacts credential-shaped client journal text without a second mount", () => {
     const approved = approveForClient(
       createInsight(draft({

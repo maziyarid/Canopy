@@ -154,9 +154,9 @@ export function mountInsightJournal(options: {
         if (!cards.length) continue;
         beside.push({
           metricName: options.role === "client" ? (redactClientText(metric.name) ?? "metric") : metric.name,
-          site: options.snapshot.site,
-          periodStart: options.snapshot.period.start,
-          periodEnd: options.snapshot.period.end,
+          site: options.role === "client" ? (redactClientText(options.snapshot.site) ?? "") : options.snapshot.site,
+          periodStart: options.role === "client" ? (redactClientText(options.snapshot.period.start) ?? "") : options.snapshot.period.start,
+          periodEnd: options.role === "client" ? (redactClientText(options.snapshot.period.end) ?? "") : options.snapshot.period.end,
           cards,
         });
       }

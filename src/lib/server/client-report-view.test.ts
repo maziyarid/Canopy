@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   applySectionFreshness,
@@ -11,6 +12,7 @@ import {
   clientLabelForStatus,
   freshnessStatus,
   groupAcquisitionChannels,
+  isReportingConfiguredForRole,
   newestMeasurementStamp,
   normalizeClientStatus,
   parseTimestamp,
@@ -255,6 +257,36 @@ describe("AAX-80 gated client dashboard", () => {
         }),
       /client_supplied_scope_rejected/,
     );
+  });
+
+  it("keeps client reporting disabled while owner/editor internal reporting stays configured", () => {
+    assert.equal(isReportingConfiguredForRole("client"), false);
+    assert.equal(isReportingConfiguredForRole("owner"), true);
+    assert.equal(isReportingConfiguredForRole("editor"), true);
+  });
+
+  it("wires the client activation gate before reporting data reads in every client entrypoint", () => {
+    const source = readFileSync(new URL("./reporting-snapshot.ts", import.meta.url), "utf8");
+    const slices = [
+      ["getReportingSnapshot", "refreshReportingSnapshot"],
+      ["getProjectReport", "exportProjectReport"],
+      ["exportProjectReport", "getProjectSearchTable"],
+      ["getProjectSearchTable", ""],
+    ] as const;
+    for (const [startName, endName] of slices) {
+      const start = source.indexOf(`export const ${startName}`);
+      const end = endName ? source.indexOf(`export const ${endName}`, start + 1) : source.length;
+      assert.ok(start >= 0 && end > start, `missing source slice for ${startName}`);
+      const block = source.slice(start, end);
+      assert.match(block, /isReportingConfiguredForRole/);
+      const gateAt = block.indexOf("isReportingConfiguredForRole");
+      const readAt = Math.min(
+        ...["loadReportingSnapshot", "loadSearchTable"]
+          .map((token) => block.indexOf(token))
+          .filter((index) => index >= 0),
+      );
+      if (Number.isFinite(readAt)) assert.ok(gateAt < readAt, `${startName} must gate before data read`);
+    }
   });
 
   it("fails closed and does not call the disabled reporting route when unconfigured", async () => {

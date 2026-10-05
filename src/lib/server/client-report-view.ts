@@ -351,6 +351,15 @@ export function buildClientReportView(input: {
 export const CLIENT_DASHBOARD_TRANSPORT = "local_view_model_only" as const;
 export const DISABLED_REPORTING_ROUTE = "/api/v1/reporting/snapshot";
 
+/**
+ * AAX-80 activation gate. Client reporting remains fail-closed until the
+ * separate AAX-81 transport/authentication gate is explicitly promoted.
+ * Internal owner/editor reporting continues to use the local snapshot model.
+ */
+export function isReportingConfiguredForRole(role: ReportRole): boolean {
+  return role !== "client";
+}
+
 export type DashboardAccess = {
   role: ReportRole;
   boundProjectId: string;

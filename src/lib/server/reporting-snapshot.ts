@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { resolveAccess } from "./access";
 import { studioAuth } from "./studio-auth";
-import { loadReportingSnapshot, refreshReportingSnapshotRecord, reportClosingDate } from "./reporting-snapshot-service";
+import { loadReportingSnapshot, refreshReportingSnapshotRecord, reportClosingDate, resolveSnapshotAccess, SnapshotAccessError } from "./reporting-snapshot-service";
 import { getProviderStates, getProviderMetricRows, getProviderSearchRows } from "../analytics/gateway.server";
 import { readGatewayLedger } from "./reporting-ledger";
 import { loadSearchTable } from "./search-table";
@@ -11,7 +11,7 @@ import { periodFromLabel } from "./reporting-snapshot-core";
 import { parseReportSections } from "./report-sections";
 import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
-import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod, redactClientText } from "./client-report-view";
+import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod, isReportingConfiguredForRole, redactClientText } from "./client-report-view";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
@@ -41,13 +41,23 @@ export const getReportingSnapshot = createServerFn({ method: "GET" })
   .validator(GetSchema)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
+    const access = await resolveSnapshotAccess(
+      resolveAccess,
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+    );
+    if (!isReportingConfiguredForRole(access.role)) {
+      throw new SnapshotAccessError(503, "Reporting unavailable");
+    }
     return loadReportingSnapshot({
       sql,
       readLedger,
       resolveAccess,
       userId: context.userId,
       email: context.email,
-      projectId: data.projectId,
+      projectId: access.project.id,
       periodLabel: data.period,
       comparisonLabel: data.comparison, endDate: data.endDate,
       correlationId: data.correlationId,
@@ -79,6 +89,45 @@ export const getProjectReport = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const reportingConfigured = isReportingConfiguredForRole(access.role);
+    if (!reportingConfigured) {
+      const period = periodFromLabel(data.period, reportClosingDate(data.endDate));
+      const dashboardAccess = bindResolvedDashboardAccess({
+        role: access.role,
+        resolvedProjectId: access.project.id,
+        requestedProjectId: data.projectId,
+        snapshotProjectId: access.project.id,
+        reportingConfigured,
+      });
+      const view = buildGatedClientDashboard({
+        access: dashboardAccess,
+        site: access.project.domain,
+        periodLabel: period.label,
+        comparisonLabel: null,
+        grants: access.reportSections ?? [],
+        sections: [],
+      });
+      return {
+        view,
+        journal: mountInsightJournal({
+          insights: [],
+          generate: false,
+          role: access.role,
+          projectId: dashboardAccess.boundProjectId,
+          truncated: false,
+          visibleLimit: 100,
+        }),
+        notes: [],
+        notesTruncated: false,
+        visibleNoteLimit: 100,
+        canManageNotes: false,
+        canReadSearchTable: false,
+        canWriteNotes: false,
+        period: clientSafePeriod(period),
+        comparison: null,
+        comparisons: [],
+      };
+    }
     const snapshot = await loadReportingSnapshot({ sql, readLedger, resolveAccess, userId: context.userId, email: context.email, projectId: data.projectId, periodLabel: data.period, comparisonLabel: data.comparison, endDate: data.endDate });
     if (access.role !== "client") await persistSnapshotInsights(sql, access, snapshot);
     const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
@@ -89,7 +138,7 @@ export const getProjectReport = createServerFn({ method: "GET" })
       resolvedProjectId: access.project.id,
       requestedProjectId: data.projectId,
       snapshotProjectId: snapshot.projectId,
-      reportingConfigured: true,
+      reportingConfigured,
     });
     const view = buildGatedClientDashboard({
       access: dashboardAccess,
@@ -130,6 +179,9 @@ export const exportProjectReport = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    if (!isReportingConfiguredForRole(access.role)) {
+      throw new SnapshotAccessError(503, "Reporting unavailable");
+    }
     const snapshot = await loadReportingSnapshot({
       sql,
       readLedger,
@@ -148,13 +200,17 @@ export const exportProjectReport = createServerFn({ method: "POST" })
       snapshotProjectId: snapshot.projectId,
     });
     if (access.role === "client") {
+      const reportingConfigured = isReportingConfiguredForRole(access.role);
+      if (!reportingConfigured) {
+        throw new SnapshotAccessError(503, "Reporting unavailable");
+      }
       const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
       const dashboardAccess = bindResolvedDashboardAccess({
         role: access.role,
         resolvedProjectId: boundProjectId,
         requestedProjectId: data.projectId,
         snapshotProjectId: snapshot.projectId,
-        reportingConfigured: true,
+        reportingConfigured,
       });
       const view = buildGatedClientDashboard({
         access: dashboardAccess,
@@ -206,6 +262,9 @@ export const getProjectSearchTable = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const sql = await getSql();
     const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    if (!isReportingConfiguredForRole(access.role)) {
+      throw new SnapshotAccessError(503, "Reporting unavailable");
+    }
     const projectId = gateProjectSearch({
       role: access.role,
       resolvedProjectId: access.project.id,
