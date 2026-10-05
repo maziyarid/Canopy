@@ -204,12 +204,30 @@ export async function bindGoogleConnectionResources(
     .filter(Boolean))];
   const accountRef = accountRefs.length === 1 ? accountRefs[0] : "";
 
-  const rows = await sql.query<{ id: string }>(
+  const rows = await sql.query<{ id: string; status: string }>(
     "update google_connection_profiles set resource_bindings=$3,account_ref=$4,updated_at=now() " +
-      "where id=$1 and project_id=$2 and status in ('pending','error') returning id",
+      "where id=$1 and project_id=$2 and status in ('pending','error','active') returning id,status",
     [profileId, access.project.id, JSON.stringify(requested), accountRef],
   );
   if (!rows[0]) throw new Error("google_connection_state_conflict");
+
+  if (rows[0].status === "active") {
+    const grants = await sql.query<{ id: string; resource_type: string; resource_ref: string }>(
+      "select id,resource_type,resource_ref from google_capability_grants " +
+        "where project_id=$1 and connection_profile_id=$2 and status='active'",
+      [access.project.id, profileId],
+    );
+    const stillBound = new Set(requested.map((binding) => binding.type + "\n" + binding.ref));
+    for (const grant of grants) {
+      if (!stillBound.has(grant.resource_type + "\n" + grant.resource_ref)) {
+        await sql.query(
+          "update google_capability_grants set status='revoked',updated_at=now() " +
+            "where id=$1 and project_id=$2 and status='active'",
+          [grant.id, access.project.id],
+        );
+      }
+    }
+  }
   await sql.query(
     "insert into operation_receipts " +
       "(id,project_id,actor_ref,operation,target_ref,status,approval_ref,idempotency_key,evidence) " +
