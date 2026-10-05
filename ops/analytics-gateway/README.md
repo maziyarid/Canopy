@@ -35,6 +35,32 @@ The job fails closed if that mapping is absent, malformed, or references a GSC p
 
 The standalone `monitor_dispatch.py` path likewise requires `MS_ROBOT_MONITOR_PROJECT_ID`; it must not run as a portfolio-wide unscoped monitor.
 
+### GA4 Data API reporting
+
+GA4 reporting uses the same loopback Google provider and server-side service-account identity as GSC, with the minimum read-only `analytics.readonly` scope. Account discovery through the Analytics Admin API does not establish reporting access; a real Data API `runReport` read is required before GA4 can be treated as available.
+
+The gateway never infers a GA4 property from a domain. Configure `MS_ROBOT_PROJECT_GA4_MAP_JSON` only in the protected analytics environment, using canonical Ms Robot project IDs, normalized site keys and explicit GA4 property references. Example shape only:
+
+```json
+{
+  "project-id": {
+    "example.com": "properties/123456789"
+  }
+}
+```
+
+Missing, malformed, cross-project or unmapped entries fail closed. The mapping is configuration, not a credential, but it still belongs server-side because it defines tenant/property authority. Browser clients never submit or select a property ID.
+
+The provider calls the official Google Analytics Data API `v1beta properties.runReport` endpoint for:
+- period summary metrics (active/new users, sessions, engaged sessions, engagement rate, average session duration, event count and key events);
+- daily measurements;
+- session default channel group;
+- landing-page path.
+
+Raw provider credentials never leave the Google adapter. Query strings and fragments are removed from landing-page values; identifier-shaped path segments are redacted before persistence. Reporting snapshots expose only normalized aggregate facts. They include provider, exact property reference, measurement date, provider timezone when supplied, retrieval timestamp, freshness and partial/complete coverage status.
+
+GA4 is independent from GSC: a GA4 failure must not erase valid Search Console data, and a GSC failure must not turn missing Analytics data into zero. Do not enable GA4 for a project until the mapped property is actually authorised to the existing Google identity and a bounded real read has succeeded.
+
 ## Ada bridge receipts (AAX-69)
 
 `ada_bridge_consumer.py` is an explicitly enabled, bounded consumer of the existing
