@@ -170,7 +170,7 @@ export const exportProjectReport = createServerFn({ method: "POST" })
         evidenceTitles: journal.journal.days.flatMap((day) => day.cards.map((card) => card.title)),
       });
       await sql`insert into operation_receipts(id,project_id,actor_ref,operation,target_ref,status,evidence)
-        values (${crypto.randomUUID()},${boundProjectId},${context.userId},'report.export.csv',${boundProjectId},'completed',${JSON.stringify({ schemaVersion: snapshot.schemaVersion, start: snapshot.period.start, end: snapshot.period.end, clientSafe: true, evidenceTitleCount: journal.journal.days.reduce((count, day) => count + day.cards.length, 0) })}`;
+        values (${crypto.randomUUID()},${boundProjectId},${context.userId},'report.export.csv',${boundProjectId},'completed',${JSON.stringify({ schemaVersion: snapshot.schemaVersion, start: snapshot.period.start, end: snapshot.period.end, clientSafe: true, evidenceTitleCount: journal.journal.days.reduce((count, day) => count + day.cards.length, 0) })})`;
       return { content, contentType: "text/csv;charset=utf-8", filename: `ms-robot-report-${snapshot.period.start}-${snapshot.period.end}.csv` };
     }
     return exportReportRecord({
