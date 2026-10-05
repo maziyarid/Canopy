@@ -163,12 +163,36 @@ export function googleApprovalEnvelope(proposal: GoogleGovernedProposal, siteKey
   };
 }
 
+const PRIVATE_RESULT_KEYS = /^(?:email|emailAddress|user|refreshToken|refresh_token|accessToken|access_token|idToken|id_token|clientSecret|client_secret|authorization|cookie)$/i;
+
+function minimiseReceipt(value: unknown, depth = 0): unknown {
+  if (depth > 8) return "[truncated]";
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => minimiseReceipt(item, depth + 1));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 100)) {
+      if (PRIVATE_RESULT_KEYS.test(key)) {
+        out[key] = "<redacted>";
+        continue;
+      }
+      out[key] = minimiseReceipt(item, depth + 1);
+    }
+    return out;
+  }
+  if (typeof value === "string") {
+    if (SECRETISH.test(value)) return "<redacted>";
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "<redacted-email>";
+    return value.slice(0, 2000);
+  }
+  return value;
+}
+
 export function safeGoogleReceipt(value: unknown) {
-  const json = canonicalGooglePayload(value);
+  const json = canonicalGooglePayload(minimiseReceipt(value));
   if (json.length > 16000 || SECRETISH.test(json)) throw new Error("unsafe_google_result_receipt");
   return json;
 }
 
 export function safeGoogleError(error: string) {
-  return error.replace(SECRETISH, "<redacted>").slice(0, 1000);
+  return error.replace(SECRETISH, "<redacted>").replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "<redacted-email>").slice(0, 1000);
 }
