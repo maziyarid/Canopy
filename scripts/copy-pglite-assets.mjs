@@ -16,40 +16,36 @@ async function exists(path) {
   }
 }
 
-export async function pgliteAssetTargets(root) {
-  const candidates = [
-    {
+export function pgliteAssetTarget(root, env = process.env) {
+  const preset = env.NITRO_PRESET?.trim() || "vercel";
+  if (preset === "vercel") {
+    return {
+      preset,
       parent: join(root, ".vercel", "output", "functions", "__server.func"),
       target: join(root, ".vercel", "output", "functions", "__server.func", "_libs"),
-      label: "vercel",
-    },
-    {
+    };
+  }
+  if (preset === "node-server") {
+    return {
+      preset,
       parent: join(root, ".output", "server"),
       target: join(root, ".output", "server", "_libs"),
-      label: "node-server",
-    },
-  ];
-
-  const targets = [];
-  for (const candidate of candidates) {
-    if (await exists(candidate.parent)) targets.push(candidate);
+    };
   }
-  return targets;
+  throw new Error(`unsupported Nitro preset for PGlite asset packaging: ${preset}`);
 }
 
-export async function copyPgliteAssets(root = defaultRoot) {
+export async function copyPgliteAssets(root = defaultRoot, env = process.env) {
   const source = join(root, "node_modules", "@electric-sql", "pglite", "dist");
-  const targets = await pgliteAssetTargets(root);
-  if (!targets.length) {
-    throw new Error("no supported Nitro build output found (.vercel or .output/server)");
+  const { preset, parent, target } = pgliteAssetTarget(root, env);
+  if (!(await exists(parent))) {
+    throw new Error(`Nitro ${preset} build output not found at ${parent}`);
   }
 
-  for (const { target, label } of targets) {
-    await mkdir(target, { recursive: true });
-    for (const name of files) {
-      await copyFile(join(source, name), join(target, name));
-      console.log(`[pglite-assets] copied ${name} -> ${label}`);
-    }
+  await mkdir(target, { recursive: true });
+  for (const name of files) {
+    await copyFile(join(source, name), join(target, name));
+    console.log(`[pglite-assets] copied ${name} -> ${preset}`);
   }
 }
 

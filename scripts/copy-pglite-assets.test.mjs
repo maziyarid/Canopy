@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyPgliteAssets, pgliteAssetTargets } from "./copy-pglite-assets.mjs";
+import { copyPgliteAssets, pgliteAssetTarget } from "./copy-pglite-assets.mjs";
 
 const files = ["pglite.data", "pglite.wasm", "initdb.wasm"];
 
@@ -15,44 +15,64 @@ async function fixture() {
   return root;
 }
 
-test("copies PGlite assets into a node-server Nitro build", async () => {
+test("copies PGlite assets into the current node-server Nitro build", async () => {
   const root = await fixture();
   try {
     await mkdir(join(root, ".output", "server"), { recursive: true });
-    await copyPgliteAssets(root);
+    await copyPgliteAssets(root, { NITRO_PRESET: "node-server" });
     for (const name of files) {
       assert.equal(
         await readFile(join(root, ".output", "server", "_libs", name), "utf8"),
         `fixture:${name}`,
       );
     }
-    assert.deepEqual((await pgliteAssetTargets(root)).map((x) => x.label), ["node-server"]);
+    assert.equal(
+      pgliteAssetTarget(root, { NITRO_PRESET: "node-server" }).preset,
+      "node-server",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("copies PGlite assets into a Vercel Nitro build without creating node-server output", async () => {
+test("copies PGlite assets into the default Vercel Nitro build", async () => {
   const root = await fixture();
   try {
     await mkdir(join(root, ".vercel", "output", "functions", "__server.func"), { recursive: true });
-    await copyPgliteAssets(root);
+    await copyPgliteAssets(root, {});
     for (const name of files) {
       assert.equal(
         await readFile(join(root, ".vercel", "output", "functions", "__server.func", "_libs", name), "utf8"),
         `fixture:${name}`,
       );
     }
-    assert.deepEqual((await pgliteAssetTargets(root)).map((x) => x.label), ["vercel"]);
+    assert.equal(pgliteAssetTarget(root, {}).preset, "vercel");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("fails closed when no supported Nitro build output exists", async () => {
+test("unsupported preset fails even when a stale supported output directory exists", async () => {
   const root = await fixture();
   try {
-    await assert.rejects(copyPgliteAssets(root), /no supported Nitro build output/);
+    await mkdir(join(root, ".vercel", "output", "functions", "__server.func"), { recursive: true });
+    await assert.rejects(
+      copyPgliteAssets(root, { NITRO_PRESET: "cloudflare-pages" }),
+      /unsupported Nitro preset/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("selected preset fails closed when its current build output is missing", async () => {
+  const root = await fixture();
+  try {
+    await mkdir(join(root, ".vercel", "output", "functions", "__server.func"), { recursive: true });
+    await assert.rejects(
+      copyPgliteAssets(root, { NITRO_PRESET: "node-server" }),
+      /node-server build output not found/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
