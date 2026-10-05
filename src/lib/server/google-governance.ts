@@ -178,7 +178,7 @@ export const startGoogleWriteOAuth = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .validator(ProjectScope.extend({
     provider: z.enum(GOOGLE_PROVIDERS),
-    profileMode: z.enum(["write", "admin"]),
+    profileMode: z.enum(["write", "publish", "admin"]),
     scopes: z.array(z.string().min(1).max(300)).min(1).max(12),
   }))
   .handler(async ({ context, data }) => {
