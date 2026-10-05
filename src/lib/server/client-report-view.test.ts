@@ -288,6 +288,36 @@ describe("AAX-80 gated client dashboard", () => {
     );
   });
 
+
+  it("rejects a missing or padded server project binding", () => {
+    assert.throws(
+      () =>
+        buildGatedClientDashboard({
+          access: { role: "client", boundProjectId: "  ", reportingConfigured: true },
+          site: "example.com",
+          periodLabel: "2026-09-01..2026-09-28",
+          sections: [section({})],
+        }),
+      /client_supplied_scope_rejected/,
+    );
+  });
+
+  it("does not widen a keyword-restricted grant into acquisition", () => {
+    const view = buildGatedClientDashboard({
+      access: { role: "client", boundProjectId: "project-a", reportingConfigured: true },
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      grants: ["search"],
+      sections: [
+        section({ key: "search" }),
+        section({ key: "acquisition", metrics: [{ name: "organic", value: 9, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" }] }),
+      ],
+      now: NOW,
+    });
+    assert.deepEqual(view.sections.map((item) => item.key), ["search"]);
+    assert.equal(view.acquisitionStatus, null);
+    assert.equal(view.channels.organic.length, 0);
+  });
   it("strips reason codes and provider health from the client role", () => {
     const view = buildGatedClientDashboard({
       access: { role: "client", boundProjectId: "project-a", requestedProjectId: "project-a", reportingConfigured: true },

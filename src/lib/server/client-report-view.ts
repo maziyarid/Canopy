@@ -367,8 +367,12 @@ export class ClientDashboardScopeError extends Error {
 }
 
 export function assertDashboardScope(access: DashboardAccess): void {
+  const bound = access.boundProjectId?.trim();
+  if (!bound || bound !== access.boundProjectId) {
+    throw new ClientDashboardScopeError();
+  }
   const requested = access.requestedProjectId?.trim();
-  if (requested && requested !== access.boundProjectId) {
+  if (requested && requested !== bound) {
     throw new ClientDashboardScopeError();
   }
 }
