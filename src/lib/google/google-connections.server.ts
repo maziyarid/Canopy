@@ -22,7 +22,7 @@ type ProfileRow = {
   id: string;
   project_id: string;
   provider: GoogleProvider;
-  profile_mode: "write" | "admin";
+  profile_mode: "write" | "publish" | "admin";
   account_ref: string;
   credential_ref: string;
   auth_type: "oauth2" | "service_account";
@@ -60,7 +60,7 @@ type EffectiveGrantRow = {
   profile_id: string;
   profile_project_id: string;
   profile_provider: GoogleProvider;
-  profile_mode: "write" | "admin";
+  profile_mode: "write" | "publish" | "admin";
   account_ref: string;
   credential_ref: string;
   auth_type: "oauth2" | "service_account";
@@ -169,7 +169,7 @@ export async function createGoogleConnectionProfile(
   actorRef: string,
   input: {
     provider: GoogleProvider;
-    profileMode: "write" | "admin";
+    profileMode: "write" | "publish" | "admin";
     accountRef?: string;
     credentialRef: string;
     authType?: "oauth2" | "service_account";
@@ -472,7 +472,7 @@ export type EffectiveGoogleGrantView = {
   resourceType: GoogleResourceType;
   resourceRef: string;
   connectionProfileId: string;
-  profileMode: "write" | "admin";
+  profileMode: "write" | "publish" | "admin";
   expiresAt: string | null;
 };
 
@@ -489,7 +489,7 @@ export async function listEffectiveGoogleGrants(
     resource_type: GoogleResourceType;
     resource_ref: string;
     connection_profile_id: string;
-    profile_mode: "write" | "admin";
+    profile_mode: "write" | "publish" | "admin";
     expires_at: string | null;
   }>(
     "select g.id,g.provider,g.capability,g.resource_type,g.resource_ref,g.connection_profile_id," +
