@@ -133,6 +133,7 @@ function parentOf(path: string, segment: string) {
   return index < 0 ? "" : path.slice(0, index);
 }
 
+export const GOOGLE_RESOURCE_TYPES = ["gsc_site", "gtm_account", "gtm_container", "ga4_property", "ads_customer"] as const;
 export type GoogleResourceType = "gsc_site" | "gtm_account" | "gtm_container" | "ga4_property" | "ads_customer";
 
 export function validateGoogleResourceRef(resourceType: GoogleResourceType, resourceRef: string) {
