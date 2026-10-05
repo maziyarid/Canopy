@@ -1,3 +1,4 @@
+import { appHref } from "@/lib/public-paths";
 import { Button } from "@/components/ui";
 import { useT } from "@/lib/locale";
 import { authEnabled, signOut } from "@/lib/auth/client";
@@ -11,7 +12,7 @@ export function UserMenu() {
   if (isPending) return <div className="h-8 w-28 animate-pulse rounded-full bg-raised" />;
   if (!user) {
     return (
-      <a href="/login" className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-fg">
+      <a href={appHref("/login")} className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-fg">
         {t("ctaLogin")}
       </a>
     );

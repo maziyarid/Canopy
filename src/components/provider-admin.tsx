@@ -1,3 +1,4 @@
+import { appHref } from "@/lib/public-paths";
 import { AdaEventsPanel } from "./ada-events-panel";
 import { attachAmbientDataDomain, readAmbientDataDomain } from "@/lib/ambient-data-domain";
 import { Badge, Button } from "@/components/ui";
@@ -216,7 +217,7 @@ export function ProviderAdminPanel({ projectId }: { projectId: string }) {
       ) : null}
       <section className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <img src={`/brand/ms-robot/state-${!data.runtimeAvailable ? "offline" : data.providers.some(provider => ["error", "degraded"].includes(provider.status)) ? "alert" : data.providers.some(provider => provider.status === "ok") ? "neutral" : "confused"}-96.webp`} width={64} height={47} className="h-auto w-16" alt="" />
+          <img src={appHref(`/brand/ms-robot/state-${!data.runtimeAvailable ? "offline" : data.providers.some(provider => ["error", "degraded"].includes(provider.status)) ? "alert" : data.providers.some(provider => provider.status === "ok") ? "neutral" : "confused"}-96.webp`)} width={64} height={47} className="h-auto w-16" alt="" />
           <div>
             <h2 className="font-display text-xl font-semibold">{ui.title}</h2>
             <p className="mt-1 max-w-3xl text-sm text-muted">{ui.body}</p>

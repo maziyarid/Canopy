@@ -1,6 +1,9 @@
+import { APP_BASE } from "../public-paths";
 import { launchConfig, LaunchError, redeemLaunch } from "./platform-launch.ts";
 export async function acceptPlatformLaunch(request: Request): Promise<Response> {
   try {
+    // A prefixed receiver cannot safely use the legacy origin-only launch contract.
+    if (APP_BASE !== "/") throw new LaunchError(404);
     const config = launchConfig(process.env);
     if (!config) throw new LaunchError(404);
     const receipt = await redeemLaunch(request, config);

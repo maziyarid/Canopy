@@ -6,15 +6,24 @@ export declare function appNameFromHost(hostHeader: string | null | undefined, f
 export declare function publicAppHost(hostHeader: string | null | undefined): string;
 export declare function resolvePublicHost(hostHeader: string | null | undefined): string;
 export declare function isInstallQuery(url: string | null | undefined): boolean;
-export declare function isDocumentPath(pathname: string | null | undefined): boolean;
+export declare function isDocumentPath(
+  pathname: string | null | undefined,
+  options?: { appBase?: string },
+): boolean;
 export declare function acceptsHtml(accept: string | null | undefined): boolean;
 export declare function stripInstallParams(url: string | null | undefined): string;
 export declare function renderInstallPageHtml(
   template: string,
-  context?: { host?: string | null; url?: string | null },
+  context?: { host?: string | null; url?: string | null; appBase?: string },
 ): string;
-export declare function renderWebManifest(hostHeader: string | null | undefined): string;
-export declare function grokPwaHeadTags(appName?: string): Array<[string, string]>;
+export declare function renderWebManifest(
+  hostHeader: string | null | undefined,
+  options?: { appBase?: string },
+): string;
+export declare function grokPwaHeadTags(
+  appName?: string,
+  options?: { appBase?: string },
+): Array<[string, string]>;
 export declare const GROK_EXTENSIONS_SCRIPT_SRC: string;
 export declare function readGrokProjectId(): string;
 export declare function readXCreator(): string;
@@ -34,6 +43,7 @@ export type OgSite = {
 
 export type GrokHeadContext = {
   appName?: string;
+  appBase?: string;
   projectId?: string;
   creator?: string;
   creatorId?: string;
@@ -59,6 +69,7 @@ export declare function siteHasCustomCard(site?: OgSite): boolean;
 export declare function grokOgHeadTags(ctx?: {
   host?: string;
   appName?: string;
+  appBase?: string;
   site?: OgSite;
   documentTitle?: string;
   cwd?: string;
@@ -66,6 +77,7 @@ export declare function grokOgHeadTags(ctx?: {
 export declare function stripShareMetaTags(html: string): string;
 export declare function normalizeHeadContext(ctx?: GrokHeadContext): {
   appName: string;
+  appBase: string;
   projectId: string;
   creator: string;
   creatorId: string;

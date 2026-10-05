@@ -1,3 +1,4 @@
+import { APP_BASE } from "./public-paths";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
@@ -180,7 +181,7 @@ export const useCanopy = create<State>()(
         }),
     }),
     {
-      name: "canopy-ledger",
+      name: APP_BASE === "/" ? "canopy-ledger" : "msrobot:v1:ledger",
       skipHydration: true,
       partialize: (s) => ({
         settings: s.settings,

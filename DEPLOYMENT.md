@@ -1,5 +1,11 @@
 # Deployment Guide
 
+> Historical Vercel/subdomain reference below. It is not the current MS Robot
+> deployment runbook and must not be used for a subfolder cutover. The source-only
+> node-server candidate and verification commands are documented in
+> [MSROBOT-SUBFOLDER.md](docs/MSROBOT-SUBFOLDER.md). Actual release/proxy files and
+> the live source revision require fresh reconciliation before any activation.
+
 ## Overview
 
 This guide covers deploying Canopy to a subdomain of maziyarid.com using Vercel.

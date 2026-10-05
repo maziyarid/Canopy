@@ -1,3 +1,4 @@
+import { appHref } from "@/lib/public-paths";
 import { Mark } from "@/components/mark";
 import { Button } from "@/components/ui";
 import { useLocale, useT } from "@/lib/locale";
@@ -33,7 +34,7 @@ export function Landing() {
           <Button size="sm" variant="quiet" onClick={toggle}>
             {t("navLang")}
           </Button>
-          <a href="/login">
+          <a href={appHref("/login")}>
             <Button size="sm" variant="ghost">
               {t("ctaLogin")}
             </Button>
@@ -49,15 +50,15 @@ export function Landing() {
           </h1>
           <p className="mt-4 max-w-xl text-base leading-relaxed text-muted">{t("heroLead")}</p>
           <div className="mt-7 flex flex-wrap gap-3">
-            <a href="/login">
+            <a href={appHref("/login")}>
               <Button size="lg">{t("ctaStart")}</Button>
             </a>
-            <a href="/login">
+            <a href={appHref("/login")}>
               <Button size="lg" variant="ghost">
                 {t("ctaCreate")}
               </Button>
             </a>
-            <a href="/canopy-sheets.zip" download="canopy-sheets.zip">
+            <a href={appHref("/canopy-sheets.zip")} download="canopy-sheets.zip">
               <Button size="lg" variant="quiet">
                 {t("downloadScript")}
               </Button>

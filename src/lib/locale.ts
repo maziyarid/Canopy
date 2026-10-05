@@ -1,3 +1,5 @@
+import { APP_BASE } from "./public-paths";
+import { migrateLocalePreference } from "../../scripts/browser-storage.mjs";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Lang } from "./types";
@@ -9,6 +11,10 @@ type LocaleState = {
   toggle: () => void;
 };
 
+if (APP_BASE !== "/" && typeof window !== "undefined") {
+  try { migrateLocalePreference(window.localStorage); } catch { /* Storage unavailable. */ }
+}
+
 export const useLocale = create<LocaleState>()(
   persist(
     (set, get) => ({
@@ -16,7 +22,7 @@ export const useLocale = create<LocaleState>()(
       setLang: (lang) => set({ lang }),
       toggle: () => set({ lang: get().lang === "en" ? "fa" : "en" }),
     }),
-    { name: "canopy-lang" },
+    { name: APP_BASE === "/" ? "canopy-lang" : "msrobot:v1:locale" },
   ),
 );
 
