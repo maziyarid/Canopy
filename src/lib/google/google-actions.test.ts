@@ -1,12 +1,68 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { googlePayloadHash, prepareGoogleRequest, validateGoogleAction } from "./google-actions.ts";
+import { googlePayloadHash, googleRollbackPlan, prepareGoogleRequest, validateGoogleAction } from "./google-actions.ts";
 
 test("GSC sitemap submission is resource bound and uses official webmasters endpoint", () => {
   const action = validateGoogleAction("gsc.sitemap.submit", "sc-domain:example.com", { sitemapUrl: "https://example.com/sitemap.xml" });
   const request = prepareGoogleRequest(action);
   assert.equal(request.method, "PUT");
   assert.match(request.url, /webmasters\/v3\/sites\/sc-domain%3Aexample\.com\/sitemaps\/https%3A%2F%2Fexample\.com%2Fsitemap\.xml$/);
+});
+
+
+test("Search Console verification token uses Site Verification API and DNS-only domain methods", () => {
+  const action = validateGoogleAction("gsc.verification.get_token", "sc-domain:example.com", {
+    verificationMethod: "DNS_TXT",
+  });
+  const request = prepareGoogleRequest(action);
+  assert.equal(request.method, "POST");
+  assert.equal(request.url, "https://www.googleapis.com/siteVerification/v1/token");
+  assert.deepEqual(request.body, {
+    site: { type: "INET_DOMAIN", identifier: "example.com" },
+    verificationMethod: "DNS_TXT",
+  });
+  assert.throws(
+    () => validateGoogleAction("gsc.verification.verify", "sc-domain:example.com", { verificationMethod: "META" }),
+    /google_verification_method_invalid_for_domain/,
+  );
+});
+
+test("URL-prefix verification rejects DNS-only methods", () => {
+  assert.throws(
+    () => validateGoogleAction("gsc.verification.get_token", "https://example.com/", { verificationMethod: "DNS_TXT" }),
+    /google_verification_method_invalid_for_url_prefix/,
+  );
+  const action = validateGoogleAction("gsc.verification.verify", "https://example.com/", { verificationMethod: "META" });
+  const request = prepareGoogleRequest(action);
+  assert.match(request.url, /siteVerification\/v1\/webResource\?verificationMethod=META$/);
+  assert.deepEqual(request.body, { site: { type: "SITE", identifier: "https://example.com/" } });
+});
+
+test("GTM quick preview is read-only at the workspace boundary", () => {
+  const action = validateGoogleAction("gtm.workspace.preview", "accounts/1/containers/2", {
+    workspacePath: "accounts/1/containers/2/workspaces/4",
+  });
+  const request = prepareGoogleRequest(action);
+  assert.equal(request.method, "POST");
+  assert.equal(request.url, "https://tagmanager.googleapis.com/tagmanager/v2/accounts/1/containers/2/workspaces/4:quick_preview");
+  assert.equal(request.body, undefined);
+});
+
+test("rollback plans are explicit even when reversal is manual", () => {
+  const sitemap = validateGoogleAction("gsc.sitemap.submit", "sc-domain:example.com", {
+    sitemapUrl: "https://example.com/sitemap.xml",
+  });
+  assert.deepEqual(googleRollbackPlan(sitemap), {
+    mode: "automatic",
+    action: "gsc.sitemap.delete",
+    payload: { sitemapUrl: "https://example.com/sitemap.xml" },
+    note: "Delete the submitted sitemap.",
+  });
+
+  const publish = validateGoogleAction("gtm.version.publish", "accounts/1/containers/2", {
+    versionPath: "accounts/1/containers/2/versions/8",
+  });
+  assert.equal(googleRollbackPlan(publish).mode, "manual");
 });
 
 test("GTM tag cannot escape the granted container", () => {
