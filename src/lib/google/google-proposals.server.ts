@@ -39,6 +39,48 @@ export type AdaApprovalProof = {
   snapshotHash?: string;
 };
 
+export type GoogleProposalView = {
+  id: string;
+  projectId: string;
+  actorRef: string;
+  connectionProfileId: string;
+  provider: GoogleProvider;
+  capability: GoogleCapability;
+  action: GoogleActionKey;
+  resourceType: GoogleResourceType;
+  resourceRef: string;
+  payloadHash: string;
+  diffHash: string;
+  snapshotHash: string;
+  approvalPolicy: "grant" | "ada";
+  approvalRef: string;
+  idempotencyKey: string;
+  status: GoogleGovernedProposal["status"];
+  expiresAt: string | null;
+};
+
+export function googleProposalView(proposal: GoogleGovernedProposal): GoogleProposalView {
+  return {
+    id: proposal.id,
+    projectId: proposal.projectId,
+    actorRef: proposal.actorRef,
+    connectionProfileId: proposal.connectionProfileId,
+    provider: proposal.provider,
+    capability: proposal.capability,
+    action: proposal.action,
+    resourceType: proposal.resourceType,
+    resourceRef: proposal.resourceRef,
+    payloadHash: proposal.payloadHash,
+    diffHash: deterministicDiffHash(proposal.deterministicDiff),
+    snapshotHash: proposal.snapshotHash,
+    approvalPolicy: proposal.approvalPolicy,
+    approvalRef: proposal.approvalRef,
+    idempotencyKey: proposal.idempotencyKey,
+    status: proposal.status,
+    expiresAt: proposal.expiresAt,
+  };
+}
+
 function proposalFromRow(row: ProposalRow): GoogleGovernedProposal {
   return {
     id: row.id,
@@ -427,10 +469,7 @@ export async function listGoogleProposals(sql: Sql, access: AccessCtx) {
     "select * from google_action_proposals where project_id=$1 order by created_at desc limit 100",
     [access.project.id],
   );
-  return rows.map(proposalFromRow).map((proposal) => {
-    const { payload: _payload, ...safe } = proposal;
-    return safe;
-  });
+  return rows.map(proposalFromRow).map(googleProposalView);
 }
 
 export function proposalApprovalPolicy(action: GoogleActionKey) {
