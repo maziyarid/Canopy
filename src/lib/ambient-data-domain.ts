@@ -20,6 +20,12 @@ export function readAmbientDataDomain(): DataDomain | undefined {
   return parseAmbientDataDomain(sessionStorage.getItem(STORAGE_KEY));
 }
 
+export function withAmbientDataDomain<T extends Record<string, unknown>>(
+  payload: T,
+): T & { ambientDataDomain?: DataDomain } {
+  return attachAmbientDataDomain(payload, readAmbientDataDomain());
+}
+
 export function writeAmbientDataDomain(value: DataDomain | "" | null | undefined) {
   if (typeof sessionStorage === "undefined") return;
   const domain = parseAmbientDataDomain(value);
