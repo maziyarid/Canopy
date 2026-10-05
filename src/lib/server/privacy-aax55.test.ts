@@ -13,6 +13,7 @@ import {
 } from "./redact.ts";
 import { applyAmbientDataDomain, assertSameDataDomain } from "./access.ts";
 import type { DataDomain } from "./access.ts";
+import { withAmbientDataDomain } from "../ambient-data-domain.ts";
 
 describe("AAX-55 redactCredentials", () => {
   it("redacts Bearer tokens", () => {
@@ -183,9 +184,31 @@ describe("AAX-55 applyAmbientDataDomain", () => {
 });
 
 describe("AAX-55 workspace agent and Monday calls attach ambient domain", () => {
-  it("forwards session ambient domain into research agent and Monday push", () => {
+  it("forwards the live session domain through the shared runtime helper", () => {
+    const previous = globalThis.sessionStorage;
+    const values = new Map<string, string>([["ms-robot.ambientDataDomain", "medical"]]);
+    Object.defineProperty(globalThis, "sessionStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+    try {
+      assert.deepEqual(withAmbientDataDomain({ projectId: "p1" }), {
+        projectId: "p1",
+        ambientDataDomain: "medical",
+      });
+    } finally {
+      if (previous === undefined) delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
+      else Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: previous });
+    }
+  });
+
+  it("routes workspace agent and Monday calls through the shared helper", () => {
     const source = readFileSync(new URL("../../components/workspace.tsx", import.meta.url), "utf8");
-    assert.match(source, /attachAmbientDataDomain/);
+    assert.match(source, /withAmbientDataDomain as withAmbient/);
     assert.match(source, /runResearchAgent\(\{\s*data: withAmbient\(/);
     assert.match(source, /pushMonday\(\{\s*data: withAmbient\(/);
   });
@@ -194,8 +217,7 @@ describe("AAX-55 workspace agent and Monday calls attach ambient domain", () => 
 describe("AAX-55 SEO dashboard attaches ambient domain on project reads", () => {
   it("forwards session ambient domain into SEO, content and ClickUp project calls", () => {
     const source = readFileSync(new URL("../../components/seo-dashboard.tsx", import.meta.url), "utf8");
-    assert.match(source, /attachAmbientDataDomain/);
-    assert.match(source, /readAmbientDataDomain/);
+    assert.match(source, /withAmbientDataDomain as withAmbient/);
     for (const call of [
       "aggregateSEOData(withAmbient(",
       "getContentStats(withAmbient(",

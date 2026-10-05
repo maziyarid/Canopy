@@ -5,7 +5,7 @@ import { getSettings, saveSettings } from "@/lib/server/settings";
 import { getSEOTimeline, aggregateSEOData } from "@/lib/server/seo-sources";
 import { getContentStats, listPublishedContent } from "@/lib/server/published-content";
 import { listProjects } from "@/lib/server/projects";
-import { attachAmbientDataDomain, readAmbientDataDomain } from "@/lib/ambient-data-domain";
+import { withAmbientDataDomain as withAmbient } from "@/lib/ambient-data-domain";
 import type { Project } from "@/lib/types";
 import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -24,10 +24,6 @@ const DATA_SOURCES: { value: DataSource; label: { en: string; fa: string } }[] =
   { value: "semrush", label: { en: "SEMrush", fa: "SEMrush" } },
 ];
 
-
-function withAmbient<T extends Record<string, unknown>>(payload: T) {
-  return attachAmbientDataDomain(payload, readAmbientDataDomain());
-}
 
 export function SEODashboard() {
   const t = useT();

@@ -3,7 +3,7 @@ import { ReportSectionGrants } from "./report-section-grants";
 import { Badge, Button, Field, Input, Textarea } from "@/components/ui";
 import { Spark } from "@/components/spark";
 import { ProviderAdminPanel } from "@/components/provider-admin";
-import { attachAmbientDataDomain, readAmbientDataDomain, writeAmbientDataDomain, type DataDomain } from "@/lib/ambient-data-domain";
+import { readAmbientDataDomain, withAmbientDataDomain as withAmbient, writeAmbientDataDomain, type DataDomain } from "@/lib/ambient-data-domain";
 import { cn } from "@/lib/cn";
 import { AGENT_ROSTER, type CopyKey } from "@/lib/i18n";
 import { LANGUAGES, LOCATIONS, locationLabel } from "@/lib/locations";
@@ -55,10 +55,6 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 
-
-function withAmbient<T extends Record<string, unknown>>(payload: T) {
-  return attachAmbientDataDomain(payload, readAmbientDataDomain());
-}
 
 const TAB_IDS: { id: ProjectTab; owner?: boolean; hideClient?: boolean }[] = [
   { id: "overview" },
