@@ -35,7 +35,7 @@ export async function beginGoogleOAuthConnection(
   actorRef: string,
   input: {
     provider: GoogleProvider;
-    profileMode: "write" | "admin";
+    profileMode: "write" | "publish" | "admin";
     scopes: string[];
   },
   env: NodeJS.ProcessEnv = process.env,
@@ -82,7 +82,7 @@ type OAuthStateRow = {
   project_id: string;
   actor_ref: string;
   provider: GoogleProvider;
-  profile_mode: "write" | "admin";
+  profile_mode: "write" | "publish" | "admin";
   requested_scopes: string;
 };
 
