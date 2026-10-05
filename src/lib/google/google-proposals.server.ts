@@ -27,6 +27,7 @@ type ProposalRow = {
   snapshot_hash: string;
   approval_policy: "grant" | "ada";
   approval_ref: string;
+  approval_request_ref: string;
   idempotency_key: string;
   status: GoogleGovernedProposal["status"];
   expires_at: string | null;
@@ -54,6 +55,7 @@ export type GoogleProposalView = {
   snapshotHash: string;
   approvalPolicy: "grant" | "ada";
   approvalRef: string;
+  approvalRequestRef: string;
   idempotencyKey: string;
   status: GoogleGovernedProposal["status"];
   expiresAt: string | null;
@@ -75,6 +77,7 @@ export function googleProposalView(proposal: GoogleGovernedProposal): GoogleProp
     snapshotHash: proposal.snapshotHash,
     approvalPolicy: proposal.approvalPolicy,
     approvalRef: proposal.approvalRef,
+    approvalRequestRef: proposal.approvalRequestRef,
     idempotencyKey: proposal.idempotencyKey,
     status: proposal.status,
     expiresAt: proposal.expiresAt,
@@ -98,6 +101,7 @@ function proposalFromRow(row: ProposalRow): GoogleGovernedProposal {
     snapshotHash: row.snapshot_hash,
     approvalPolicy: row.approval_policy,
     approvalRef: row.approval_ref,
+    approvalRequestRef: row.approval_request_ref,
     idempotencyKey: row.idempotency_key,
     status: row.status,
     expiresAt: row.expires_at,
