@@ -164,6 +164,9 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(refresh['runs'][0]['rows_written'],3)
         _,metrics=self.request('/v1/metrics?provider=gsc&site=example.com&dataset=site_daily')
         self.assertEqual(len(metrics['rows']),2)
+        self.assertEqual(metrics['source']['property'],'sc-domain:example.com')
+        self.assertEqual(metrics['source']['timeZone'],'America/Los_Angeles')
+        self.assertTrue(metrics['source']['retrievedAt'])
         _,snapshot=self.request('/v1/sites/example.com/snapshot?window=7d')
         self.assertEqual(snapshot['gsc']['clicks'],5.0)
 
@@ -192,6 +195,9 @@ class GatewayTest(unittest.TestCase):
             '/v1/metrics?provider=ga4&site=example.com&dataset=summary'
             f"&start={window['startDate']}&end={window['endDate']}")
         self.assertEqual(bounded['coverage']['ranges'],[{'start':window['startDate'],'end':window['endDate']}])
+        self.assertEqual(bounded['source']['property'],'properties/100')
+        self.assertEqual(bounded['source']['timeZone'],'Asia/Tehran')
+        self.assertTrue(bounded['source']['retrievedAt'])
         _,snapshot=self.request('/v1/sites/example.com/snapshot?window=7d')
         self.assertEqual(snapshot['ga4']['sessions'],14.0)
         self.assertEqual(snapshot['ga4']['keyEvents'],2.0)
