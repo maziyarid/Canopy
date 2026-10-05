@@ -463,6 +463,19 @@ export async function failGoogleAction(
   });
 }
 
+export async function listActorGoogleProposals(
+  sql: Sql,
+  access: AccessCtx,
+  actorRef: string,
+): Promise<GoogleProposalView[]> {
+  assertActionMember(access);
+  const rows = await sql.query<ProposalRow>(
+    "select * from google_action_proposals where project_id=$1 and actor_ref=$2 order by created_at desc limit 100",
+    [access.project.id, actorRef],
+  );
+  return rows.map(proposalFromRow).map(googleProposalView);
+}
+
 export async function listGoogleProposals(sql: Sql, access: AccessCtx) {
   assertOwner(access);
   const rows = await sql.query<ProposalRow>(
