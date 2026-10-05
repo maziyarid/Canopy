@@ -62,11 +62,14 @@ const CONNECTION_PRESETS: Array<{
     id: "gsc-admin",
     provider: "gsc",
     profileMode: "admin",
-    scopes: ["https://www.googleapis.com/auth/webmasters"],
+    scopes: [
+      "https://www.googleapis.com/auth/webmasters",
+      "https://www.googleapis.com/auth/siteverification.verify_only",
+    ],
     label: { en: "Search Console property administration", fa: "مدیریت پراپرتی سرچ کنسول" },
     body: {
-      en: "Sensitive property add/remove and sitemap deletion actions. Every such action requires approval.",
-      fa: "افزودن یا حذف پراپرتی و حذف سایت‌مپ. همهٔ این اقدامات نیازمند تأیید هستند.",
+      en: "Sensitive property changes and ownership verification. Verification itself requires approval.",
+      fa: "تغییرات حساس پراپرتی و تأیید مالکیت سایت یا دامنه. اجرای تأیید مالکیت نیازمند تأیید صریح است.",
     },
   },
   {
@@ -167,11 +170,14 @@ const ACTION_LABELS: Record<GoogleActionKey, { en: string; fa: string }> = {
   "gsc.sitemap.delete": { en: "Delete sitemap", fa: "حذف سایت‌مپ" },
   "gsc.site.add": { en: "Add Search Console property", fa: "افزودن پراپرتی سرچ کنسول" },
   "gsc.site.remove": { en: "Remove Search Console property", fa: "حذف پراپرتی سرچ کنسول" },
+  "gsc.verification.get_token": { en: "Get ownership verification token", fa: "دریافت توکن تأیید مالکیت" },
+  "gsc.verification.verify": { en: "Verify site/domain ownership", fa: "تأیید مالکیت سایت یا دامنه" },
   "gtm.workspace.create": { en: "Create GTM workspace", fa: "ایجاد فضای کاری GTM" },
   "gtm.tag.create": { en: "Create tag", fa: "ایجاد تگ" },
   "gtm.tag.update": { en: "Update tag", fa: "ویرایش تگ" },
   "gtm.tag.delete": { en: "Delete tag", fa: "حذف تگ" },
   "gtm.version.create": { en: "Create container version", fa: "ساخت نسخهٔ کانتینر" },
+  "gtm.workspace.preview": { en: "Preview GTM workspace", fa: "پیش‌نمایش فضای کاری GTM" },
   "gtm.version.publish": { en: "Publish container version", fa: "انتشار نسخهٔ کانتینر" },
   "gtm.user.create": { en: "Add GTM user", fa: "افزودن کاربر GTM" },
   "gtm.user.update": { en: "Update GTM user access", fa: "ویرایش دسترسی کاربر GTM" },
@@ -194,6 +200,8 @@ function examplePayload(action: GoogleActionKey, resourceRef: string) {
     "gsc.sitemap.delete": { sitemapUrl: "https://example.com/sitemap.xml" },
     "gsc.site.add": {},
     "gsc.site.remove": {},
+    "gsc.verification.get_token": { verificationMethod: resourceRef.startsWith("sc-domain:") ? "DNS_TXT" : "META" },
+    "gsc.verification.verify": { verificationMethod: resourceRef.startsWith("sc-domain:") ? "DNS_TXT" : "META" },
     "gtm.workspace.create": { name: "Marketing workspace", description: "" },
     "gtm.tag.create": {
       workspacePath: resourceRef + "/workspaces/1",
@@ -205,6 +213,7 @@ function examplePayload(action: GoogleActionKey, resourceRef: string) {
     },
     "gtm.tag.delete": { tagPath: resourceRef + "/workspaces/1/tags/1" },
     "gtm.version.create": { workspacePath: resourceRef + "/workspaces/1", name: "Reviewed version", notes: "" },
+    "gtm.workspace.preview": { workspacePath: resourceRef + "/workspaces/1" },
     "gtm.version.publish": { versionPath: resourceRef + "/versions/1" },
     "gtm.user.create": {
       emailAddress: "member@example.com",
@@ -274,6 +283,7 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
   const [grantResourceKey, setGrantResourceKey] = useState("");
   const [actionKey, setActionKey] = useState("");
   const [payloadText, setPayloadText] = useState("{}");
+  const [transientResult, setTransientResult] = useState<{ title: string; content: string } | null>(null);
 
   const ui = lang === "fa"
     ? {
@@ -314,6 +324,9 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
         denied: "درخواست تأیید نشد.",
         expired: "مهلت تأیید این درخواست به پایان رسیده است.",
         executed: "اقدام با موفقیت اجرا شد.",
+        transientResult: "نتیجهٔ موقت",
+        verificationToken: "توکن تأیید مالکیت",
+        previewResult: "خلاصهٔ پیش‌نمایش GTM",
         connected: "پس از تأیید گوگل به همین پروژه برمی‌گردید.",
         resourcesEmpty: "منبعی با این حساب پیدا نشد.",
         selectResources: "منابع مجاز این اتصال را انتخاب کنید.",
@@ -356,6 +369,9 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
         denied: "The approval request was denied.",
         expired: "This approval request has expired.",
         executed: "Action completed.",
+        transientResult: "Transient result",
+        verificationToken: "Ownership verification token",
+        previewResult: "GTM preview summary",
         connected: "You will return to this project after Google authorisation.",
         resourcesEmpty: "No resource was discovered for this identity.",
         selectResources: "Choose which discovered resources this connection may control.",
@@ -570,9 +586,22 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
                     }),
                   });
                   if (proposed.approval === "not_required") {
-                    await executeGrantedGoogleAction({
+                    const executed = await executeGrantedGoogleAction({
                       data: withScope({ projectId, proposalId: proposed.proposal.id }),
                     });
+                    if (executed.sensitiveResult?.kind === "site_verification_token") {
+                      setTransientResult({
+                        title: ui.verificationToken,
+                        content: executed.sensitiveResult.method + "\n" + executed.sensitiveResult.token,
+                      });
+                    } else if (executed.preview) {
+                      setTransientResult({
+                        title: ui.previewResult,
+                        content: JSON.stringify(executed.preview, null, 2),
+                      });
+                    } else {
+                      setTransientResult(null);
+                    }
                     toast.success(ui.executed);
                   } else if (proposed.approval === "queued") {
                     toast.success(ui.queued);
@@ -597,6 +626,7 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
                     (item) => item.action + "\n" + item.resourceRef === value,
                   );
                   if (match) setPayloadText(examplePayload(match.action, match.resourceRef));
+                  setTransientResult(null);
                 }}
               >
                 {workspace.actions.map((item) => (
@@ -628,6 +658,19 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
               {busy === "action" ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
               {selectedAction?.approval === "ada" ? ui.requestApproval : ui.run}
             </Button>
+            {transientResult ? (
+              <div className="rounded-xl bg-raised p-3">
+                <p className="text-sm font-medium">{transientResult.title}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {lang === "fa"
+                    ? "این مقدار فقط در همین پاسخ نمایش داده می‌شود و در رسید عملیاتی ذخیره نمی‌شود."
+                    : "This value is shown only in this response and is not stored in the operation receipt."}
+                </p>
+                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-surface p-3 font-mono text-xs" dir="ltr">
+                  {transientResult.content}
+                </pre>
+              </div>
+            ) : null}
           </form>
         )}
       </section>
