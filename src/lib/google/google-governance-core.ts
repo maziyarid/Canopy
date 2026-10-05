@@ -42,6 +42,8 @@ export const GOOGLE_ALLOWED_SCOPES: Record<GoogleProvider, ReadonlySet<string>> 
   gsc: new Set([
     "https://www.googleapis.com/auth/webmasters.readonly",
     "https://www.googleapis.com/auth/webmasters",
+    "https://www.googleapis.com/auth/siteverification",
+    "https://www.googleapis.com/auth/siteverification.verify_only",
   ]),
   ga4: new Set([
     "https://www.googleapis.com/auth/analytics.readonly",
