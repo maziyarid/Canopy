@@ -58,6 +58,7 @@ test("GA4 summary rows are normalized independently from GSC and require exact s
           },
         }],
         coverage: { ranges: [{ start: "2026-09-24", end: "2026-09-30" }] },
+        source: { provider: "ga4", property: "properties/100", timeZone: "Asia/Tehran", retrievedAt: "2026-10-01T00:00:00Z" },
       };
     },
   });
@@ -74,6 +75,9 @@ test("GA4 summary rows are normalized independently from GSC and require exact s
     keyEvents: 2,
   });
   assert.equal(result.rows.find(row => row.metricName === "sessions")?.coverage?.complete, true);
+  assert.equal(result.rows.find(row => row.metricName === "sessions")?.property, "properties/100");
+  assert.equal(result.rows.find(row => row.metricName === "sessions")?.timeZone, "Asia/Tehran");
+  assert.equal(result.rows.find(row => row.metricName === "sessions")?.retrievedAt, "2026-10-01T00:00:00Z");
 
   const snapshot = buildReportingSnapshot({
     projectId: "p1",
