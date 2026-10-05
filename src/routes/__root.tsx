@@ -1,9 +1,10 @@
+import { appHref } from "@/lib/public-paths";
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { LocaleRoot } from "@/components/locale-root";
 import { Toaster } from "sonner";
-import appCss from "../styles.css?url";
+import "../styles.css";
 
 const APP_NAME = "Ms Robot";
 
@@ -21,10 +22,9 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#0F1724" },
     ],
     links: [
-      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
-      { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
+      { rel: "icon", type: "image/svg+xml", href: appHref("/favicon.svg") },
+      { rel: "manifest", href: appHref("/__grok/manifest.webmanifest") },
+      { rel: "apple-touch-icon", href: appHref("/__grok/icon-180.png") },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

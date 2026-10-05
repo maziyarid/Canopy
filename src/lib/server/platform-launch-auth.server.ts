@@ -1,3 +1,4 @@
+import { appPath } from "../../../scripts/public-paths.mjs";
 import type { Sql } from "../db.ts";
 import { launchSessionScope } from "./platform-launch-store.ts";
 import type { LaunchScope } from "./platform-launch-store.ts";
@@ -53,6 +54,7 @@ export async function guardLaunchAuthRequest(
   auth: Handler,
   sql: Sql,
   request: Request,
+  appBase = "/",
 ): Promise<Request> {
   const name = (await auth.$context).authCookies.sessionData.name;
   const headers = new Headers(request.headers);
@@ -65,17 +67,28 @@ export async function guardLaunchAuthRequest(
     });
   if (kept.length) headers.set("cookie", kept.join("; "));
   else headers.delete("cookie");
-  const freshRequest = new Request(request, { headers });
+  // Nitro can supply a Request-compatible wrapper without Undici's private
+  // slots. Rebuild from the public fields instead of native Request cloning.
+  const init: RequestInit & { duplex?: "half" } = {
+    method: request.method,
+    headers,
+    signal: request.signal,
+  };
+  if (request.method !== "GET" && request.method !== "HEAD" && request.body) {
+    init.body = request.body;
+    init.duplex = "half";
+  }
+  const freshRequest = new Request(request.url, init);
   const path = new URL(request.url).pathname;
   // Recovery may clear a revoked launch session, while BetterAuth retains its
   // own Origin, method and native-session controls.
-  if (request.method === "POST" && path === "/api/auth/sign-out") {
+  if (request.method === "POST" && path === appPath("/api/auth/sign-out", appBase)) {
     if (headers.has("x-grok-identity"))
       throw Object.assign(new Error("Forbidden"), { status: 403 });
     return freshRequest;
   }
   const scope = await requestLaunchScope(auth, sql, headers);
-  if (scope && path !== "/api/auth/get-session")
+  if (scope && path !== appPath("/api/auth/get-session", appBase))
     throw Object.assign(new Error("Forbidden"), { status: 403 });
   return freshRequest;
 }

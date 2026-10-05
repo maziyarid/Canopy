@@ -16,6 +16,7 @@
  */
 import installPageTemplate from "../../scripts/install-page.html?raw";
 import { grokOgIdentity } from "virtual:grok-og-identity";
+import { appPath, normalizeAppBase } from "../../scripts/public-paths.mjs";
 import {
   acceptsHtml,
   createHeadInjector,
@@ -24,6 +25,8 @@ import {
   renderInstallPageHtml,
   renderWebManifest,
 } from "../../scripts/grok-pwa-shared.mjs";
+
+const appBase = normalizeAppBase(import.meta.env.BASE_URL);
 
 interface GrokPwaEvent {
   url: URL;
@@ -39,6 +42,7 @@ function requestHost(event: GrokPwaEvent): string {
 function injectHeadStreaming(response: Response, host: string): Response {
   const injector = createHeadInjector({
     host,
+    appBase,
     site: grokOgIdentity.site,
   });
   const transformed = response.body!.pipeThrough(
@@ -70,8 +74,11 @@ export default async function grokPwaMiddleware(
   const path = event.url.pathname;
   const urlWithQuery = path + event.url.search;
 
-  if (path === "/__grok/manifest.webmanifest" || path === "/__grok/manifest.json") {
-    return new Response(renderWebManifest(requestHost(event)), {
+  if (
+    path === appPath("/__grok/manifest.webmanifest", appBase) ||
+    path === appPath("/__grok/manifest.json", appBase)
+  ) {
+    return new Response(renderWebManifest(requestHost(event), { appBase }), {
       headers: {
         "content-type": "application/manifest+json; charset=utf-8",
         "cache-control": "no-cache",
@@ -81,12 +88,13 @@ export default async function grokPwaMiddleware(
 
   if (
     isInstallQuery(urlWithQuery) &&
-    isDocumentPath(path) &&
+    isDocumentPath(path, { appBase }) &&
     acceptsHtml(event.req.headers.get("accept"))
   ) {
     const html = renderInstallPageHtml(installPageTemplate, {
       host: requestHost(event),
       url: urlWithQuery,
+      appBase,
     });
     return new Response(html, {
       headers: {
@@ -96,7 +104,7 @@ export default async function grokPwaMiddleware(
     });
   }
 
-  if (!isDocumentPath(path)) return next();
+  if (!isDocumentPath(path, { appBase })) return next();
 
   const result = await next();
   if (

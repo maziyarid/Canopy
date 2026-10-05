@@ -1,3 +1,6 @@
+import { validateGoogleRedirectUri } from "../../../scripts/deployment-config.mjs";
+import { APP_BASE, appHref } from "../public-paths.ts";
+import { validatePublicOrigin } from "../../../scripts/public-paths.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { Sql } from "../db.ts";
@@ -28,7 +31,14 @@ export function googleOAuthReturnUrl(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   const configured = env.BETTER_AUTH_URL?.trim();
-  const base = configured ? new URL(configured) : new URL(requestUrl);
+  let base: URL;
+  try {
+    base = configured
+      ? new URL(validatePublicOrigin(configured, { allowLocalHttp: env.NODE_ENV !== "production" }))
+      : new URL(requestUrl);
+  } catch {
+    throw new Error("BETTER_AUTH_URL must use https and be an exact origin");
+  }
   if (
     base.protocol !== "https:" &&
     base.hostname !== "localhost" &&
@@ -37,7 +47,7 @@ export function googleOAuthReturnUrl(
     throw new Error("BETTER_AUTH_URL must use https");
   }
   const path = projectId ? "/p/" + encodeURIComponent(projectId) : "/";
-  const target = new URL(path, base);
+  const target = new URL(appHref(path), base);
   target.searchParams.set("googleOAuth", state);
   return target.toString();
 }
@@ -64,7 +74,7 @@ export async function beginGoogleOAuthConnection(
   assertOwner(access);
   const scopes = validateConnectionScopes(input.provider, input.scopes);
   const clientId = required(env, "GOOGLE_WRITE_OAUTH_CLIENT_ID");
-  const redirectUri = required(env, "GOOGLE_WRITE_OAUTH_REDIRECT_URI");
+  const redirectUri = validateGoogleRedirectUri(required(env, "GOOGLE_WRITE_OAUTH_REDIRECT_URI"), APP_BASE, env.BETTER_AUTH_URL?.trim());
   const redirect = new URL(redirectUri);
   if (redirect.protocol !== "https:" && redirect.hostname !== "localhost" && redirect.hostname !== "127.0.0.1") {
     throw new Error("GOOGLE_WRITE_OAUTH_REDIRECT_URI must use https");
@@ -114,7 +124,7 @@ async function exchangeCode(
 ) {
   const clientId = required(env, "GOOGLE_WRITE_OAUTH_CLIENT_ID");
   const clientSecret = required(env, "GOOGLE_WRITE_OAUTH_CLIENT_SECRET");
-  const redirectUri = required(env, "GOOGLE_WRITE_OAUTH_REDIRECT_URI");
+  const redirectUri = validateGoogleRedirectUri(required(env, "GOOGLE_WRITE_OAUTH_REDIRECT_URI"), APP_BASE, env.BETTER_AUTH_URL?.trim());
   const body = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,

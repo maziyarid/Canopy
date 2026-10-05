@@ -1,3 +1,4 @@
+import { appHref } from "@/lib/public-paths";
 import { ProjectReport } from "./project-report";
 import { ReportSectionGrants } from "./report-section-grants";
 import { Badge, Button, Field, Input, Textarea } from "@/components/ui";
@@ -1116,7 +1117,7 @@ function ConnectPanel({ bundle, reload }: { bundle: ProjectBundle; reload: () =>
             >
               {t("downloadScript")}
             </Button>
-            <a href="/canopy/Code.gs" download="Code.gs">
+            <a href={appHref("/canopy/Code.gs")} download="Code.gs">
               <Button variant="quiet">{t("copyGs")}</Button>
             </a>
           </div>

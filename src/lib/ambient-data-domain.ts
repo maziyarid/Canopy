@@ -1,6 +1,7 @@
+import { APP_BASE } from "./public-paths.ts";
 export type DataDomain = "medical" | "thesis" | "other";
 
-const STORAGE_KEY = "ms-robot.ambientDataDomain";
+const STORAGE_KEY = APP_BASE === "/" ? "ms-robot.ambientDataDomain" : "msrobot:v1:ambientDataDomain";
 
 export function parseAmbientDataDomain(value: unknown): DataDomain | undefined {
   return value === "medical" || value === "thesis" || value === "other" ? value : undefined;

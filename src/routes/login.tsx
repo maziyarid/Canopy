@@ -1,3 +1,4 @@
+import { appHref } from "@/lib/public-paths";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Mark } from "@/components/mark";
 import { Button, Field, Input } from "@/components/ui";
@@ -46,7 +47,7 @@ function Login() {
         const { error: err } = await authClient.signIn.email({ email, password });
         if (err) throw new Error(err.message);
       }
-      window.location.href = "/";
+      window.location.href = appHref("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");
     } finally {
@@ -76,7 +77,7 @@ function Login() {
                 key={p.providerId}
                 type="button"
                 variant="ghost"
-                onClick={() => signIn(p.providerId, { callbackURL: "/" })}
+                onClick={() => signIn(p.providerId, { callbackURL: appHref("/") })}
               >
                 {t("continueWith")} {p.label}
               </Button>

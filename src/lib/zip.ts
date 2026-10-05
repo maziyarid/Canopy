@@ -1,3 +1,4 @@
+import { appHref } from "@/lib/public-paths";
 /** Store-only ZIP so the Apps Script kit downloads without extra deps. */
 function crc32(buf: Uint8Array) {
   let c = 0xffffffff;
@@ -68,8 +69,8 @@ export function zipStore(files: { name: string; data: Uint8Array }[]) {
 
 export async function downloadScriptZip() {
   const [gs, manifest, readme] = await Promise.all([
-    fetch("/canopy/Code.gs").then((r) => r.arrayBuffer()),
-    fetch("/canopy/appsscript.json").then((r) => r.arrayBuffer()),
+    fetch(appHref("/canopy/Code.gs")).then((r) => r.arrayBuffer()),
+    fetch(appHref("/canopy/appsscript.json")).then((r) => r.arrayBuffer()),
     Promise.resolve(
       new TextEncoder().encode(`Canopy — Mangools × Google Sheets
 Author: MAZ//ID (Maziyar)

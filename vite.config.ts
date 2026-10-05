@@ -10,7 +10,10 @@ import { nitro } from "nitro/vite";
 import { grokPwaPlugin } from "./scripts/grok-pwa-plugin.mjs";
 // @ts-expect-error JS plugin alongside the TS vite config
 import { appEnvPlugin } from "./scripts/app-env-plugin.mjs";
+import { appPath, normalizeAppBase } from "./scripts/public-paths.mjs";
 import { isMigrationFile } from "./scripts/migration-plan.mjs";
+
+const appBase = normalizeAppBase(process.env.MSROBOT_APP_BASE_PATH ?? "/");
 
 /** The files `src/lib/db.ts` globs — same directory, same non-recursive scope. */
 function hasGlobbedMigrations(root: string): boolean {
@@ -73,7 +76,7 @@ function authPopupPlugin(): Plugin {
         try {
           const rawUrl = req.url ?? "";
           const pathOnly = rawUrl.split("?", 1)[0] ?? "";
-          if (pathOnly !== "/auth/popup") {
+          if (pathOnly !== appPath("/auth/popup", appBase)) {
             next();
             return;
           }
@@ -146,6 +149,7 @@ function authPopupPlugin(): Plugin {
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
 export default defineConfig(({ command, isPreview }) => ({
+  base: appPath("/", appBase),
   server: {
     host: "0.0.0.0",
     port: 8080,
@@ -166,11 +170,13 @@ export default defineConfig(({ command, isPreview }) => ({
     // PWA head + ?install=1 tutorial page; runs before Start/Nitro.
     grokPwaPlugin(),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({ router: { basepath: appBase } }),
     ...(command === "build" || isPreview
       ? [
           nitro({
             preset: process.env.NITRO_PRESET || "vercel",
+            // Nitro's static manifest does not inherit Vite's base automatically.
+            baseURL: appPath("/", appBase),
             // Auto-registers server/middleware/* (the PWA install page +
             // manifest + head-tag middleware). Nitro v3 defaults serverDir to
             // false, so removing this silently unwires /?install=1 on deploys.

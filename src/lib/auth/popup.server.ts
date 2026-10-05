@@ -1,3 +1,4 @@
+import { appHref } from "../public-paths";
 /**
  * Live-preview sign-in popup — server-only (NEVER import from the client).
  *
@@ -60,7 +61,7 @@ export async function handleAuthPopupRequest(request: Request): Promise<Response
   }
 
   // Stay first-party for the callback so the session cookie lands in THIS popup.
-  const back = `${url.origin}/auth/popup?done=1`;
+  const back = `${appHref("/auth/popup")}?done=1`;
   try {
     const apiRes = await auth.api.signInWithOAuth2({
       body: {

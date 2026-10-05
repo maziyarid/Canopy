@@ -6,6 +6,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { appPath } from "./public-paths.mjs";
 import { renderWebManifest } from "./grok-pwa-shared.mjs";
 
 const require = createRequire(import.meta.url);
@@ -36,6 +37,7 @@ for (const lang of ["en", "fa"]) {
       "@/components/mark": { Mark: element("span") },
       "@/components/ui": { Button: element("button") },
       "@/lib/locale": locale(lang),
+      "@/lib/public-paths": { appHref: (path) => appPath(path) },
     });
     const html = renderToStaticMarkup(React.createElement(Landing));
     assert.doesNotMatch(html, /waterproof field notebook|geology field notebook|جراحی بینی تهران|متخصص گوش حلق بینی/);
@@ -49,6 +51,7 @@ for (const lang of ["en", "fa"]) {
       "@/components/ui": { Badge: element("span"), Button: element("button"), Field: element("label"), Input: element("input") },
       "@/lib/locations": { LANGUAGES: [], LOCATIONS: [], locationLabel() {} },
       "@/lib/locale": locale(lang),
+      "@/lib/public-paths": { appHref: (path) => appPath(path) },
       "@/lib/server/projects": { createProject() {}, listProjects: async () => [] },
       "@/lib/server/seed": { seedSampleStudio() { throw new Error("sample insertion reached"); } },
       "@tanstack/react-router": { Link: element("a") },

@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const source = join(root, "node_modules", "@electric-sql", "pglite", "dist");
-const target = join(root, ".vercel", "output", "functions", "__server.func", "_libs");
+const target = process.env.NITRO_PRESET === "node-server"
+  ? join(root, ".output", "server", "_libs")
+  : join(root, ".vercel", "output", "functions", "__server.func", "_libs");
 
 const files = ["pglite.data", "pglite.wasm", "initdb.wasm"];
 

@@ -1,3 +1,5 @@
+import { applyAuthReturnPolicy } from "../../../scripts/auth-return-policy.mjs";
+import { createAuthMiddleware, APIError } from "better-auth/api";
 /**
  * Self-hosted Better Auth for THIS app (server-only).
  *
@@ -29,6 +31,8 @@
  * components read the user via `@/lib/auth/use-current-user`; server functions get
  * a verified id via `@/lib/auth/middleware`.
  */
+import { deploymentConfig } from "../../../scripts/deployment-config.mjs";
+import { APP_BASE } from "../public-paths";
 import { betterAuth } from "better-auth";
 import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
@@ -94,7 +98,8 @@ export const authConfigured =
 // it derives the origin per-request from the (proxied) host, validated against the
 // preview allowlist, which makes the OAuth `redirect_uri` the concrete preview URL
 // the broker's preview client accepts.
-const explicitBaseURL = env("BETTER_AUTH_URL");
+const deployment = deploymentConfig({ builtBase: APP_BASE, env: process.env });
+const explicitBaseURL = deployment.publicOrigin;
 // Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
 // requires a mutable `allowedHosts: string[]`.
 const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
@@ -119,7 +124,7 @@ const baseURL = explicitBaseURL ?? {
 // Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
 // Missing entries here surface as FORBIDDEN "Invalid origin".
 const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
+  ? (isProduction ? [explicitBaseURL] : [explicitBaseURL, ...LOCAL_DEV_ORIGINS])
   : [
       // Host wildcards (matched against Origin's host)
       ...previewAllowedHosts,
@@ -149,7 +154,7 @@ const database = databaseUrl
   : { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
 
 /** Session token cookie name — also read by the live-preview popup completion page. */
-export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
+export const SESSION_TOKEN_COOKIE = deployment.sessionTokenCookie;
 
 // Built separately so the `betterAuth({...})` call stays easy to edit without
 // breaking brackets (models often trip on the conditional plugin spread).
@@ -177,6 +182,16 @@ const grokOAuthPlugin = authConfigured
 
 export const auth = betterAuth({
   baseURL,
+  basePath: deployment.authBasePath,
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      try {
+        applyAuthReturnPolicy(ctx, APP_BASE, deployment.publicOrigin);
+      } catch {
+        throw new APIError("BAD_REQUEST", { message: "Auth return URL must stay inside the app mount" });
+      }
+    }),
+  },
   // Deployed apps inject BETTER_AUTH_SECRET. Preview: process-stable secret on
   // globalThis so HMR doesn't invalidate PGLite-backed sessions (see above).
   secret: env("BETTER_AUTH_SECRET") ?? previewAuthSecret(),
@@ -223,16 +238,7 @@ export const auth = betterAuth({
   // Domain), so we drop its auto prefix (`useSecureCookies: false`) and set
   // Secure + the names ourselves. (Browsers allow Secure cookies on
   // `http://localhost`, so local dev still works.)
-  advanced: {
-    useSecureCookies: false,
-    defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
-    cookies: {
-      session_token: { name: SESSION_TOKEN_COOKIE },
-      session_data: { name: "__Host-grok-auth.session_data" },
-      account_data: { name: "__Host-grok-auth.account_data" },
-      dont_remember: { name: "__Host-grok-auth.dont_remember" },
-    },
-  },
+  advanced: deployment.advanced,
 
   plugins: [
     gateIdentitySessions(),
