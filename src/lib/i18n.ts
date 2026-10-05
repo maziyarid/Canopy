@@ -11,6 +11,18 @@ export const copy = {
     en: "Run Mangools from a bilingual desk. Grant each client access to one site — or a single keyword — and let Maz•Assist draft the playbook your sheet will execute.",
     fa: "منگولز را از یک میز دوزبانه اجرا کنید. به هر مشتری فقط یک سایت — یا حتی یک کلمه — نشان دهید و بگذارید Maz•Assist برنامهٔ اجرایی شیت را بنویسد.",
   },
+  privateReportingTitle: {
+    en: "Your private project workspace",
+    fa: "فضای کار خصوصی پروژه‌های شما",
+  },
+  privateReportingBody: {
+    en: "Sign in to view the projects you have access to, their saved reports, and their data-source connections.",
+    fa: "وارد شوید تا پروژه‌هایی که به آن‌ها دسترسی دارید، گزارش‌های ذخیره‌شده و اتصال منابع دادهٔ آن‌ها را ببینید.",
+  },
+  privateReportingStatus: {
+    en: "A connected source and a successful sync are needed for fresh provider data.",
+    fa: "برای دریافت دادهٔ تازه از سرویس‌ها، اتصال منبع و همگام‌سازی موفق لازم است.",
+  },
   ctaStart: { en: "Open the studio", fa: "ورود به استودیو" },
   ctaLogin: { en: "Sign in", fa: "ورود" },
   ctaCreate: { en: "Create account", fa: "ساخت حساب" },
@@ -70,8 +82,8 @@ export const copy = {
   newProject: { en: "New project", fa: "پروژه جدید" },
   loadSample: { en: "Load sample studio", fa: "بارگذاری استودیوی نمونه" },
   empty: {
-    en: "No projects yet. Create one for a client website, or load the sample studio.",
-    fa: "هنوز پروژه‌ای نیست. برای وب‌سایت مشتری بسازید یا استودیوی نمونه را بارگذاری کنید.",
+    en: "No projects yet. Create one for a client website to get started.",
+    fa: "هنوز پروژه‌ای نیست. برای شروع، یک پروژه برای وب‌سایت مشتری بسازید.",
   },
   domain: { en: "Website", fa: "وب‌سایت" },
   location: { en: "Location", fa: "موقعیت" },
@@ -177,7 +189,7 @@ export const copy = {
   downloadScript: { en: "Download Apps Script zip", fa: "دانلود زیپ اسکریپت" },
   copyGs: { en: "Copy Code.gs", fa: "کپی Code.gs" },
   connected: { en: "Connected", fa: "متصل" },
-  demoMode: { en: "Demo data — add a Mangools key to score live.", fa: "دادهٔ نمونه — برای امتیاز زنده کلید منگولز بگذارید." },
+  demoMode: { en: "Mangools is not connected. Add a key to fetch current metrics.", fa: "منگولز متصل نیست. برای دریافت شاخص‌های تازه، کلید اضافه کنید." },
   keyHint: {
     en: "Stored on the server for your account. Clients never see it.",
     fa: "روی سرور برای حساب شما ذخیره می‌شود. مشتری آن را نمی‌بیند.",
@@ -320,5 +332,4 @@ export const AGENT_ROSTER = [
     uses: "Grok · optional SERP lookup",
   },
 ] as const;
-
 

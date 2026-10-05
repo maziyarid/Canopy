@@ -66,23 +66,10 @@ export function Landing() {
           <p className="mt-6 font-mono text-xs text-subtle">MAZ//ID · KWFinder · SERPWatcher · Maz•Assist</p>
         </div>
         <aside className="rounded-2xl bg-surface p-5 shadow-[var(--shadow-border),var(--shadow-lift)]">
-          <p className="text-xs uppercase tracking-widest text-muted">{t("tracker")}</p>
-          <div className="mt-3 space-y-2">
-            {[
-              ["waterproof field notebook", "6", "+5"],
-              ["جراحی بینی تهران", "7", "+12"],
-              ["متخصص گوش حلق بینی", "5", "+6"],
-              ["geology field notebook", "4", "+14"],
-            ].map(([kw, rank, delta]) => (
-              <div key={kw} className="flex items-center justify-between rounded-lg bg-raised px-3 py-2.5">
-                <span className="truncate text-sm">{kw}</span>
-                <span className="ms-3 flex items-center gap-3 font-mono text-sm tabular-nums">
-                  <span className="text-fg">{rank}</span>
-                  <span className="text-accent">{delta}</span>
-                </span>
-              </div>
-            ))}
-          </div>
+          <ShieldCheck className="size-6 text-primary" strokeWidth={1.75} />
+          <h2 className="mt-3 font-display text-xl font-semibold">{t("privateReportingTitle")}</h2>
+          <p className="mt-3 text-sm leading-relaxed text-muted">{t("privateReportingBody")}</p>
+          <p className="mt-3 text-sm leading-relaxed text-subtle">{t("privateReportingStatus")}</p>
         </aside>
       </section>
 

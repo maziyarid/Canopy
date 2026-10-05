@@ -59,25 +59,25 @@ function placeholderCardColor(site = {}) {
  * display name in the first label. Preview / guest hosts are image origins
  * only — slugifying them produced internal names like "Hds Abc 3000 Xy".
  */
-export function appNameFromHost(hostHeader) {
+export function appNameFromHost(hostHeader, fallbackName = DEFAULT_APP_NAME) {
   const host = String(hostHeader ?? "")
     .split(",")[0]
     .trim()
     .split(":")[0]
     .toLowerCase();
   if (!host.endsWith(".grok.me")) {
-    return DEFAULT_APP_NAME;
+    return fallbackName;
   }
   const slug = host.split(".")[0] ?? "";
   if (!slug || slug === "www" || !/^[a-z0-9-]{1,63}$/.test(slug)) {
-    return DEFAULT_APP_NAME;
+    return fallbackName;
   }
   return (
     slug
       .split("-")
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ") || DEFAULT_APP_NAME
+      .join(" ") || fallbackName
   );
 }
 
@@ -158,7 +158,7 @@ export function renderInstallPageHtml(template, { host, url } = {}) {
 }
 
 export function renderWebManifest(hostHeader) {
-  const name = appNameFromHost(hostHeader);
+  const name = appNameFromHost(hostHeader, "MS Robot");
   return JSON.stringify(
     {
       name,

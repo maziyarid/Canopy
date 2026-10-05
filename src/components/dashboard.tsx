@@ -2,7 +2,6 @@ import { Badge, Button, Field, Input } from "@/components/ui";
 import { LANGUAGES, LOCATIONS, locationLabel } from "@/lib/locations";
 import { useLocale, useT } from "@/lib/locale";
 import { createProject, listProjects } from "@/lib/server/projects";
-import { seedSampleStudio } from "@/lib/server/seed";
 import type { DataDomain, Project } from "@/lib/types";
 import { Link } from "@tanstack/react-router";
 import { FolderPlus, Globe, LoaderCircle } from "lucide-react";
@@ -48,24 +47,6 @@ export function Dashboard() {
           <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">{t("yourProjects")}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await seedSampleStudio();
-                await reload();
-                toast.success(t("sampleLoaded"));
-              } catch (err) {
-                toast.error(err instanceof Error ? err.message : t("forbidden"));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t("loadSample")}
-          </Button>
           <Button onClick={() => setOpen((v) => !v)}>
             <FolderPlus className="size-4" />
             {t("newProject")}
