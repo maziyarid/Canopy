@@ -28,9 +28,12 @@ import {
 } from "../google/google-oauth-flow.server";
 import {
   cancelGoogleAction,
+  getGoogleActionProposal,
   googleProposalView,
   listActorGoogleProposals,
   listGoogleProposals,
+  markGoogleActionExpired,
+  markGoogleActionRejected,
   proposeGoogleAction,
 } from "../google/google-proposals.server";
 import { executeGovernedGoogleAction } from "../google/google-executor.server";
@@ -38,6 +41,12 @@ import {
   publishGoogleApprovalProposal,
   recordGoogleApprovalRequest,
 } from "../google/google-approval-bridge.server";
+import {
+  claimAdaGoogleApprovalProof,
+  consumeAdaGoogleApprovalProof,
+  getAdaGoogleApproval,
+  requestAdaGoogleApproval,
+} from "../google/google-ada-control.server";
 
 const ProjectScope = z.object({
   projectId: z.string().min(1).max(100),
@@ -54,6 +63,36 @@ async function accessFor(context: { userId: string; email: string }, data: z.inf
     data.ambientDataDomain,
   );
   return { sql, access };
+}
+
+async function ensureGoogleApprovalRequest(
+  sql: Awaited<ReturnType<typeof getSql>>,
+  access: Awaited<ReturnType<typeof resolveAccess>>,
+  actorRef: string,
+  proposalId: string,
+) {
+  const proposal = await getGoogleActionProposal(sql, access.project.id, proposalId);
+  if (!proposal) throw new Error("google_action_not_found");
+  if (proposal.approvalPolicy !== "ada") return { proposal, approval: "not_required" as const };
+  if (proposal.approvalRequestRef) {
+    return { proposal, approval: "queued" as const, approvalRequestRef: proposal.approvalRequestRef };
+  }
+  const bridge = await publishGoogleApprovalProposal({ proposal, siteKey: access.project.domain });
+  const ticket = await requestAdaGoogleApproval({
+    proposal,
+    siteKey: access.project.domain,
+    bridgeEventId: bridge.event_id,
+    requestedBy: actorRef,
+  });
+  await recordGoogleApprovalRequest(sql, proposal, actorRef, {
+    ticketId: ticket.ticket_id,
+    eventId: bridge.event_id,
+  });
+  return {
+    proposal: { ...proposal, approvalRequestRef: ticket.ticket_id },
+    approval: "queued" as const,
+    approvalRequestRef: ticket.ticket_id,
+  };
 }
 
 export const getGoogleActionWorkspace = createServerFn({ method: "GET" })
@@ -249,16 +288,12 @@ export const createGoogleActionProposal = createServerFn({ method: "POST" })
       return { proposal: googleProposalView(result.proposal), replayed: result.replayed, approval: "not_required" as const };
     }
     try {
-      const bridge = await publishGoogleApprovalProposal({
-        proposal: result.proposal,
-        siteKey: access.project.domain,
-      });
-      await recordGoogleApprovalRequest(sql, result.proposal, context.userId, bridge.event_id);
+      const queued = await ensureGoogleApprovalRequest(sql, access, context.userId, result.proposal.id);
       return {
-        proposal: googleProposalView(result.proposal),
+        proposal: googleProposalView(queued.proposal),
         replayed: result.replayed,
-        approval: "queued" as const,
-        approvalRequestRef: bridge.event_id,
+        approval: queued.approval,
+        approvalRequestRef: "approvalRequestRef" in queued ? queued.approvalRequestRef : undefined,
       };
     } catch {
       return {
@@ -267,6 +302,68 @@ export const createGoogleActionProposal = createServerFn({ method: "POST" })
         approval: "unavailable" as const,
       };
     }
+  });
+
+export const syncApprovedGoogleAction = createServerFn({ method: "POST" })
+  .middleware([studioAuth])
+  .validator(ProjectScope.extend({ proposalId: z.string().uuid() }))
+  .handler(async ({ context, data }) => {
+    const { sql, access } = await accessFor(context, data);
+    let proposal = await getGoogleActionProposal(sql, access.project.id, data.proposalId);
+    if (!proposal) throw new Error("google_action_not_found");
+    if (proposal.actorRef !== context.userId && access.role !== "owner") throw new Error("Forbidden");
+    if (proposal.approvalPolicy !== "ada") {
+      return { proposal: googleProposalView(proposal), approval: "not_required" as const };
+    }
+    if (!proposal.approvalRequestRef) {
+      try {
+        const queued = await ensureGoogleApprovalRequest(sql, access, context.userId, proposal.id);
+        proposal = queued.proposal;
+      } catch {
+        return { proposal: googleProposalView(proposal), approval: "unavailable" as const };
+      }
+    }
+    const ticket = await getAdaGoogleApproval(proposal.approvalRequestRef);
+    if (ticket.payload_hash !== proposal.payloadHash || ticket.proposal_id !== proposal.id) {
+      throw new Error("ada_control_ticket_binding_mismatch");
+    }
+    if (ticket.state === "PENDING") return { proposal: googleProposalView(proposal), approval: "pending" as const };
+    if (ticket.state === "DENIED") {
+      if (proposal.status === "pending_approval") {
+        await markGoogleActionRejected(sql, proposal.projectId, proposal.id, "ada:" + ticket.ticket_id, context.userId);
+      }
+      const current = await getGoogleActionProposal(sql, access.project.id, proposal.id);
+      return { proposal: googleProposalView(current ?? proposal), approval: "denied" as const };
+    }
+    if (ticket.state === "EXPIRED") {
+      if (proposal.status === "pending_approval") {
+        await markGoogleActionExpired(sql, proposal.projectId, proposal.id, "ada:" + ticket.ticket_id, context.userId);
+      }
+      const current = await getGoogleActionProposal(sql, access.project.id, proposal.id);
+      return { proposal: googleProposalView(current ?? proposal), approval: "expired" as const };
+    }
+    if (ticket.state === "CONSUMED") {
+      return {
+        proposal: googleProposalView(proposal),
+        approval: proposal.status === "succeeded" ? "executed" as const : "consumed_reapproval_required" as const,
+      };
+    }
+    const proof = await claimAdaGoogleApprovalProof(ticket.ticket_id);
+    const execution = await executeGovernedGoogleAction(
+      sql,
+      access,
+      context.userId,
+      proposal.id,
+      { approvalProof: proof },
+      {
+        consumeAdaApproval: async (_proposal, suppliedProof) => {
+          if (suppliedProof.ticketId !== ticket.ticket_id) throw new Error("ada_approval_ticket_mismatch");
+          return consumeAdaGoogleApprovalProof(suppliedProof);
+        },
+      },
+    );
+    const current = await getGoogleActionProposal(sql, access.project.id, proposal.id);
+    return { proposal: googleProposalView(current ?? proposal), approval: "executed" as const, execution };
   });
 
 export const executeGrantedGoogleAction = createServerFn({ method: "POST" })
