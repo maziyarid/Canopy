@@ -128,6 +128,7 @@ export type GoogleGovernedProposal = {
   snapshotHash: string;
   approvalPolicy: "grant" | "ada";
   approvalRef: string;
+  approvalRequestRef: string;
   idempotencyKey: string;
   status: "pending" | "pending_approval" | "ready" | "executing" | "succeeded" | "failed" | "rejected" | "cancelled" | "expired";
   expiresAt: string | null;
