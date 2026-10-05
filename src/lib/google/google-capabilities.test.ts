@@ -5,6 +5,7 @@ import {
   GOOGLE_ROLE_TEMPLATES,
   googleActionPolicy,
   scopesSatisfy,
+  type GoogleCapability,
 } from "./google-capabilities.ts";
 
 test("high-impact Google actions always require ADA approval", () => {
@@ -41,7 +42,7 @@ test("Google Ads requires separate adwords scope and developer token", () => {
 });
 
 test("marketing editor cannot publish GTM or mutate Ads", () => {
-  const editor = new Set(GOOGLE_ROLE_TEMPLATES.marketing_editor);
+  const editor = new Set<GoogleCapability>(GOOGLE_ROLE_TEMPLATES.marketing_editor);
   assert.equal(editor.has("google.gtm.entity.write"), true);
   assert.equal(editor.has("google.gtm.publish"), false);
   assert.equal(editor.has("google.ads.campaign.write"), false);
