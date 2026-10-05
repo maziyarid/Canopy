@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import type { Sql } from "../db.ts";
 import type { AccessCtx } from "../server/access.ts";
-import { beginGoogleOAuthConnection, completeGoogleOAuthConnection } from "./google-oauth-flow.server.ts";
+import { beginGoogleOAuthConnection, completeGoogleOAuthConnection, googleOAuthReturnUrl } from "./google-oauth-flow.server.ts";
 
 async function fixture() {
   const db=new PGlite();
@@ -25,6 +25,26 @@ async function fixture() {
   const owner:AccessCtx={role:"owner",filter:"",project};
   return {db,sql,owner};
 }
+
+test("OAuth callback return URL uses the configured public HTTPS origin behind a proxy", () => {
+  const result=googleOAuthReturnUrl(
+    "http://127.0.0.1:9140/api/google/oauth/callback?state=x&code=y",
+    "connected",
+    "project a",
+    { BETTER_AUTH_URL:"https://canopy.maziyarid.com" } as NodeJS.ProcessEnv,
+  );
+  assert.equal(result,"https://canopy.maziyarid.com/p/project%20a?googleOAuth=connected");
+
+  assert.throws(
+    ()=>googleOAuthReturnUrl(
+      "http://127.0.0.1:9140/api/google/oauth/callback",
+      "error",
+      undefined,
+      { BETTER_AUTH_URL:"http://public.example.test" } as NodeJS.ProcessEnv,
+    ),
+    /must use https/,
+  );
+});
 
 test("OAuth start is owner-only, bounded to allowed scopes and uses offline consent", async () => {
   const f=await fixture();
