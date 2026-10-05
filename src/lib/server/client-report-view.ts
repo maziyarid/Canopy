@@ -408,8 +408,8 @@ export type GatedClientDashboard = ClientReportView & {
 function emptyClientDashboard(access: DashboardAccess, site: string, periodLabel: string): GatedClientDashboard {
   return {
     projectId: access.boundProjectId,
-    site,
-    periodLabel,
+    site: redactClientText(site) ?? "",
+    periodLabel: redactClientText(periodLabel) ?? "",
     comparisonLabel: null,
     sections: [],
     channels: groupAcquisitionChannels([]),

@@ -415,4 +415,26 @@ describe("AAX-80 gated client dashboard", () => {
     assert.equal(period?.label.includes("sk_live_example"), false);
     assert.equal(period?.start, "2026-09-01");
   });
+
+  it("redacts site and period labels on the unconfigured fail-closed dashboard", () => {
+    const access = bindResolvedDashboardAccess({
+      role: "client",
+      resolvedProjectId: "project-a",
+      requestedProjectId: "project-a",
+      snapshotProjectId: "project-a",
+      reportingConfigured: false,
+    });
+    const view = buildGatedClientDashboard({
+      access,
+      site: "https://example.com api_key=sk_live_example",
+      periodLabel: "range access_token=secret-token",
+      sections: [],
+    });
+    assert.equal(view.reportingConfigured, false);
+    assert.equal(view.remoteRoute, null);
+    assert.equal(view.sections.length, 0);
+    assert.equal(view.site.includes("sk_live_example"), false);
+    assert.equal(view.periodLabel.includes("secret-token"), false);
+    assert.equal(view.periodLabel.includes("<redacted>"), true);
+  });
 });
