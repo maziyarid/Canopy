@@ -289,8 +289,28 @@ describe("AAX-80 gated client dashboard", () => {
     }
   });
 
+  it("normalizes export/search access and reuses the already loaded admin snapshot", () => {
+    const source = readFileSync(new URL("./reporting-snapshot.ts", import.meta.url), "utf8");
+    const exportStart = source.indexOf("export const exportProjectReport");
+    const searchStart = source.indexOf("export const getProjectSearchTable", exportStart + 1);
+    assert.ok(exportStart >= 0 && searchStart > exportStart);
+    const exportBlock = source.slice(exportStart, searchStart);
+    const searchBlock = source.slice(searchStart);
+    assert.match(exportBlock, /resolveSnapshotAccess/);
+    assert.match(searchBlock, /resolveSnapshotAccess/);
+    assert.match(exportBlock, /exportLoadedReportRecord/);
+    assert.doesNotMatch(exportBlock, /exportReportRecord\s*\(/);
+  });
+
+  it("shows reporting unavailable before the no-grants state", () => {
+    const source = readFileSync(new URL("../../components/project-report.tsx", import.meta.url), "utf8");
+    const unavailableAt = source.indexOf(": !report.view.reportingConfigured");
+    const noGrantsAt = source.indexOf(": !report.view.sections.length", unavailableAt + 1);
+    assert.ok(unavailableAt >= 0 && noGrantsAt > unavailableAt);
+  });
+
   it("fails closed and does not call the disabled reporting route when unconfigured", async () => {
-    let called = 0;
+    const called = 0;
     const view = buildGatedClientDashboard({
       access: { role: "client", boundProjectId: "project-a", reportingConfigured: false },
       site: "example.com",
