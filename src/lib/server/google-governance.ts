@@ -5,6 +5,7 @@ import { resolveAccess } from "./access";
 import { studioAuth } from "./studio-auth";
 import {
   GOOGLE_ACTION_KEYS,
+  GOOGLE_ACTION_POLICIES,
   GOOGLE_CAPABILITIES,
   GOOGLE_PROVIDERS,
   GOOGLE_ROLE_TEMPLATES,
@@ -14,6 +15,7 @@ import {
   activateGoogleConnectionProfile,
   disableGoogleConnectionProfile,
   grantGoogleCapability,
+  listEffectiveGoogleGrants,
   listGoogleAccess,
   revokeGoogleCapability,
 } from "../google/google-connections.server";
@@ -27,6 +29,7 @@ import {
 import {
   cancelGoogleAction,
   googleProposalView,
+  listActorGoogleProposals,
   listGoogleProposals,
   proposeGoogleAction,
 } from "../google/google-proposals.server";
@@ -52,6 +55,51 @@ async function accessFor(context: { userId: string; email: string }, data: z.inf
   );
   return { sql, access };
 }
+
+export const getGoogleActionWorkspace = createServerFn({ method: "GET" })
+  .middleware([studioAuth])
+  .validator(ProjectScope)
+  .handler(async ({ context, data }) => {
+    const { sql, access } = await accessFor(context, data);
+    if (access.filter.trim()) throw new Error("Forbidden");
+    const [grants, proposals] = await Promise.all([
+      listEffectiveGoogleGrants(sql, access, context.userId),
+      listActorGoogleProposals(sql, access, context.userId),
+    ]);
+    const allowedKeys = new Set(
+      grants.flatMap((grant) =>
+        GOOGLE_ACTION_KEYS.filter((action) => {
+          const policy = GOOGLE_ACTION_POLICIES[action];
+          return (
+            policy.provider === grant.provider &&
+            policy.capability === grant.capability &&
+            policy.resourceType === grant.resourceType
+          );
+        }).map((action) => action + "\n" + grant.resourceRef),
+      ),
+    );
+    const actions = [...allowedKeys].map((entry) => {
+      const [action, resourceRef] = entry.split("\n");
+      const policy = GOOGLE_ACTION_POLICIES[action as (typeof GOOGLE_ACTION_KEYS)[number]];
+      return {
+        action: action as (typeof GOOGLE_ACTION_KEYS)[number],
+        provider: policy.provider,
+        capability: policy.capability,
+        resourceType: policy.resourceType,
+        resourceRef,
+        approval: policy.approval,
+        mutationType: policy.mutationType,
+      };
+    });
+    return {
+      projectId: data.projectId,
+      role: access.role,
+      grants,
+      actions,
+      proposals,
+      canManageDelegatedAccess: access.role === "owner",
+    };
+  });
 
 export const getGoogleDelegatedAccess = createServerFn({ method: "GET" })
   .middleware([studioAuth])
