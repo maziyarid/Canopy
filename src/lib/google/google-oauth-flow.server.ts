@@ -21,6 +21,27 @@ function hashState(state: string) {
   return createHash("sha256").update(state).digest("hex");
 }
 
+export function googleOAuthReturnUrl(
+  requestUrl: string,
+  state: "connected" | "error",
+  projectId?: string,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const configured = env.BETTER_AUTH_URL?.trim();
+  const base = configured ? new URL(configured) : new URL(requestUrl);
+  if (
+    base.protocol !== "https:" &&
+    base.hostname !== "localhost" &&
+    base.hostname !== "127.0.0.1"
+  ) {
+    throw new Error("BETTER_AUTH_URL must use https");
+  }
+  const path = projectId ? "/p/" + encodeURIComponent(projectId) : "/";
+  const target = new URL(path, base);
+  target.searchParams.set("googleOAuth", state);
+  return target.toString();
+}
+
 const TokenResponse = z.object({
   access_token: z.string().min(20).max(8192),
   expires_in: z.number().int().positive().optional(),
