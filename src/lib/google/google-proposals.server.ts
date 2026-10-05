@@ -309,6 +309,11 @@ export async function beginGoogleActionExecution(
     throw new Error("google_action_expired");
   }
 
+  const fresh = await effectiveGoogleGrant(sql, access, actorRef, proposal.action, proposal.resourceRef);
+  if (fresh.profile.id !== proposal.connectionProfileId) {
+    throw new Error("google_connection_profile_changed");
+  }
+
   let approvalRef = "";
   let expectedStatus: GoogleGovernedProposal["status"] = "ready";
   if (proposal.approvalPolicy === "ada") {
