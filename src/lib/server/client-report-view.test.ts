@@ -14,6 +14,7 @@ import {
   newestMeasurementStamp,
   normalizeClientStatus,
   parseTimestamp,
+  clientSafePeriod,
   redactClientText,
   staleAfterMs,
   toClientSectionView,
@@ -382,5 +383,36 @@ describe("AAX-80 gated client dashboard", () => {
     assert.equal(view.site.includes("sk_live_example"), false);
     assert.equal(view.sections[0]?.metrics[0]?.name.includes("secret-token"), false);
     assert.equal(view.remoteRoute, null);
+  });
+
+  it("rebuilds client channels from redacted metric names and strips period labels", () => {
+    const access = bindResolvedDashboardAccess({
+      role: "client",
+      resolvedProjectId: "project-a",
+      requestedProjectId: "project-a",
+      snapshotProjectId: "project-a",
+      reportingConfigured: true,
+    });
+    const view = buildGatedClientDashboard({
+      access,
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      sections: [
+        section({
+          key: "acquisition",
+          metrics: [
+            { name: "organic access_token=secret-token", value: 4, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" },
+            { name: "organic", value: 2, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" },
+          ],
+        }),
+      ],
+      now: NOW,
+    });
+    const channelNames = Object.values(view.channels).flat().map((metric) => metric.name);
+    assert.equal(channelNames.some((name) => name.includes("secret-token")), false);
+    assert.equal(channelNames.includes("organic"), true);
+    const period = clientSafePeriod({ start: "2026-09-01", end: "2026-09-28", label: "range api_key=sk_live_example" });
+    assert.equal(period?.label.includes("sk_live_example"), false);
+    assert.equal(period?.start, "2026-09-01");
   });
 });

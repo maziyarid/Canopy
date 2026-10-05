@@ -424,6 +424,12 @@ function emptyClientDashboard(access: DashboardAccess, site: string, periodLabel
  * AAX-80 adapter. Uses the local view-model only.
  * The public reporting route stays disabled (PR #17); this function must not fetch it.
  */
+
+export function clientSafePeriod<T extends { label: string }>(period: T | null | undefined): T | null {
+  if (!period) return null;
+  return { ...period, label: redactClientText(period.label) ?? "" };
+}
+
 export function buildGatedClientDashboard(input: {
   access: DashboardAccess;
   site: string;
@@ -461,14 +467,18 @@ export function buildGatedClientDashboard(input: {
             status: normalizeClientStatus(section.status),
             warning: redactClientText(section.warning),
             freshness: redactClientText(section.freshness),
-            metrics: section.metrics.map((metric) => ({
-              ...metric,
-              name: redactClientText(metric.name) ?? metric.name,
-              provider: redactClientText(metric.provider) ?? "unknown",
-            })),
+            metrics: section.metrics
+              .map((metric) => ({
+                ...metric,
+                name: redactClientText(metric.name) ?? "",
+                provider: redactClientText(metric.provider) ?? "unknown",
+                provenance: metric.provenance,
+              }))
+              .filter((metric) => metric.name.length > 0),
           }
         : section,
     );
+  const acquisition = sections.find((section) => section.key === "acquisition");
   return {
     ...view,
     site: redactClientText(view.site) ?? "",
@@ -476,6 +486,9 @@ export function buildGatedClientDashboard(input: {
     comparisonLabel: redactClientText(view.comparisonLabel),
     projectId: input.access.boundProjectId,
     sections,
+    channels: input.access.role === "client"
+      ? groupAcquisitionChannels(acquisition?.metrics ?? [])
+      : view.channels,
     transport: CLIENT_DASHBOARD_TRANSPORT,
     remoteRoute: null,
     reportingConfigured: true,

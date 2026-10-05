@@ -34,7 +34,11 @@ export function clientComparisonRows(
   const allow = new Set(visibleSectionKeys.filter((key) => key !== "overview" && key !== "providerHealth"));
   return comparisonRows(snapshot)
     .filter((row) => allow.has(row.section))
-    .map((row) => ({ ...row, metric: redactClientText(row.metric) ?? "" }))
+    .map((row) => ({
+      ...row,
+      metric: redactClientText(row.metric) ?? "",
+      provider: redactClientText(row.provider) ?? "unknown",
+    }))
     .filter((row) => row.metric.length > 0);
 }
 

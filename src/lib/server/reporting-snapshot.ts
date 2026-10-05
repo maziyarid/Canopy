@@ -11,7 +11,7 @@ import { periodFromLabel } from "./reporting-snapshot-core";
 import { parseReportSections } from "./report-sections";
 import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
-import { bindResolvedDashboardAccess, buildGatedClientDashboard } from "./client-report-view";
+import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod } from "./client-report-view";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
@@ -116,8 +116,8 @@ export const getProjectReport = createServerFn({ method: "GET" })
       canManageNotes: access.role !== "client",
       canReadSearchTable: !access.filter.trim() && (access.role !== "client" || parseReportSections(access.reportSections).includes("search")),
       canWriteNotes: access.role !== "client" && access.project.data_domain !== "medical",
-      period: snapshot.period,
-      comparison: snapshot.comparison,
+      period: access.role === "client" ? clientSafePeriod(snapshot.period) : snapshot.period,
+      comparison: access.role === "client" ? clientSafePeriod(snapshot.comparison) : snapshot.comparison,
       comparisons: access.role === "client"
         ? clientComparisonRows(snapshot, view.sections.map((section) => section.key))
         : comparisonRows(snapshot),
