@@ -88,7 +88,13 @@ export const getProjectReport = createServerFn({ method: "GET" })
   .validator(GetSchema)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const access = await resolveSnapshotAccess(
+      resolveAccess,
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+    );
     const reportingConfigured = isReportingConfiguredForRole(access.role);
     if (!reportingConfigured) {
       const period = periodFromLabel(data.period, reportClosingDate(data.endDate));
@@ -128,7 +134,7 @@ export const getProjectReport = createServerFn({ method: "GET" })
         comparisons: [],
       };
     }
-    const snapshot = await loadReportingSnapshot({ sql, readLedger, resolveAccess, userId: context.userId, email: context.email, projectId: data.projectId, periodLabel: data.period, comparisonLabel: data.comparison, endDate: data.endDate });
+    const snapshot = await loadReportingSnapshot({ sql, readLedger, resolveAccess, userId: context.userId, email: context.email, projectId: access.project.id, periodLabel: data.period, comparisonLabel: data.comparison, endDate: data.endDate });
     if (access.role !== "client") await persistSnapshotInsights(sql, access, snapshot);
     const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
     const notes = noteWindow.notes;

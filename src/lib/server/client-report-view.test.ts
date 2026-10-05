@@ -296,6 +296,10 @@ describe("AAX-80 gated client dashboard", () => {
     assert.ok(exportStart >= 0 && searchStart > exportStart);
     const exportBlock = source.slice(exportStart, searchStart);
     const searchBlock = source.slice(searchStart);
+    const reportStart = source.indexOf("export const getProjectReport");
+    const reportBlock = source.slice(reportStart, exportStart);
+    assert.match(reportBlock, /resolveSnapshotAccess/);
+    assert.doesNotMatch(reportBlock, /await resolveAccess\(/);
     assert.match(exportBlock, /resolveSnapshotAccess/);
     assert.match(searchBlock, /resolveSnapshotAccess/);
     assert.match(exportBlock, /exportLoadedReportRecord/);
