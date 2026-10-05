@@ -35,7 +35,13 @@ const HOSTS = new Set([
 ]);
 
 function safeLabel(value: unknown) {
-  const label = String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  const label = [...String(value || "")]
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join("")
+    .trim();
   return label.slice(0, 200);
 }
 
