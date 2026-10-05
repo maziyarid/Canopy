@@ -61,6 +61,28 @@ class FakeGoogle(BaseHTTPRequestHandler):
             if self.malformed_metrics:
                 for row in rows: row.pop('impressions',None)
             self.sendj(200,{'siteUrl':body.get('siteUrl'),'dimensions':dims,'rows':rows,'fetchedAt':'2026-09-21T00:00:00Z'}); return
+        if self.path=='/v1/ga4/run-report':
+            report=body.get('report')
+            common={'activeUsers':9,'newUsers':3,'sessions':14,'engagedSessions':10,'engagementRate':10/14,'averageSessionDuration':61.5,'eventCount':52,'keyEvents':2}
+            if report=='summary':
+                rows=[{'dimensions':{},'metrics':common}]
+            elif report=='daily':
+                rows=[
+                    {'dimensions':{'date':body.get('startDate')},'metrics':common},
+                    {'dimensions':{'date':body.get('endDate')},'metrics':common},
+                ]
+            elif report=='acquisition':
+                rows=[{'dimensions':{'sessionDefaultChannelGroup':'Organic Search'},'metrics':common}]
+            elif report=='landing_pages':
+                rows=[{'dimensions':{'landingPage':'/services/rhinoplasty'},'metrics':common}]
+            else:
+                self.sendj(400,{'error':'invalid_ga4_report'}); return
+            self.sendj(200,{
+                'property':body.get('property'),'report':report,
+                'startDate':body.get('startDate'),'endDate':body.get('endDate'),
+                'rows':rows,'metadata':{'timeZone':'Asia/Tehran','currencyCode':'IRR'},
+                'propertyQuota':{'tokensPerDay':{'remaining':1000}},'fetchedAt':'2026-10-05T00:00:00Z',
+            }); return
         self.sendj(404,{'error':'not_found'})
 
 class GatewayTest(unittest.TestCase):
@@ -79,6 +101,7 @@ class GatewayTest(unittest.TestCase):
             ANALYTICS_GATEWAY_DB=str(self.db_path),
             GOOGLE_PROVIDER_URL=f'http://127.0.0.1:{self.google_port}',
             GOOGLE_PROVIDER_TOKEN=FakeGoogle.token,
+            MS_ROBOT_PROJECT_GA4_MAP_JSON=json.dumps({'project-a':{'example.com':'properties/100'}}),
         )
         self.proc=subprocess.Popen(['python3',str(GATEWAY)],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         for _ in range(50):
@@ -143,6 +166,30 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(len(metrics['rows']),2)
         _,snapshot=self.request('/v1/sites/example.com/snapshot?window=7d')
         self.assertEqual(snapshot['gsc']['clicks'],5.0)
+
+    def test_ga4_data_api_sync_requires_explicit_project_site_mapping(self):
+        status,test=self.request('/v1/providers/ga4/test','POST',{})
+        self.assertEqual(status,200); self.assertTrue(test['ok'])
+        status,refresh=self.request('/v1/sites/example.com/refresh','POST',{'sources':['ga4'],'window':'7d','idempotencyKey':'ga4-1'})
+        self.assertEqual(status,202)
+        run=refresh['runs'][0]
+        self.assertEqual(run['status'],'completed')
+        self.assertGreaterEqual(run['rows_written'],5)
+        self.assertEqual(run['resource_ref'],'properties/100')
+        _,metrics=self.request('/v1/metrics?provider=ga4&site=example.com&dataset=summary')
+        self.assertEqual(len(metrics['rows']),1)
+        self.assertEqual(metrics['rows'][0]['metrics']['sessions'],14.0)
+        self.assertEqual(metrics['coverage']['ranges'][0]['start'],metrics['rows'][0]['dimensions']['startDate'])
+        _,snapshot=self.request('/v1/sites/example.com/snapshot?window=7d')
+        self.assertEqual(snapshot['ga4']['sessions'],14.0)
+        self.assertEqual(snapshot['ga4']['keyEvents'],2.0)
+
+        status,foreign=self.request('/v1/sites/example.com/refresh','POST',{'sources':['ga4'],'window':'7d','idempotencyKey':'ga4-foreign'},project='project-b')
+        self.assertEqual(status,202)
+        self.assertEqual(foreign['runs'][0]['status'],'blocked')
+        self.assertEqual(foreign['runs'][0]['error_class'],'ga4_property_not_mapped')
+        _,foreign_metrics=self.request('/v1/metrics?provider=ga4&site=example.com&dataset=summary',project='project-b')
+        self.assertEqual(foreign_metrics['rows'],[])
 
     def test_repeated_refresh_is_idempotent_with_caller_key(self):
         payload={'sources':['semrush'],'window':'same-window','idempotencyKey':'retry-1'}
