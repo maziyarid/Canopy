@@ -12,6 +12,7 @@ import { parseReportSections } from "./report-sections";
 import { comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
 import { bindResolvedDashboardAccess, buildGatedClientDashboard } from "./client-report-view";
+import { gateProjectExport } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
 
@@ -115,11 +116,38 @@ export const getProjectReport = createServerFn({ method: "GET" })
 export const exportProjectReport = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .validator(GetSchema)
-  .handler(async ({ context, data }) => exportReportRecord({
-    sql: await getSql(), readLedger, resolveAccess, userId: context.userId,
-    email: context.email, projectId: data.projectId, periodLabel: data.period,
-    comparisonLabel: data.comparison, endDate: data.endDate,
-  }));
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const snapshot = await loadReportingSnapshot({
+      sql,
+      readLedger,
+      resolveAccess,
+      userId: context.userId,
+      email: context.email,
+      projectId: data.projectId,
+      periodLabel: data.period,
+      comparisonLabel: data.comparison,
+      endDate: data.endDate,
+    });
+    const boundProjectId = gateProjectExport({
+      role: access.role,
+      resolvedProjectId: access.project.id,
+      requestedProjectId: data.projectId,
+      snapshotProjectId: snapshot.projectId,
+    });
+    return exportReportRecord({
+      sql,
+      readLedger,
+      resolveAccess,
+      userId: context.userId,
+      email: context.email,
+      projectId: boundProjectId,
+      periodLabel: data.period,
+      comparisonLabel: data.comparison,
+      endDate: data.endDate,
+    });
+  });
 
 
 export const getProjectSearchTable = createServerFn({ method: "GET" })
