@@ -3,6 +3,7 @@ import ipaddress
 import json
 import os
 import re
+import unicodedata
 from urllib.parse import unquote, urlparse
 
 from gateway import DB, create_or_run_sync, google_request, init_db, now
@@ -108,7 +109,8 @@ def canonical_ip(host):
 
 def normalise_host(host):
     host = strip_port(decode_host(host))
-    host = str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
+    # Fullwidth ASCII (U+FF0E dot, U+FF21 letters) is the same site key.
+    host = unicodedata.normalize("NFKC", str(host or "")).lower().rstrip(".").removeprefix("www.").rstrip(".")
     if not host:
         return ""
     host = assert_hostname(host)
