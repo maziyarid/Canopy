@@ -41,7 +41,7 @@ const selectClass =
 const CONNECTION_PRESETS: Array<{
   id: string;
   provider: GoogleProvider;
-  profileMode: "write" | "admin";
+  profileMode: "write" | "publish" | "admin";
   scopes: string[];
   label: { en: string; fa: string };
   body: { en: string; fa: string };
@@ -51,10 +51,21 @@ const CONNECTION_PRESETS: Array<{
     provider: "gsc",
     profileMode: "write",
     scopes: ["https://www.googleapis.com/auth/webmasters"],
-    label: { en: "Search Console changes", fa: "تغییرات سرچ کنسول" },
+    label: { en: "Search Console sitemap changes", fa: "تغییرات سایت‌مپ سرچ کنسول" },
     body: {
-      en: "Submit or remove sitemaps and manage authorised Search Console properties.",
-      fa: "ثبت یا حذف سایت‌مپ و مدیریت پراپرتی‌های مجاز سرچ کنسول.",
+      en: "Submit sitemaps through a write-only operational connection.",
+      fa: "ثبت سایت‌مپ از طریق اتصال عملیاتی با دسترسی نوشتنی.",
+    },
+  },
+  {
+    id: "gsc-admin",
+    provider: "gsc",
+    profileMode: "admin",
+    scopes: ["https://www.googleapis.com/auth/webmasters"],
+    label: { en: "Search Console property administration", fa: "مدیریت پراپرتی سرچ کنسول" },
+    body: {
+      en: "Sensitive property add/remove and sitemap deletion actions. Every such action requires approval.",
+      fa: "افزودن یا حذف پراپرتی و حذف سایت‌مپ. همهٔ این اقدامات نیازمند تأیید هستند.",
     },
   },
   {
@@ -86,12 +97,22 @@ const CONNECTION_PRESETS: Array<{
     scopes: [
       "https://www.googleapis.com/auth/tagmanager.edit.containers",
       "https://www.googleapis.com/auth/tagmanager.edit.containerversions",
-      "https://www.googleapis.com/auth/tagmanager.publish",
     ],
-    label: { en: "Tag Manager workspace", fa: "فضای کاری تگ منیجر" },
+    label: { en: "Tag Manager editing", fa: "ویرایش تگ منیجر" },
     body: {
-      en: "Edit workspaces and versions. Publishing is still a separate capability with approval.",
-      fa: "ویرایش فضای کاری و نسخه‌ها. انتشار همچنان مجوز جداگانه و تأیید لازم دارد.",
+      en: "Edit workspaces, tags and versions without production-publish authority.",
+      fa: "ویرایش فضای کاری، تگ‌ها و نسخه‌ها بدون اختیار انتشار در محیط اصلی.",
+    },
+  },
+  {
+    id: "gtm-publish",
+    provider: "gtm",
+    profileMode: "publish",
+    scopes: ["https://www.googleapis.com/auth/tagmanager.publish"],
+    label: { en: "Tag Manager publishing", fa: "انتشار تگ منیجر" },
+    body: {
+      en: "Production publishing is isolated from editing and always requires approval.",
+      fa: "انتشار در محیط اصلی از ویرایش جداست و همیشه به تأیید نیاز دارد.",
     },
   },
   {
@@ -110,10 +131,32 @@ const CONNECTION_PRESETS: Array<{
     provider: "google_ads",
     profileMode: "write",
     scopes: ["https://www.googleapis.com/auth/adwords"],
-    label: { en: "Google Ads campaigns", fa: "کمپین‌های گوگل ادز" },
+    label: { en: "Google Ads campaign editing", fa: "ویرایش کمپین گوگل ادز" },
     body: {
-      en: "Campaign and budget operations through the separate Google Ads API approval lane.",
-      fa: "مدیریت کمپین و بودجه از مسیر جداگانه و تأییدشدهٔ Google Ads API.",
+      en: "Create paused campaigns and edit campaign fields. Activation is kept separate.",
+      fa: "ایجاد کمپین در حالت متوقف و ویرایش اطلاعات کمپین. فعال‌سازی جدا نگه داشته می‌شود.",
+    },
+  },
+  {
+    id: "ads-publish",
+    provider: "google_ads",
+    profileMode: "publish",
+    scopes: ["https://www.googleapis.com/auth/adwords"],
+    label: { en: "Google Ads activation", fa: "فعال‌سازی گوگل ادز" },
+    body: {
+      en: "Enable campaigns only after explicit approval.",
+      fa: "فعال‌سازی کمپین فقط پس از تأیید صریح.",
+    },
+  },
+  {
+    id: "ads-admin",
+    provider: "google_ads",
+    profileMode: "admin",
+    scopes: ["https://www.googleapis.com/auth/adwords"],
+    label: { en: "Google Ads budgets", fa: "بودجه‌های گوگل ادز" },
+    body: {
+      en: "Budget mutations are isolated as high-impact actions with approval.",
+      fa: "تغییر بودجه به‌عنوان اقدام حساس و نیازمند تأیید، جداگانه مدیریت می‌شود.",
     },
   },
 ];
