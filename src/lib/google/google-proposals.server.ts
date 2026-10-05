@@ -308,12 +308,18 @@ export async function cancelGoogleAction(
   actorRef: string,
   proposalId: string,
 ) {
-  assertOwner(access);
-  const rows = await sql.query<{ id: string }>(
-    "update google_action_proposals set status='cancelled',updated_at=now() " +
-      "where id=$1 and project_id=$2 and status in ('pending_approval','ready') returning id",
-    [proposalId, access.project.id],
-  );
+  assertActionMember(access);
+  const rows = access.role === "owner"
+    ? await sql.query<{ id: string }>(
+        "update google_action_proposals set status='cancelled',updated_at=now() " +
+          "where id=$1 and project_id=$2 and status in ('pending_approval','ready') returning id",
+        [proposalId, access.project.id],
+      )
+    : await sql.query<{ id: string }>(
+        "update google_action_proposals set status='cancelled',updated_at=now() " +
+          "where id=$1 and project_id=$2 and actor_ref=$3 and status in ('pending_approval','ready') returning id",
+        [proposalId, access.project.id, actorRef],
+      );
   if (!rows[0]) throw new Error("google_action_state_conflict");
   await receipt(sql, {
     projectId: access.project.id,
