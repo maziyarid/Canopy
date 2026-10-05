@@ -188,6 +188,28 @@ describe("AAX-82 evidence-linked insights", () => {
     );
   });
 
+
+  it("keeps an already-approved actionless legacy recommendation out of client reads", () => {
+    const store = new InsightStore();
+    const current = createInsight(
+      baseDraft({
+        type: "recommendation",
+        recommendedAction: "Review the page manually.",
+      }),
+    );
+    const legacy = {
+      ...current,
+      recommendedAction: null,
+      recommendationDisposition: undefined,
+      reviewState: "approved",
+      visibility: "client",
+      reviewedBy: "human:legacy-reviewer",
+    } as unknown as InsightRecord;
+    store.put(legacy);
+    assert.equal(store.listForProject("proj_a", "client").length, 0);
+    assert.equal(store.listForProject("proj_a", "owner").length, 1);
+  });
+
   it("does not invent numeric facts inside the model", () => {
     const insight = createInsight(baseDraft());
     assert.equal(insight.evidenceRefs[0].value, 120);

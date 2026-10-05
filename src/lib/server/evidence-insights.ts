@@ -145,6 +145,16 @@ export function normalizeRecommendationSafety(insight: InsightRecord): InsightRe
 }
 
 
+export function recommendationCanBeClientVisible(insight: InsightRecord): boolean {
+  if (insight.type !== "recommendation") return true;
+  const safeInsight = normalizeRecommendationSafety(insight);
+  return (
+    Boolean(safeInsight.recommendedAction?.trim()) &&
+    safeInsight.recommendationDisposition === "proposal_only"
+  );
+}
+
+
 export function assertRecommendationReadyForApproval(insight: InsightRecord): void {
   if (insight.type !== "recommendation") return;
   if (!insight.recommendedAction?.trim()) {
@@ -152,7 +162,7 @@ export function assertRecommendationReadyForApproval(insight: InsightRecord): vo
       "recommendations require a concrete recommendedAction before approval",
     );
   }
-  if (normalizeRecommendationSafety(insight).recommendationDisposition !== "proposal_only") {
+  if (!recommendationCanBeClientVisible(normalizeRecommendationSafety(insight))) {
     throw new InsightValidationError("recommendations must remain proposal_only");
   }
 }
@@ -180,7 +190,11 @@ export function assertCompatibleEvidence(refs: readonly EvidenceRef[]): void {
 export function clientMaySee(insight: InsightRecord, role: InsightRole): boolean {
   if (role === "owner" || role === "editor") return true;
   if (role === "service") return insight.visibility !== "restricted";
-  return insight.visibility === "client" && insight.reviewState === "approved";
+  return (
+    insight.visibility === "client" &&
+    insight.reviewState === "approved" &&
+    recommendationCanBeClientVisible(insight)
+  );
 }
 
 export function redactInsightForRole(insight: InsightRecord, role: InsightRole): InsightRecord | null {
