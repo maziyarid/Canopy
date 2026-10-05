@@ -85,7 +85,7 @@ test("control client rejects non-loopback approval URLs before network", async (
 
 test("proof is claimed and consumed only through the limited server token", async () => {
   const calls: string[] = [];
-  const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
+  const fetchImpl = async (url: string | URL | Request, _init?: RequestInit) => {
     calls.push(String(url));
     const path = new URL(String(url)).pathname;
     if (path.endsWith("/proof")) {
