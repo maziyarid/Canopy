@@ -4,6 +4,7 @@ import {
   applySectionFreshness,
   buildClientReportView,
   buildGatedClientDashboard,
+  bindResolvedDashboardAccess,
   DISABLED_REPORTING_ROUTE,
   channelMeasuredTotal,
   classifyChannel,
@@ -334,5 +335,52 @@ describe("AAX-80 gated client dashboard", () => {
     assert.equal(view.sections.some((item) => item.key === "providerHealth"), false);
     assert.equal(view.sections.every((item) => item.reasonCode === null), true);
     assert.equal(view.sections[0]?.warning?.includes("secret-token"), false);
+  });
+
+  it("fails closed when the snapshot project differs from the resolved binding", () => {
+    assert.throws(
+      () =>
+        bindResolvedDashboardAccess({
+          role: "client",
+          resolvedProjectId: "project-a",
+          requestedProjectId: "project-a",
+          snapshotProjectId: "project-b",
+          reportingConfigured: true,
+        }),
+      /client_supplied_scope_rejected/,
+    );
+  });
+
+  it("redacts credential-shaped metric names before a client dashboard is returned", () => {
+    const access = bindResolvedDashboardAccess({
+      role: "client",
+      resolvedProjectId: "project-a",
+      requestedProjectId: "project-a",
+      snapshotProjectId: "project-a",
+      reportingConfigured: true,
+    });
+    const view = buildGatedClientDashboard({
+      access,
+      site: "https://example.com api_key=sk_live_example",
+      periodLabel: "2026-09-01..2026-09-28",
+      sections: [
+        section({
+          metrics: [
+            {
+              name: "clicks access_token=secret-token",
+              value: 3,
+              provenance: "first_party",
+              provider: "gsc",
+              dataDate: "2026-09-27",
+            },
+          ],
+        }),
+      ],
+      now: NOW,
+    });
+    assert.equal(view.projectId, "project-a");
+    assert.equal(view.site.includes("sk_live_example"), false);
+    assert.equal(view.sections[0]?.metrics[0]?.name.includes("secret-token"), false);
+    assert.equal(view.remoteRoute, null);
   });
 });

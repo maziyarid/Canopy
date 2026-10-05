@@ -11,7 +11,7 @@ import { periodFromLabel } from "./reporting-snapshot-core";
 import { parseReportSections } from "./report-sections";
 import { comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
-import { buildClientReportView } from "./client-report-view";
+import { bindResolvedDashboardAccess, buildGatedClientDashboard } from "./client-report-view";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
 
@@ -83,8 +83,22 @@ export const getProjectReport = createServerFn({ method: "GET" })
     const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
     const notes = noteWindow.notes;
     const sections = access.role === "client" ? snapshot.sections : [...snapshot.sections, snapshot.providerHealth];
+    const dashboardAccess = bindResolvedDashboardAccess({
+      role: access.role,
+      resolvedProjectId: access.project.id,
+      requestedProjectId: data.projectId,
+      snapshotProjectId: snapshot.projectId,
+      reportingConfigured: true,
+    });
     return {
-      view: buildClientReportView({ projectId: snapshot.projectId, site: snapshot.site, periodLabel: snapshot.period.label, comparisonLabel: snapshot.comparison?.label, role: access.role, grants: access.reportSections ?? [], sections }),
+      view: buildGatedClientDashboard({
+        access: dashboardAccess,
+        site: snapshot.site,
+        periodLabel: snapshot.period.label,
+        comparisonLabel: snapshot.comparison?.label,
+        grants: access.reportSections ?? [],
+        sections,
+      }),
       journal: mountInsightJournal({ snapshot, insights: notes, generate: false, role: access.role, truncated: noteWindow.truncated, visibleLimit: noteWindow.limit }),
       notes: access.role === "client" ? [] : notes,
       notesTruncated: noteWindow.truncated,

@@ -366,6 +366,28 @@ export class ClientDashboardScopeError extends Error {
   }
 }
 
+export function bindResolvedDashboardAccess(input: {
+  role: ReportRole;
+  resolvedProjectId: string;
+  requestedProjectId: string;
+  snapshotProjectId: string;
+  reportingConfigured: boolean;
+}): DashboardAccess {
+  const resolved = input.resolvedProjectId?.trim();
+  if (!resolved || resolved !== input.resolvedProjectId) {
+    throw new ClientDashboardScopeError();
+  }
+  if (input.requestedProjectId !== resolved || input.snapshotProjectId !== resolved) {
+    throw new ClientDashboardScopeError();
+  }
+  return {
+    role: input.role,
+    boundProjectId: resolved,
+    requestedProjectId: input.requestedProjectId,
+    reportingConfigured: input.reportingConfigured,
+  };
+}
+
 export function assertDashboardScope(access: DashboardAccess): void {
   const bound = access.boundProjectId?.trim();
   if (!bound || bound !== access.boundProjectId) {
@@ -432,10 +454,26 @@ export function buildGatedClientDashboard(input: {
   const sections = view.sections
     .filter((section) => input.access.role !== "client" || section.key !== "providerHealth")
     .map((section) =>
-      input.access.role === "client" ? { ...section, reasonCode: null, status: normalizeClientStatus(section.status) } : section,
+      input.access.role === "client"
+        ? {
+            ...section,
+            reasonCode: null,
+            status: normalizeClientStatus(section.status),
+            warning: redactClientText(section.warning),
+            freshness: redactClientText(section.freshness),
+            metrics: section.metrics.map((metric) => ({
+              ...metric,
+              name: redactClientText(metric.name) ?? metric.name,
+              provider: redactClientText(metric.provider) ?? "unknown",
+            })),
+          }
+        : section,
     );
   return {
     ...view,
+    site: redactClientText(view.site) ?? "",
+    periodLabel: redactClientText(view.periodLabel) ?? view.periodLabel,
+    comparisonLabel: redactClientText(view.comparisonLabel),
     projectId: input.access.boundProjectId,
     sections,
     transport: CLIENT_DASHBOARD_TRANSPORT,
