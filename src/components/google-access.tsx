@@ -21,6 +21,7 @@ import {
   saveGoogleCapabilityGrant,
   saveGoogleConnectionBindings,
   startGoogleWriteOAuth,
+  syncApprovedGoogleAction,
 } from "@/lib/server/google-governance";
 import { useLocale } from "@/lib/locale";
 import { LoaderCircle, Play, RefreshCw, ShieldCheck, Unplug, X } from "lucide-react";
@@ -309,6 +310,9 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
         awaiting: "در انتظار تأیید",
         queued: "درخواست برای تأیید ارسال شد.",
         approvalUnavailable: "درخواست ذخیره شد، اما مسیر تأیید فعلاً در دسترس نیست.",
+        checkApproval: "بررسی تأیید",
+        denied: "درخواست تأیید نشد.",
+        expired: "مهلت تأیید این درخواست به پایان رسیده است.",
         executed: "اقدام با موفقیت اجرا شد.",
         connected: "پس از تأیید گوگل به همین پروژه برمی‌گردید.",
         resourcesEmpty: "منبعی با این حساب پیدا نشد.",
@@ -348,6 +352,9 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
         awaiting: "Awaiting approval",
         queued: "Approval request queued.",
         approvalUnavailable: "The request was saved, but the approval path is currently unavailable.",
+        checkApproval: "Check approval",
+        denied: "The approval request was denied.",
+        expired: "This approval request has expired.",
         executed: "Action completed.",
         connected: "You will return to this project after Google authorisation.",
         resourcesEmpty: "No resource was discovered for this identity.",
@@ -643,26 +650,53 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
                     {proposal.payloadHash.slice(0, 12)}… · {proposal.idempotencyKey}
                   </p>
                 </div>
-                {["pending_approval", "ready"].includes(proposal.status) ? (
-                  <Button
-                    size="sm"
-                    variant="quiet"
-                    disabled={busy === "cancel:" + proposal.id}
-                    onClick={async () => {
-                      try {
-                        await runBusy("cancel:" + proposal.id, () =>
-                          cancelPendingGoogleAction({ data: withScope({ projectId, proposalId: proposal.id }) }),
-                        );
-                        await load();
-                      } catch {
-                        // runBusy reports.
-                      }
-                    }}
-                  >
-                    <X className="size-4" />
-                    {ui.cancel}
-                  </Button>
-                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  {proposal.status === "pending_approval" ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy === "approval:" + proposal.id}
+                      onClick={async () => {
+                        try {
+                          const result = await runBusy("approval:" + proposal.id, () =>
+                            syncApprovedGoogleAction({ data: withScope({ projectId, proposalId: proposal.id }) }),
+                          );
+                          if (result.approval === "executed") toast.success(ui.executed);
+                          else if (result.approval === "denied") toast.error(ui.denied);
+                          else if (result.approval === "expired") toast.warning(ui.expired);
+                          else if (result.approval === "unavailable") toast.warning(ui.approvalUnavailable);
+                          else toast.message(ui.awaiting);
+                          await load();
+                        } catch {
+                          // runBusy reports.
+                        }
+                      }}
+                    >
+                      {busy === "approval:" + proposal.id ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                      {ui.checkApproval}
+                    </Button>
+                  ) : null}
+                  {["pending_approval", "ready"].includes(proposal.status) ? (
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      disabled={busy === "cancel:" + proposal.id}
+                      onClick={async () => {
+                        try {
+                          await runBusy("cancel:" + proposal.id, () =>
+                            cancelPendingGoogleAction({ data: withScope({ projectId, proposalId: proposal.id }) }),
+                          );
+                          await load();
+                        } catch {
+                          // runBusy reports.
+                        }
+                      }}
+                    >
+                      <X className="size-4" />
+                      {ui.cancel}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
