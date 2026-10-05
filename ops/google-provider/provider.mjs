@@ -194,7 +194,13 @@ function validateGa4Property(value) {
 }
 
 function safeGa4Dimension(name, value) {
-  const raw = String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  const raw = [...String(value ?? "")]
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join("")
+    .trim();
   if (name === "date") {
     if (!/^\d{8}$/.test(raw)) throw new Error("invalid_ga4_date");
     return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
