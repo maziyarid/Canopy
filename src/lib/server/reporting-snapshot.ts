@@ -11,7 +11,7 @@ import { periodFromLabel } from "./reporting-snapshot-core";
 import { parseReportSections } from "./report-sections";
 import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
-import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod } from "./client-report-view";
+import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod, redactClientText } from "./client-report-view";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
@@ -173,16 +173,18 @@ export const exportProjectReport = createServerFn({ method: "POST" })
         truncated: noteWindow.truncated,
         visibleLimit: noteWindow.limit,
       });
+      const periodStart = redactClientText(snapshot.period.start) ?? "";
+      const periodEnd = redactClientText(snapshot.period.end) ?? "";
       const content = clientEvidenceExportCsv({
         site: view.site,
-        periodStart: snapshot.period.start,
-        periodEnd: snapshot.period.end,
+        periodStart,
+        periodEnd,
         sections: view.sections,
         evidenceTitles: journal.journal.days.flatMap((day) => day.cards.map((card) => card.title)),
       });
       await sql`insert into operation_receipts(id,project_id,actor_ref,operation,target_ref,status,evidence)
-        values (${crypto.randomUUID()},${boundProjectId},${context.userId},'report.export.csv',${boundProjectId},'completed',${JSON.stringify({ schemaVersion: snapshot.schemaVersion, start: snapshot.period.start, end: snapshot.period.end, clientSafe: true, evidenceTitleCount: journal.journal.days.reduce((count, day) => count + day.cards.length, 0) })})`;
-      return { content, contentType: "text/csv;charset=utf-8", filename: `ms-robot-report-${snapshot.period.start}-${snapshot.period.end}.csv` };
+        values (${crypto.randomUUID()},${boundProjectId},${context.userId},'report.export.csv',${boundProjectId},'completed',${JSON.stringify({ schemaVersion: snapshot.schemaVersion, start: periodStart, end: periodEnd, clientSafe: true, evidenceTitleCount: journal.journal.days.reduce((count, day) => count + day.cards.length, 0) })})`;
+      return { content, contentType: "text/csv;charset=utf-8", filename: "ms-robot-client-report.csv" };
     }
     return exportReportRecord({
       sql,

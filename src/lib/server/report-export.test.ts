@@ -101,3 +101,25 @@ test("client evidence export redacts secret-like titles and neutralises formula 
   assert.match(csv, /Approved clicks note/);
   assert.equal(csv.split("evidence_note").length - 1, 3);
 });
+
+test("client evidence export redacts secret-shaped site and period bounds", () => {
+  const csv = clientEvidenceExportCsv({
+    site: "example.com api_key=sk_live_example",
+    periodStart: "2026-09-27 access_token=secret-token",
+    periodEnd: "2026-10-03 refresh_token=another-secret",
+    sections: [{
+      key: "search",
+      status: "ok",
+      metrics: [{ name: "clicks", provider: "gsc", value: 3, provenance: "first_party", dataDate: "2026-10-01" }],
+    }],
+    evidenceTitles: ["Approved clicks note"],
+  });
+  assert.match(csv, /api_key=<redacted>/);
+  assert.match(csv, /access_token=<redacted>/);
+  assert.match(csv, /refresh_token=<redacted>/);
+  assert.doesNotMatch(csv, /sk_live_example/);
+  assert.doesNotMatch(csv, /secret-token/);
+  assert.doesNotMatch(csv, /another-secret/);
+  assert.match(csv, /2026-09-27/);
+  assert.match(csv, /2026-10-03/);
+});

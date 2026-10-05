@@ -78,18 +78,21 @@ export function clientEvidenceExportCsv(input: {
   sections: readonly ClientExportSection[];
   evidenceTitles: readonly string[];
 }): string {
+  const site = redactClientText(input.site) ?? "";
+  const periodStart = redactClientText(input.periodStart) ?? "";
+  const periodEnd = redactClientText(input.periodEnd) ?? "";
   const header = ["site", "period_start", "period_end", "section", "provider", "metric", "value", "provenance", "data_date", "status", "evidence_title"];
   const metricRows = input.sections
     .filter((section) => section.key !== "overview" && section.key !== "providerHealth")
     .flatMap((section) => section.metrics.map((metric) => [
-      input.site, input.periodStart, input.periodEnd, section.key, metric.provider, metric.name,
+      site, periodStart, periodEnd, section.key, metric.provider, metric.name,
       finite(metric.value), metric.provenance ?? "", metric.dataDate ?? "", section.status, "",
     ]));
   const evidenceRows = input.evidenceTitles.flatMap((title) => {
     const visible = redactClientText(title);
     if (!visible) return [];
     return [[
-      input.site, input.periodStart, input.periodEnd, "evidence_note", "", "", "", "", "", "visible", visible,
+      site, periodStart, periodEnd, "evidence_note", "", "", "", "", "", "visible", visible,
     ]];
   });
   return [header, ...metricRows, ...evidenceRows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";

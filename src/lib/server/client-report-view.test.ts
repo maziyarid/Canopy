@@ -414,6 +414,10 @@ describe("AAX-80 gated client dashboard", () => {
     const period = clientSafePeriod({ start: "2026-09-01", end: "2026-09-28", label: "range api_key=sk_live_example" });
     assert.equal(period?.label.includes("sk_live_example"), false);
     assert.equal(period?.start, "2026-09-01");
+    const poisoned = clientSafePeriod({ start: "2026-09-01 api_key=sk_live_example", end: "2026-09-28", label: "range" });
+    assert.equal(poisoned?.start.includes("sk_live_example"), false);
+    assert.equal(poisoned?.start.includes("<redacted>"), true);
+    assert.equal(poisoned?.end, "2026-09-28");
   });
 
   it("redacts site and period labels on the unconfigured fail-closed dashboard", () => {

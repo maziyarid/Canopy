@@ -425,9 +425,14 @@ function emptyClientDashboard(access: DashboardAccess, site: string, periodLabel
  * The public reporting route stays disabled (PR #17); this function must not fetch it.
  */
 
-export function clientSafePeriod<T extends { label: string }>(period: T | null | undefined): T | null {
+export function clientSafePeriod<T extends { label: string; start?: string; end?: string }>(period: T | null | undefined): T | null {
   if (!period) return null;
-  return { ...period, label: redactClientText(period.label) ?? "" };
+  return {
+    ...period,
+    label: redactClientText(period.label) ?? "",
+    ...(period.start !== undefined ? { start: redactClientText(period.start) ?? "" } : {}),
+    ...(period.end !== undefined ? { end: redactClientText(period.end) ?? "" } : {}),
+  };
 }
 
 export function buildGatedClientDashboard(input: {
