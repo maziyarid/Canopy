@@ -37,7 +37,7 @@ const env = {
 
 test("approval request is loopback-only, metadata bound, and never sends mutation payload", async () => {
   let observed: any;
-  const fetchImpl = async (url: string | URL | Request, _init?: RequestInit) => {
+  const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
     observed = { url: String(url), headers: init?.headers, body: JSON.parse(String(init?.body)) };
     return new Response(JSON.stringify({
       ticket_id: "22222222-2222-4222-8222-222222222222",
