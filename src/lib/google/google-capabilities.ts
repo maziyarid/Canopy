@@ -76,6 +76,16 @@ const ANALYTICS_EDIT = "https://www.googleapis.com/auth/analytics.edit";
 const ANALYTICS_USERS = "https://www.googleapis.com/auth/analytics.manage.users";
 const ADS = "https://www.googleapis.com/auth/adwords";
 
+export const GOOGLE_ACTION_KEYS = [
+  "gsc.sitemap.submit", "gsc.sitemap.delete", "gsc.site.add", "gsc.site.remove",
+  "gtm.workspace.create", "gtm.tag.create", "gtm.tag.update", "gtm.tag.delete",
+  "gtm.version.create", "gtm.version.publish", "gtm.user.create", "gtm.user.update", "gtm.user.delete",
+  "ga4.custom_dimension.create", "ga4.key_event.create",
+  "ga4.access_binding.create", "ga4.access_binding.update", "ga4.access_binding.delete",
+  "ads.campaign.create_paused", "ads.campaign.update", "ads.campaign.enable",
+  "ads.budget.create", "ads.budget.update",
+] as const satisfies readonly GoogleActionKey[];
+
 export const GOOGLE_ACTION_POLICIES: Readonly<Record<GoogleActionKey, GoogleActionPolicy>> = {
   "gsc.sitemap.submit": {
     provider: "gsc", capability: "google.gsc.sitemap.submit", requiredScopes: [WEBMASTERS],
