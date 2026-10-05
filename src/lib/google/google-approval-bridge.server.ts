@@ -67,34 +67,37 @@ export async function recordGoogleApprovalRequest(
   sql: Sql,
   proposal: GoogleGovernedProposal,
   actorRef: string,
-  eventId: string,
+  input: { ticketId: string; eventId: string },
 ) {
-  const ref = eventId.trim();
-  if (!ref) throw new Error("approval_request_ref_required");
+  const ticketId = input.ticketId.trim();
+  const eventId = input.eventId.trim();
+  if (!ticketId || !eventId) throw new Error("approval_request_ref_required");
   const rows = await sql.query<{ id: string }>(
     "update google_action_proposals set approval_request_ref=$3,updated_at=now() " +
       "where id=$1 and project_id=$2 and status='pending_approval' " +
       "and (approval_request_ref='' or approval_request_ref=$3) returning id",
-    [proposal.id, proposal.projectId, ref],
+    [proposal.id, proposal.projectId, ticketId],
   );
   if (!rows[0]) throw new Error("google_action_state_conflict");
   await sql.query(
     "insert into operation_receipts " +
       "(id,project_id,actor_ref,operation,target_ref,status,approval_ref,idempotency_key,evidence) " +
-      "values($1,$2,$3,'google.action.approval.requested',$4,'queued','',$5,$6)",
+      "values($1,$2,$3,'google.action.approval.requested',$4,'queued',$5,$6,$7)",
     [
       crypto.randomUUID(),
       proposal.projectId,
       actorRef,
       proposal.id,
+      ticketId,
       "approval-request:" + proposal.id,
       JSON.stringify({
-        eventId: ref,
+        ticketId,
+        eventId,
         payloadHash: proposal.payloadHash,
         action: proposal.action,
         resourceRef: proposal.resourceRef,
       }),
     ],
   );
-  return { eventId: ref };
+  return { ticketId, eventId };
 }
