@@ -2,7 +2,12 @@ import type { Sql } from "../db.ts";
 import type { AccessCtx } from "../server/access.ts";
 import { parseVaultKeyring } from "../social/vault-keyring.server.ts";
 import { resolveCredential } from "../social/vault-store.server.ts";
-import { prepareGoogleRequest, validateGoogleAction } from "./google-actions.ts";
+import {
+  googlePayloadHash,
+  googleRollbackPlan,
+  prepareGoogleRequest,
+  validateGoogleAction,
+} from "./google-actions.ts";
 import {
   executeGoogleHttpRequest,
   parseGoogleOAuthCredential,
@@ -48,6 +53,47 @@ export type GoogleExecutionDependencies = {
     proof: AdaApprovalProof,
   ) => Promise<{ approvalRef: string }>;
 };
+
+function verificationTokenResult(result: unknown) {
+  if (!result || typeof result !== "object") throw new Error("google_verification_token_invalid_response");
+  const row = result as Record<string, unknown>;
+  const method = typeof row.method === "string" ? row.method.slice(0, 80) : "";
+  const token = typeof row.token === "string" ? row.token : "";
+  if (!method || !token || token.length > 8192) throw new Error("google_verification_token_invalid_response");
+  return { method, token, tokenHash: googlePayloadHash({ token }) };
+}
+
+function previewSummary(result: unknown) {
+  if (!result || typeof result !== "object") throw new Error("google_gtm_preview_invalid_response");
+  const row = result as Record<string, unknown>;
+  const version = row.containerVersion && typeof row.containerVersion === "object"
+    ? row.containerVersion as Record<string, unknown>
+    : {};
+  const count = (key: string) => Array.isArray(version[key]) ? (version[key] as unknown[]).length : 0;
+  const sync = row.syncStatus && typeof row.syncStatus === "object"
+    ? Object.fromEntries(
+        Object.entries(row.syncStatus as Record<string, unknown>)
+          .filter(([, value]) => typeof value === "boolean")
+          .slice(0, 20),
+      )
+    : {};
+  return {
+    compilerError: Boolean(row.compilerError),
+    syncStatus: sync,
+    containerVersionId:
+      typeof version.containerVersionId === "string" ? version.containerVersionId.slice(0, 120) : null,
+    counts: {
+      tags: count("tag"),
+      triggers: count("trigger"),
+      variables: count("variable"),
+      folders: count("folder"),
+      builtInVariables: count("builtInVariable"),
+      clients: count("client"),
+      zones: count("zone"),
+      customTemplates: count("customTemplate"),
+    },
+  };
+}
 
 export async function executeGovernedGoogleAction(
   sql: Sql,
@@ -99,6 +145,17 @@ export async function executeGovernedGoogleAction(
       fetchImpl: dependencies.fetchImpl ?? fetch,
     });
 
+    const sensitiveToken = proposal.action === "gsc.verification.get_token"
+      ? verificationTokenResult(executed.result)
+      : null;
+    const preview = proposal.action === "gtm.workspace.preview"
+      ? previewSummary(executed.result)
+      : null;
+    const receiptResponse = sensitiveToken
+      ? { method: sensitiveToken.method, tokenHash: sensitiveToken.tokenHash }
+      : preview ?? executed.result;
+    const rollback = googleRollbackPlan(contract, executed.result);
+
     await completeGoogleAction(sql, proposal, actorRef, {
       providerRequestId: executed.requestId,
       result: {
@@ -106,7 +163,8 @@ export async function executeGovernedGoogleAction(
         action: proposal.action,
         resourceRef: proposal.resourceRef,
         ...(adsPreflight ? { validation: { ok: true, requestId: adsPreflight.requestId } } : {}),
-        response: executed.result,
+        response: receiptResponse,
+        rollback,
       },
     });
 
@@ -115,6 +173,15 @@ export async function executeGovernedGoogleAction(
       status: "succeeded" as const,
       providerRequestId: executed.requestId,
       preflight: adsPreflight ? "passed" as const : "not_required" as const,
+      ...(sensitiveToken ? {
+        sensitiveResult: {
+          kind: "site_verification_token" as const,
+          method: sensitiveToken.method,
+          token: sensitiveToken.token,
+        },
+      } : {}),
+      ...(preview ? { preview } : {}),
+      rollback,
     };
   } catch (error) {
     await failGoogleAction(
