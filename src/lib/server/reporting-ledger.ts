@@ -9,7 +9,12 @@ export type GatewayMetricRow = {
   provider: string; site: string; dataset: string; data_date: string;
   dimensions?: Record<string, unknown>; metrics: Record<string, unknown>; updated_at?: string;
 };
-export type GatewayMetricResponse = { rows: GatewayMetricRow[]; truncated?: boolean; coverage?: { ranges: Array<{ start: string; end: string }> } };
+export type GatewayMetricResponse = {
+  rows: GatewayMetricRow[];
+  truncated?: boolean;
+  coverage?: { ranges: Array<{ start: string; end: string }> };
+  source?: { provider?: string; property?: string | null; timeZone?: string | null; retrievedAt?: string | null } | null;
+};
 export type ReportGateway = {
   states(projectId: string): Promise<{ providers: State[] }>;
   metrics(projectId: string, provider: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse>;
@@ -89,7 +94,16 @@ export async function readGatewayLedger(projectId: string, site: string, period:
             averagePosition: impressions ? weightedPosition / impressions : null,
           };
           rows.splice(rows.indexOf(gscState), 1, ...Object.entries(aggregate).map(([metricName, metricValue]) => ({
-            ...gscState, freshness: dataDate, dataDate, updatedAt, metricName, metricValue, coverage,
+            ...gscState,
+            freshness: dataDate,
+            dataDate,
+            updatedAt,
+            metricName,
+            metricValue,
+            property: response.source?.property ?? null,
+            timeZone: response.source?.timeZone ?? null,
+            retrievedAt: response.source?.retrievedAt ?? updatedAt ?? null,
+            coverage,
           })));
         }
       }
@@ -148,6 +162,9 @@ export async function readGatewayLedger(projectId: string, site: string, period:
             freshness: period.end,
             dataDate: period.end,
             updatedAt,
+            property: response.source?.property ?? null,
+            timeZone: response.source?.timeZone ?? null,
+            retrievedAt: response.source?.retrievedAt ?? updatedAt ?? null,
             ...metric,
             coverage,
           })));
