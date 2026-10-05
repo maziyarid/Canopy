@@ -126,6 +126,9 @@ function sectionFromRows(
         provenance: firstPartyProvider(row.provider) ? "first_party" : "third_party_estimate",
         provider: row.provider,
         dataDate: row.dataDate ?? null,
+        property: row.property ?? null,
+        timeZone: row.timeZone ?? null,
+        retrievedAt: row.retrievedAt ?? row.updatedAt ?? null,
         ...(row.coverage ? { coverage: row.coverage } : {}),
       })),
   };
