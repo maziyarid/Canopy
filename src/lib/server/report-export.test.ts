@@ -66,3 +66,18 @@ test("client evidence export keeps redacted metrics and visible note titles only
   assert.doesNotMatch(csv, /providerHealth/);
   assert.match(csv, /evidence_note/);
 });
+
+test("client evidence export redacts secret-like titles and neutralises formula titles", () => {
+  const csv = clientEvidenceExportCsv({
+    site: "example.com",
+    periodStart: "2026-09-27",
+    periodEnd: "2026-10-03",
+    sections: [],
+    evidenceTitles: ["api_key=supersecret", "=HYPERLINK(\"http://evil\")", "Approved clicks note", "   "],
+  });
+  assert.match(csv, /api_key=<redacted>/);
+  assert.doesNotMatch(csv, /supersecret/);
+  assert.match(csv, /'=HYPERLINK/);
+  assert.match(csv, /Approved clicks note/);
+  assert.equal(csv.split("evidence_note").length - 1, 3);
+});

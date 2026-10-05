@@ -1,4 +1,5 @@
 import type { ReportingSnapshot, SnapshotMetric } from "./reporting-snapshot-core.ts";
+import { redactClientText } from "./client-report-view.ts";
 
 export type ComparisonRow = {
   section: string; provider: string; metric: string;
@@ -68,8 +69,12 @@ export function clientEvidenceExportCsv(input: {
       input.site, input.periodStart, input.periodEnd, section.key, metric.provider, metric.name,
       finite(metric.value), metric.provenance ?? "", metric.dataDate ?? "", section.status, "",
     ]));
-  const evidenceRows = input.evidenceTitles.map((title) => [
-    input.site, input.periodStart, input.periodEnd, "evidence_note", "", "", "", "", "", "visible", title,
-  ]);
+  const evidenceRows = input.evidenceTitles.flatMap((title) => {
+    const visible = redactClientText(title);
+    if (!visible) return [];
+    return [[
+      input.site, input.periodStart, input.periodEnd, "evidence_note", "", "", "", "", "", "visible", visible,
+    ]];
+  });
   return [header, ...metricRows, ...evidenceRows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
