@@ -1,6 +1,7 @@
 import type { Sql } from "../db.ts";
 import type { AccessCtx } from "../server/access.ts";
 import {
+  googleActionPolicy,
   type GoogleCapability,
   type GoogleProvider,
   type GoogleRoleTemplate,
