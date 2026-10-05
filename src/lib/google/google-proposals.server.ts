@@ -463,9 +463,15 @@ export async function completeGoogleAction(
     approvalRef: proposal.approvalRef,
     idempotencyKey: proposal.idempotencyKey,
     evidence: {
+      correlationId: proposal.id,
+      provider: proposal.provider,
+      capability: proposal.capability,
+      connectionProfileId: proposal.connectionProfileId,
       action: proposal.action,
+      resourceType: proposal.resourceType,
       resourceRef: proposal.resourceRef,
       payloadHash: proposal.payloadHash,
+      diffHash: deterministicDiffHash(proposal.deterministicDiff),
       providerRequestId: requestId,
       result: JSON.parse(result),
     },
@@ -493,10 +499,20 @@ export async function failGoogleAction(
     approvalRef: proposal.approvalRef,
     idempotencyKey: proposal.idempotencyKey,
     evidence: {
+      correlationId: proposal.id,
+      provider: proposal.provider,
+      capability: proposal.capability,
+      connectionProfileId: proposal.connectionProfileId,
       action: proposal.action,
+      resourceType: proposal.resourceType,
       resourceRef: proposal.resourceRef,
       payloadHash: proposal.payloadHash,
+      diffHash: deterministicDiffHash(proposal.deterministicDiff),
       error: safe,
+      rollback: {
+        mode: "manual",
+        note: "Provider outcome may be uncertain. Verify live provider state before retrying or applying reversal steps.",
+      },
     },
   });
 }
