@@ -12,3 +12,17 @@ export async function readIfReportingConfigured<T>(role: string, read: () => Pro
   }
   return read();
 }
+
+
+/**
+ * Client dashboards return an already-built empty view.
+ * The loaded-report callback is not invoked unless reporting is configured.
+ */
+export async function loadProjectReport<T>(
+  role: string,
+  unavailable: T,
+  load: () => Promise<T>,
+): Promise<T> {
+  if (!isReportingConfiguredForRole(role)) return unavailable;
+  return readIfReportingConfigured(role, load);
+}
