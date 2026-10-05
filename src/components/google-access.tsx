@@ -454,7 +454,9 @@ export function GoogleAccessPanel({ projectId }: { projectId: string }) {
     for (const policy of Object.values(GOOGLE_ACTION_POLICIES)) {
       if (
         policy.provider === grantProfile.provider &&
+        policy.profileMode === grantProfile.profileMode &&
         policy.resourceType === selectedGrantResource.type &&
+        policy.requiredScopes.every((scope) => grantProfile.scopes.includes(scope)) &&
         roleCapabilities.has(policy.capability)
       ) {
         result.add(policy.capability);
