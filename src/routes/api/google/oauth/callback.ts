@@ -1,12 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getSql } from "@/lib/db";
-import { completeGoogleOAuthConnection } from "@/lib/google/google-oauth-flow.server";
+import { completeGoogleOAuthConnection, googleOAuthReturnUrl } from "@/lib/google/google-oauth-flow.server";
 
 function redirect(request: Request, state: "connected" | "error", projectId?: string) {
-  const path = projectId ? "/p/" + encodeURIComponent(projectId) : "/";
-  const target = new URL(path, request.url);
-  target.searchParams.set("googleOAuth", state);
-  return Response.redirect(target, 303);
+  return Response.redirect(googleOAuthReturnUrl(request.url, state, projectId), 303);
 }
 
 async function handle(request: Request) {
