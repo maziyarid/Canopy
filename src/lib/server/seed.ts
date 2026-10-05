@@ -78,6 +78,14 @@ async function insertProject(
 export const seedSampleStudio = createServerFn({ method: "POST" })
   .middleware([studioAuth])
   .handler(async ({ context }) => {
+    // Sample records share application tables, so never allow production seeding.
+    // Local fixture tooling must explicitly opt in on an isolated development DB.
+    if (
+      process.env.NODE_ENV !== "development" ||
+      process.env.MSROBOT_ENABLE_SAMPLE_STUDIO !== "true"
+    ) {
+      throw new Error("Sample studio is disabled outside explicit development mode.");
+    }
     assertUnrestrictedSession();
     const sql = await getSql();
     const existing = await sql<{ id: string; domain: string }>`
