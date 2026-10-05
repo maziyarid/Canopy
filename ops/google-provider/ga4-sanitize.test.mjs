@@ -35,3 +35,11 @@ test("metrics accept finite non-negative numeric values only", () => {
   assert.equal(safeGa4Metric(-1), null);
   assert.equal(safeGa4Metric("not-a-number"), null);
 });
+
+test("missing, empty, boolean, and container metrics never become measured zero", () => {
+  for (const value of [null, undefined, "", "  ", false, true, [], [0], {}]) {
+    assert.equal(safeGa4Metric(value), null, `must reject ${JSON.stringify(value)}`);
+  }
+  assert.equal(safeGa4Metric("0"), 0);
+  assert.equal(safeGa4Metric(" 12.5 "), 12.5);
+});

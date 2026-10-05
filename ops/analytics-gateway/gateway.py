@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import math
+from collections import Counter
 import json, os, re, sqlite3, uuid
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -127,7 +128,7 @@ def ga4_window_dates(window):
     match=re.fullmatch(r'(\d{1,3})d',str(window or ''))
     days=int(match.group(1)) if match else 28
     days=max(1,min(90,days))
-    end=date.today()-timedelta(days=1)
+    end=datetime.now(timezone.utc).date()-timedelta(days=1)
     start=end-timedelta(days=days-1)
     return start.isoformat(),end.isoformat()
 
@@ -255,19 +256,20 @@ def safe_error_message(error):
     )
     return message[:500]
 
-def upsert_metric(c,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,run_id,stamp):
+def upsert_metric(c,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,run_id,stamp,source=None):
     dims=json.dumps(dimensions,separators=(',',':'),sort_keys=True)
     vals=json.dumps(metrics,separators=(',',':'),sort_keys=True)
+    source_json=json.dumps(source or {},separators=(',',':'),sort_keys=True)
     inserted=c.execute('''insert or ignore into provider_metric
-      (id,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at)
-      values(?,?,?,?,?,?,?,?,?,?,?)''',
-      (str(uuid.uuid4()),project_id,provider,site,dataset,data_date,dims,vals,freshness,run_id,stamp)).rowcount
+      (id,project_id,provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at,source_metadata)
+      values(?,?,?,?,?,?,?,?,?,?,?,?)''',
+      (str(uuid.uuid4()),project_id,provider,site,dataset,data_date,dims,vals,freshness,run_id,stamp,source_json)).rowcount
     if inserted:
         return 'inserted'
     c.execute('''update provider_metric
-      set metrics=?,freshness=?,sync_run_id=?,updated_at=?
+      set metrics=?,freshness=?,sync_run_id=?,updated_at=?,source_metadata=?
       where project_id=? and provider=? and site=? and dataset=? and data_date=? and dimensions=?''',
-      (vals,freshness,run_id,stamp,project_id,provider,site,dataset,data_date,dims))
+      (vals,freshness,run_id,stamp,source_json,project_id,provider,site,dataset,data_date,dims))
     return 'updated'
 
 def gsc_metrics(row):
@@ -289,6 +291,9 @@ def run_gsc_sync(project_id,site,window,run_id):
         'dimensions':['date','query','page'],'rowLimit':5000,'type':'web'})
     sitemaps=google_request('/v1/gsc/sitemaps?siteUrl='+quote(property_url,safe=''))
     stamp=now(); received=len(daily.get('rows',[]))+len(query_page.get('rows',[])); inserted=0; updated=0; skipped=0
+    daily_source={'provider':'gsc','property':property_url,'timeZone':'America/Los_Angeles',
+                  'retrievedAt':daily.get('fetchedAt') or stamp}
+    query_source={**daily_source,'retrievedAt':query_page.get('fetchedAt') or stamp}
     with db() as c:
         for row in daily.get('rows',[]):
             keys=row.get('keys') or []
@@ -299,7 +304,7 @@ def run_gsc_sync(project_id,site,window,run_id):
             if metrics is None:
                 skipped+=1
                 continue
-            outcome=upsert_metric(c,project_id,'gsc',site,'site_daily',str(keys[0]),{'date':str(keys[0])},metrics,end_date,run_id,stamp)
+            outcome=upsert_metric(c,project_id,'gsc',site,'site_daily',str(keys[0]),{'date':str(keys[0])},metrics,end_date,run_id,stamp,daily_source)
             inserted+=outcome=='inserted'; updated+=outcome=='updated'
         for row in query_page.get('rows',[]):
             keys=row.get('keys') or []
@@ -311,7 +316,7 @@ def run_gsc_sync(project_id,site,window,run_id):
                 skipped+=1
                 continue
             outcome=upsert_metric(c,project_id,'gsc',site,'query_page_daily',str(keys[0]),
-                          {'query':str(keys[1]),'page':str(keys[2])},metrics,end_date,run_id,stamp)
+                          {'query':str(keys[1]),'page':str(keys[2])},metrics,end_date,run_id,stamp,query_source)
             inserted+=outcome=='inserted'; updated+=outcome=='updated'
         c.execute('''insert into provider_snapshot(project_id,provider,site,dataset,payload,freshness,sync_run_id,updated_at)
                      values(?,'gsc',?,'sitemaps',?,?,?,?)
@@ -346,6 +351,30 @@ def ga4_metric_values(row):
         values[key]=float(value)
     return values if values else None
 
+def ga4_source_metadata(property_ref,report,stamp):
+    quality=report.get('coverage') or {}
+    omitted=quality.get('omittedRows',0)
+    omitted=omitted if isinstance(omitted,int) and not isinstance(omitted,bool) and omitted>=0 else 0
+    return {
+        'provider':'ga4','property':property_ref,
+        'timeZone':(report.get('metadata') or {}).get('timeZone'),
+        'retrievedAt':report.get('fetchedAt') or stamp,
+        'coverage':{'complete':quality.get('complete') is True,
+                    'omittedRows':omitted,'truncated':quality.get('truncated') is True},
+    }
+
+def clear_ga4_slice(c,project_id,site,dataset,start_date,end_date):
+    if dataset=='site_daily':
+        c.execute("""delete from provider_metric where project_id=? and provider='ga4'
+                     and site=? and dataset=? and data_date between ? and ?""",
+                  (project_id,site,dataset,start_date,end_date))
+    else:
+        c.execute("""delete from provider_metric where project_id=? and provider='ga4'
+                     and site=? and dataset=? and data_date=?
+                     and json_extract(dimensions,'$.startDate')=?
+                     and json_extract(dimensions,'$.endDate')=?""",
+                  (project_id,site,dataset,end_date,start_date,end_date))
+
 def run_ga4_sync(project_id,site,window,run_id):
     start_date,end_date=ga4_window_dates(window)
     property_ref=resolve_ga4_property(project_id,site)
@@ -361,7 +390,18 @@ def run_ga4_sync(project_id,site,window,run_id):
             raise RuntimeError('ga4_property_response_mismatch')
 
     stamp=now(); received=0; inserted=0; updated=0; skipped=0
+    sources={name:ga4_source_metadata(property_ref,report,stamp) for name,report in reports.items()}
+    for source in sources.values():
+        quality=source['coverage']
+        received+=quality['omittedRows']
+        # Count only known omitted rows; do not invent a skipped-row count for
+        # sampling, thresholding or provider truncation with unknown cardinality.
+        skipped+=quality['omittedRows']
     with db() as c:
+        # A successful provider response replaces its scoped measurement slice.
+        # Empty/invalid fresh results must not resurrect an older complete row.
+        clear_ga4_slice(c,project_id,site,'summary',start_date,end_date)
+        clear_ga4_slice(c,project_id,site,'site_daily',start_date,end_date)
         summary_rows=reports['summary'].get('rows',[])
         received+=len(summary_rows)
         if len(summary_rows)!=1:
@@ -373,7 +413,7 @@ def run_ga4_sync(project_id,site,window,run_id):
             else:
                 outcome=upsert_metric(
                     c,project_id,'ga4',site,'summary',end_date,
-                    {'startDate':start_date,'endDate':end_date},metrics,end_date,run_id,stamp)
+                    {'startDate':start_date,'endDate':end_date},metrics,end_date,run_id,stamp,sources['summary'])
                 inserted+=outcome=='inserted'; updated+=outcome=='updated'
 
         for row in reports['daily'].get('rows',[]):
@@ -384,24 +424,35 @@ def run_ga4_sync(project_id,site,window,run_id):
             if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or not start_date<=day<=end_date or metrics is None:
                 skipped+=1
                 continue
-            outcome=upsert_metric(c,project_id,'ga4',site,'site_daily',day,{'date':day},metrics,end_date,run_id,stamp)
+            outcome=upsert_metric(c,project_id,'ga4',site,'site_daily',day,{'date':day},metrics,end_date,run_id,stamp,sources['daily'])
             inserted+=outcome=='inserted'; updated+=outcome=='updated'
 
         for report,dataset,dimension in (
             ('acquisition','acquisition_channel','sessionDefaultChannelGroup'),
             ('landing_pages','landing_page','landingPage'),
         ):
-            for row in reports[report].get('rows',[]):
+            report_rows=reports[report].get('rows',[])
+            values=[str((row.get('dimensions') or {}).get(dimension) or '').strip()
+                    for row in report_rows if isinstance(row,dict)]
+            counts=Counter(values)
+            collisions={value for value,count in counts.items() if count>1}
+            if collisions:
+                sources[report]['coverage']['complete']=False
+                sources[report]['coverage']['omittedRows']+=sum(counts[value] for value in collisions)
+            # Replace this exact dimension slice atomically so previously valid
+            # rows omitted by privacy/quality checks cannot survive a re-sync.
+            clear_ga4_slice(c,project_id,site,dataset,start_date,end_date)
+            for row in report_rows:
                 received+=1
                 dims=row.get('dimensions') if isinstance(row,dict) else None
                 value=str((dims or {}).get(dimension) or '').strip()
                 metrics=ga4_metric_values(row)
-                if not value or metrics is None:
+                if not value or value in collisions or metrics is None:
                     skipped+=1
                     continue
                 outcome=upsert_metric(
                     c,project_id,'ga4',site,dataset,end_date,
-                    {dimension:value,'startDate':start_date,'endDate':end_date},metrics,end_date,run_id,stamp)
+                    {dimension:value,'startDate':start_date,'endDate':end_date},metrics,end_date,run_id,stamp,sources[report])
                 inserted+=outcome=='inserted'; updated+=outcome=='updated'
 
         c.execute('''insert into provider_snapshot(project_id,provider,site,dataset,payload,freshness,sync_run_id,updated_at)
@@ -417,6 +468,7 @@ def run_ga4_sync(project_id,site,window,run_id):
         'requested_start':start_date,'requested_end':end_date,
         'rows_received':received,'rows_inserted':inserted,'rows_updated':updated,
         'rows_skipped':skipped,'rows_written':inserted+updated,
+        'quality_incomplete':any(not source['coverage']['complete'] for source in sources.values()),
         'data_freshness':end_date if inserted+updated else None,'resource_ref':property_ref,
         'cursor_before':'','cursor_after':'','rate_limit_state':'',
         'quota_state':json.dumps(reports['summary'].get('propertyQuota') or {},separators=(',',':'))[:1000],
@@ -486,7 +538,7 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
             c.execute('''update provider_state set status=?,auth_type=?,
                          last_success=?,last_attempt=?,last_error=null,freshness=?,updated_at=?
                          where project_id=? and provider=?''',
-                      ('degraded' if result.get('rows_skipped',0) else 'ok','service_account' if provider in ('gsc','ga4') else '',finished,started,freshness,finished,
+                      ('degraded' if result.get('rows_skipped',0) or result.get('quality_incomplete',False) else 'ok','service_account' if provider in ('gsc','ga4') else '',finished,started,freshness,finished,
                        project_id,provider))
             row=c.execute(
                 'select * from sync_run where id=? and project_id=?',
@@ -581,7 +633,7 @@ def consecutive_failure_attempt(c, project_id, provider, site, window, run_id=No
     return count if count >= 1 else 1
 
 def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
-    sql='''select provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at
+    sql='''select provider,site,dataset,data_date,dimensions,metrics,freshness,sync_run_id,updated_at,source_metadata
            from provider_metric where project_id=?'''
     params=[project_id]
     for column,value in [('provider',provider),('site',site),('dataset',dataset)]:
@@ -599,38 +651,22 @@ def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
         item=dict(row)
         item['dimensions']=json.loads(item['dimensions'] or '{}')
         item['metrics']=json.loads(item['metrics'] or '{}')
+        item['source']=json.loads(item.pop('source_metadata') or '{}') or None
         out.append(item)
     return out
 
-def metric_source_metadata(project_id,provider,site):
-    if provider not in ('gsc','ga4') or not site:
+def metric_source_metadata(rows):
+    # Compatibility summary only: derive it from the returned measurements.
+    # Mixed or legacy provenance must never be relabelled as the latest source.
+    sources=[row.get('source') for row in rows]
+    if not sources or any(not source for source in sources):
         return None
-    with db() as c:
-        row=c.execute('''select payload,updated_at from provider_snapshot
-                         where project_id=? and provider=? and site=? and dataset='property'
-                         limit 1''',(project_id,provider,site)).fetchone()
-    if not row:
+    identities={(source.get('provider'),source.get('property'),source.get('timeZone')) for source in sources}
+    if len(identities)!=1:
         return None
-    try:
-        payload=json.loads(row['payload'] or '{}')
-    except (TypeError,json.JSONDecodeError):
-        return None
-    if provider=='gsc':
-        property_ref=str(payload.get('siteUrl') or '').strip()
-        return {
-            'provider':'gsc',
-            'property':property_ref or None,
-            'timeZone':'America/Los_Angeles',
-            'retrievedAt':row['updated_at'] or None,
-        }
-    property_ref=str(payload.get('property') or '').strip()
-    timezone=str(payload.get('timeZone') or '').strip()
-    return {
-        'provider':'ga4',
-        'property':property_ref or None,
-        'timeZone':timezone or None,
-        'retrievedAt':row['updated_at'] or None,
-    }
+    provider,property_ref,time_zone=next(iter(identities))
+    return {'provider':provider,'property':property_ref,'timeZone':time_zone,
+            'retrievedAt':max((source.get('retrievedAt') or '' for source in sources),default='') or None}
 
 def metric_coverage(project_id,provider,site,dataset,start,end):
     if provider not in ('gsc','ga4') or not site or not start or not end:
@@ -640,10 +676,50 @@ def metric_coverage(project_id,provider,site,dataset,start,end):
     if provider=='ga4' and dataset not in ('summary','site_daily'):
         return {'ranges':[]}
     with db() as c:
-        rows=c.execute('''select distinct requested_start,requested_end from sync_run
-                          where project_id=? and provider=? and site=? and status='completed'
-                            and rows_skipped=0 and data_freshness>=requested_end and requested_start<=? and requested_end>=?
-                          order by requested_start,requested_end''',(project_id,provider,site,end,start)).fetchall()
+        if provider=='ga4':
+            current=c.execute("""select m.data_date,m.source_metadata,s.status,s.rows_skipped from provider_metric m
+                       left join sync_run s on s.id=m.sync_run_id and s.project_id=m.project_id
+                         and s.provider=m.provider and s.site=m.site
+                       where m.project_id=? and m.provider=? and m.site=? and m.dataset=?
+                         and m.data_date between ? and ?
+                         and (?!='summary' or (json_extract(m.dimensions,'$.startDate')=?
+                           and json_extract(m.dimensions,'$.endDate')=?))""",
+                       (project_id,provider,site,dataset,start,end,dataset,start,end)).fetchall()
+            identities=set()
+            if not current:
+                return {'ranges':[]}
+            for row in current:
+                source=json.loads(row['source_metadata'] or '{}')
+                if (row['status']!='completed' or row['rows_skipped']!=0
+                        or source.get('coverage',{}).get('complete') is not True):
+                    return {'ranges':[]}
+                identities.add((source.get('property'),source.get('timeZone')))
+            if len(identities)!=1 or not next(iter(identities))[0]:
+                return {'ranges':[]}
+            if dataset=='site_daily':
+                # Daily GA4 is diagnostic, not the unique-user period total.
+                # Certify only dates with current verified measurements: an
+                # older receipt must not cover dates cleared by an empty or
+                # invalid narrower re-sync. Sparse dates remain unverified.
+                ranges=[]
+                for day in sorted({row['data_date'] for row in current}):
+                    if ranges and date.fromisoformat(day)==date.fromisoformat(ranges[-1]['end'])+timedelta(days=1):
+                        ranges[-1]['end']=day
+                    else:
+                        ranges.append({'start':day,'end':day})
+                return {'ranges':ranges}
+
+        rows=c.execute("""select distinct s.requested_start,s.requested_end from sync_run s
+                          join provider_metric m on m.sync_run_id=s.id and m.project_id=s.project_id
+                            and m.provider=s.provider and m.site=s.site and m.dataset=?
+                          where s.project_id=? and s.provider=? and s.site=? and s.status='completed'
+                            and s.rows_skipped=0 and s.data_freshness>=s.requested_end
+                            and s.requested_start<=? and s.requested_end>=?
+                            and (?!='ga4' or json_extract(m.source_metadata,'$.coverage.complete')=1)
+                            and (?!='summary' or (json_extract(m.dimensions,'$.startDate')=?
+                              and json_extract(m.dimensions,'$.endDate')=?))
+                          order by s.requested_start,s.requested_end""",
+                       (dataset,project_id,provider,site,end,start,provider,dataset,start,end)).fetchall()
     ranges=[]
     for row in rows:
         try:
@@ -767,7 +843,7 @@ class H(BaseHTTPRequestHandler):
             provider=q.get('provider',[''])[0]; site=q.get('site',[''])[0]; dataset=q.get('dataset',[''])[0]
             rows=metric_rows(project_id,provider,site,dataset,limit+1,start,end)
             coverage=metric_coverage(project_id,provider,site,dataset,start,end)
-            source=metric_source_metadata(project_id,provider,site)
+            source=metric_source_metadata(rows[:limit])
             self.sendj(200,{'rows':rows[:limit],'truncated':len(rows)>limit,'coverage':coverage,'source':source,'generatedAt':now()}); return
         if u.path=='/v1/investigations':
             q=parse_qs(u.query)

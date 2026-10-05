@@ -16,7 +16,7 @@ from ada_bridge_receipts import ensure_receipts_schema
 
 LEGACY_PROJECT_ID = "legacy"
 SCHEMA_VERSION_KEY = "analytics_schema_version"
-SCHEMA_VERSION = "provider-ledger-project-scope-v1"
+SCHEMA_VERSION = "provider-ledger-metric-source-v2"
 # PostgreSQL files, including PR #5 migration 0008, are not applied here.
 POSTGRESQL_MIGRATIONS_APPLIED_BY_COORDINATOR = ()
 DEFAULT_DEADLINE_SECONDS = 30
@@ -118,16 +118,17 @@ TABLE_SPECS = (
           site text not null, dataset text not null, data_date text not null default '',
           dimensions text not null default '{}', metrics text not null default '{}',
           freshness text, sync_run_id text not null, updated_at text not null,
+          source_metadata text not null default '{}',
           unique(project_id,provider,site,dataset,data_date,dimensions))""",
         "legacy_columns": (
             "id", "provider", "site", "dataset", "data_date", "dimensions",
-            "metrics", "freshness", "sync_run_id", "updated_at",
+            "metrics", "freshness", "sync_run_id", "updated_at", "source_metadata",
         ),
         "required_legacy_columns": ("id", "provider", "site", "dataset", "sync_run_id", "updated_at"),
         "identity_columns": ("id",),
         "required_columns": (
             "id", "project_id", "provider", "site", "dataset", "data_date",
-            "dimensions", "metrics", "sync_run_id", "updated_at",
+            "dimensions", "metrics", "sync_run_id", "updated_at", "source_metadata",
         ),
         "required_unique": (
             ("id",),
@@ -369,6 +370,9 @@ def ensure_additive_columns_and_indexes(connection):
         for name, definition in ADDITIVE_SYNC_COLUMNS.items():
             if name not in columns:
                 connection.execute(f"alter table sync_run add column {ident(name)} {definition}")
+    if table_kind(connection, "provider_metric") == "table":
+        if "source_metadata" not in table_columns(connection, "provider_metric"):
+            connection.execute("alter table provider_metric add column source_metadata text not null default '{}'")
     for statement in INDEX_SQL:
         connection.execute(statement)
 

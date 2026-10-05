@@ -11,6 +11,7 @@ import {
   composeIdempotencyKey,
   computeStableEtag,
   periodFromLabel,
+  completedReportDate,
   deriveOverview,
   firstPartyProvider,
   ledgerFingerprint,
@@ -78,7 +79,7 @@ export async function resolveSnapshotAccess(
 }
 
 export function reportClosingDate(endDate?: string, now = new Date()): Date {
-  if (!endDate) return now;
+  if (!endDate) return completedReportDate(now);
   const timestamp = Date.parse(`${endDate}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate) || !Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== endDate || endDate > now.toISOString().slice(0, 10)) throw new SnapshotAccessError(400, "Invalid reporting date");
   return new Date(timestamp);

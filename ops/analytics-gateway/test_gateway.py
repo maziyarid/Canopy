@@ -81,6 +81,7 @@ class FakeGoogle(BaseHTTPRequestHandler):
                 'property':body.get('property'),'report':report,
                 'startDate':body.get('startDate'),'endDate':body.get('endDate'),
                 'rows':rows,'metadata':{'timeZone':'Asia/Tehran','currencyCode':'IRR'},
+                'coverage':{'complete':True,'omittedRows':0,'truncated':False,'reasons':[]},
                 'propertyQuota':{'tokensPerDay':{'remaining':1000}},'fetchedAt':'2026-10-05T00:00:00Z',
             }); return
         self.sendj(404,{'error':'not_found'})

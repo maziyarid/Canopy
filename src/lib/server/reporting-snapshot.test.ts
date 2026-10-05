@@ -369,8 +369,8 @@ test("last_7d request returns matching period dates not default 28d window", asy
     now: new Date("2026-09-23T00:00:00Z"),
   });
   assert.equal(snapshot.period.label, "last_7d");
-  assert.equal(snapshot.period.start, "2026-09-17");
-  assert.equal(snapshot.period.end, "2026-09-23");
+  assert.equal(snapshot.period.start, "2026-09-16");
+  assert.equal(snapshot.period.end, "2026-09-22");
   assert.ok(snapshot.comparison);
   assert.equal(snapshot.comparison!.label, "prev_7d");
 });
@@ -469,4 +469,10 @@ test("unexpected injected ledger errors propagate instead of silent unavailable"
       }),
     /connection reset by peer/,
   );
+});
+
+test("defaultPeriod excludes the current UTC calendar date", () => {
+  assert.deepEqual(defaultPeriod(new Date("2026-10-05T00:01:00Z")), {
+    label: "last_28d", start: "2026-09-07", end: "2026-10-04",
+  });
 });

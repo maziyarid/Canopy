@@ -210,7 +210,12 @@ export function deriveOverview(sections: SnapshotSection[]): SnapshotSection {
   };
 }
 
-export function periodFromLabel(label: string | undefined, now = new Date()): SnapshotPeriod {
+export function completedReportDate(now = new Date()): Date {
+  return new Date(now.getTime() - 86_400_000);
+}
+
+/** An explicitly supplied date is the inclusive closing date. */
+export function periodFromLabel(label: string | undefined, now = completedReportDate()): SnapshotPeriod {
   const normalized = (label ?? "last_28d").trim().toLowerCase();
   const days = PERIOD_DAY_MAP[normalized] ?? 28;
   const end = now.toISOString().slice(0, 10);
@@ -224,7 +229,7 @@ export function periodFromLabel(label: string | undefined, now = new Date()): Sn
 }
 
 export function defaultPeriod(now = new Date()): SnapshotPeriod {
-  return periodFromLabel("last_28d", now);
+  return periodFromLabel("last_28d", completedReportDate(now));
 }
 
 export function comparisonPeriod(period: SnapshotPeriod): SnapshotPeriod {

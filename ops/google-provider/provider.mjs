@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import { setDefaultResultOrder } from "node:dns";
-import { safeGa4Dimension, safeGa4Metric, validateGa4Property } from "./ga4-sanitize.mjs";
+import { normalizeGa4Report, validateGa4Property } from "./ga4-sanitize.mjs";
 
 setDefaultResultOrder("ipv4first");
 
@@ -211,26 +211,13 @@ async function runGa4Report(input) {
     data: requestBody,
   });
   const data = response.data || {};
-  const dimensionNames = (data.dimensionHeaders || []).map((item) => String(item.name || ""));
-  const metricNames = (data.metricHeaders || []).map((item) => String(item.name || ""));
-  const rows = (data.rows || []).map((row) => {
-    const dimensions = {};
-    const metrics = {};
-    dimensionNames.forEach((name, index) => {
-      dimensions[name] = safeGa4Dimension(name, row.dimensionValues?.[index]?.value);
-    });
-    metricNames.forEach((name, index) => {
-      metrics[name] = safeGa4Metric(row.metricValues?.[index]?.value);
-    });
-    return { dimensions, metrics };
-  });
+  const normalized = normalizeGa4Report(data, spec);
   return {
     property,
     report,
     startDate,
     endDate,
-    rows,
-    rowCount: Number(data.rowCount || rows.length),
+    ...normalized,
     metadata: {
       currencyCode: data.metadata?.currencyCode || null,
       timeZone: data.metadata?.timeZone || null,
