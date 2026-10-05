@@ -4,6 +4,7 @@ import { googleActionPolicy, type GoogleActionKey, type GoogleCapability, type G
 import { validateGoogleAction, type GoogleResourceType } from "./google-actions.ts";
 import { effectiveGoogleGrant } from "./google-connections.server.ts";
 import {
+  deterministicDiffHash,
   googleApprovalEnvelope,
   safeGoogleError,
   safeGoogleReceipt,
@@ -219,7 +220,7 @@ export async function proposeGoogleAction(
       resourceType: proposal.resourceType,
       resourceRef: proposal.resourceRef,
       payloadHash: proposal.payloadHash,
-      deterministicDiff: proposal.deterministicDiff,
+      diffHash: deterministicDiffHash(proposal.deterministicDiff),
       approvalPolicy: proposal.approvalPolicy,
     },
   });
