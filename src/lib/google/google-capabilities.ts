@@ -63,7 +63,7 @@ export type GoogleActionPolicy = {
   requiredScopes: readonly string[];
   approval: GoogleApprovalPolicy;
   mutationType: GoogleMutationType;
-  resourceType: "gsc_site" | "gtm_container" | "ga4_property" | "ads_customer";
+  resourceType: "gsc_site" | "gtm_account" | "gtm_container" | "ga4_property" | "ads_customer";
   requiresDeveloperToken?: boolean;
 };
 
@@ -119,11 +119,11 @@ export const GOOGLE_ACTION_POLICIES: Readonly<Record<GoogleActionKey, GoogleActi
   },
   "gtm.user.create": {
     provider: "gtm", capability: "google.gtm.user.manage", requiredScopes: [GTM_USERS],
-    approval: "ada", mutationType: "POLICY_CHANGE", resourceType: "gtm_container",
+    approval: "ada", mutationType: "POLICY_CHANGE", resourceType: "gtm_account",
   },
   "gtm.user.update": {
     provider: "gtm", capability: "google.gtm.user.manage", requiredScopes: [GTM_USERS],
-    approval: "ada", mutationType: "POLICY_CHANGE", resourceType: "gtm_container",
+    approval: "ada", mutationType: "POLICY_CHANGE", resourceType: "gtm_account",
   },
   "gtm.user.delete": {
     provider: "gtm", capability: "google.gtm.user.manage", requiredScopes: [GTM_USERS],
