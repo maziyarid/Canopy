@@ -3,6 +3,7 @@ import type { AccessCtx } from "../server/access.ts";
 import {
   GOOGLE_ACTION_POLICIES,
   googleActionPolicy,
+  scopesSatisfy,
   type GoogleCapability,
   type GoogleProvider,
   type GoogleRoleTemplate,
@@ -11,7 +12,6 @@ import {
 import {
   actionProvider,
   profileSatisfiesAction,
-  scopesSatisfy,
   validateConnectionBindings,
   validateConnectionScopes,
   validateRoleCapability,
