@@ -22,7 +22,7 @@ export type GoogleConnectionProfile = {
   id: string;
   projectId: string;
   provider: GoogleProvider;
-  profileMode: "write" | "admin";
+  profileMode: "write" | "publish" | "admin";
   accountRef: string;
   credentialRef: string;
   authType: "oauth2" | "service_account";
@@ -105,6 +105,7 @@ export function profileSatisfiesAction(profile: GoogleConnectionProfile, action:
   if (!policy) throw new Error("unknown_google_action");
   if (profile.status !== "active") throw new Error("active_google_connection_required");
   if (profile.provider !== policy.provider) throw new Error("capability_provider_mismatch");
+  if (profile.profileMode !== policy.profileMode) throw new Error("google_profile_mode_denied");
   if (!scopesSatisfy(profile.scopes, policy.requiredScopes)) throw new Error("google_scope_denied");
   if (!profile.resourceBindings.some((binding) => binding.type === policy.resourceType && binding.ref === resourceRef)) {
     throw new Error("google_resource_binding_denied");
