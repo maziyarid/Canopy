@@ -9,7 +9,7 @@ import { readGatewayLedger } from "./reporting-ledger";
 import { loadSearchTable } from "./search-table";
 import { periodFromLabel } from "./reporting-snapshot-core";
 import { parseReportSections } from "./report-sections";
-import { comparisonRows } from "./report-export";
+import { clientEvidenceExportCsv, comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
 import { bindResolvedDashboardAccess, buildGatedClientDashboard } from "./client-report-view";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
@@ -136,6 +136,43 @@ export const exportProjectReport = createServerFn({ method: "POST" })
       requestedProjectId: data.projectId,
       snapshotProjectId: snapshot.projectId,
     });
+    if (access.role === "client") {
+      const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
+      const dashboardAccess = bindResolvedDashboardAccess({
+        role: access.role,
+        resolvedProjectId: boundProjectId,
+        requestedProjectId: data.projectId,
+        snapshotProjectId: snapshot.projectId,
+        reportingConfigured: true,
+      });
+      const view = buildGatedClientDashboard({
+        access: dashboardAccess,
+        site: snapshot.site,
+        periodLabel: snapshot.period.label,
+        comparisonLabel: snapshot.comparison?.label,
+        grants: access.reportSections ?? [],
+        sections: snapshot.sections,
+      });
+      const journal = mountInsightJournal({
+        snapshot,
+        insights: noteWindow.notes,
+        generate: false,
+        role: access.role,
+        projectId: boundProjectId,
+        truncated: noteWindow.truncated,
+        visibleLimit: noteWindow.limit,
+      });
+      const content = clientEvidenceExportCsv({
+        site: view.site,
+        periodStart: snapshot.period.start,
+        periodEnd: snapshot.period.end,
+        sections: view.sections,
+        evidenceTitles: journal.journal.days.flatMap((day) => day.cards.map((card) => card.title)),
+      });
+      await sql`insert into operation_receipts(id,project_id,actor_ref,operation,target_ref,status,evidence)
+        values (${crypto.randomUUID()},${boundProjectId},${context.userId},'report.export.csv',${boundProjectId},'completed',${JSON.stringify({ schemaVersion: snapshot.schemaVersion, start: snapshot.period.start, end: snapshot.period.end, clientSafe: true, evidenceTitleCount: journal.journal.days.reduce((count, day) => count + day.cards.length, 0) })}`;
+      return { content, contentType: "text/csv;charset=utf-8", filename: `ms-robot-report-${snapshot.period.start}-${snapshot.period.end}.csv` };
+    }
     return exportReportRecord({
       sql,
       readLedger,
