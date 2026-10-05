@@ -63,6 +63,7 @@ create table if not exists google_action_proposals (
   snapshot_hash text not null default '',
   approval_policy text not null check(approval_policy in ('grant','ada')),
   approval_ref text not null default '',
+  approval_request_ref text not null default '',
   approval_payload_hash text not null default '',
   idempotency_key text not null,
   status text not null default 'pending'
@@ -80,3 +81,18 @@ create unique index if not exists google_action_proposals_idempotency
   on google_action_proposals(project_id,idempotency_key);
 create index if not exists google_action_proposals_queue
   on google_action_proposals(project_id,status,created_at);
+
+
+create table if not exists google_oauth_states (
+  state_hash text primary key,
+  project_id text not null references projects(id) on delete cascade,
+  actor_ref text not null,
+  provider text not null check(provider in ('gsc','ga4','gtm','google_ads')),
+  profile_mode text not null check(profile_mode in ('write','admin')),
+  requested_scopes text not null default '[]',
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists google_oauth_states_project_idx
+  on google_oauth_states(project_id,provider,expires_at);
