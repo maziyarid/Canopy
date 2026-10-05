@@ -7,12 +7,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 const defaultRoot = join(here, "..");
 const files = ["pglite.data", "pglite.wasm", "initdb.wasm"];
 
-async function exists(path) {
+export function isMissingOutputError(error) {
+  const code = error && typeof error === "object" ? error.code : undefined;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+export async function outputParentExists(path, accessImpl = access) {
   try {
-    await access(path);
+    await accessImpl(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isMissingOutputError(error)) return false;
+    throw error;
   }
 }
 
@@ -45,10 +51,10 @@ export async function prepareNitroOutput(root = defaultRoot, env = process.env) 
   console.log(`[pglite-assets] cleared stale ${preset} output`);
 }
 
-export async function copyPgliteAssets(root = defaultRoot, env = process.env) {
+export async function copyPgliteAssets(root = defaultRoot, env = process.env, accessImpl = access) {
   const source = join(root, "node_modules", "@electric-sql", "pglite", "dist");
   const { preset, parent, target } = pgliteAssetTarget(root, env);
-  if (!(await exists(parent))) {
+  if (!(await outputParentExists(parent, accessImpl))) {
     throw new Error(`Nitro ${preset} build output not found at ${parent}`);
   }
 
