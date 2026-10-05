@@ -26,6 +26,7 @@ import {
 } from "../google/google-oauth-flow.server";
 import {
   cancelGoogleAction,
+  googleProposalView,
   listGoogleProposals,
   proposeGoogleAction,
 } from "../google/google-proposals.server";
@@ -197,7 +198,7 @@ export const createGoogleActionProposal = createServerFn({ method: "POST" })
       snapshotHash: data.snapshotHash,
     });
     if (!result.approvalEnvelope) {
-      return { proposal: result.proposal, replayed: result.replayed, approval: "not_required" as const };
+      return { proposal: googleProposalView(result.proposal), replayed: result.replayed, approval: "not_required" as const };
     }
     try {
       const bridge = await publishGoogleApprovalProposal({
@@ -206,14 +207,14 @@ export const createGoogleActionProposal = createServerFn({ method: "POST" })
       });
       await recordGoogleApprovalRequest(sql, result.proposal, context.userId, bridge.event_id);
       return {
-        proposal: result.proposal,
+        proposal: googleProposalView(result.proposal),
         replayed: result.replayed,
         approval: "queued" as const,
         approvalRequestRef: bridge.event_id,
       };
     } catch {
       return {
-        proposal: result.proposal,
+        proposal: googleProposalView(result.proposal),
         replayed: result.replayed,
         approval: "unavailable" as const,
       };
