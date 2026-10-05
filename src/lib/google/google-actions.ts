@@ -42,17 +42,22 @@ const gaRoles = z.array(z.enum([
   "predefinedRoles/no-revenue-data",
 ])).min(1).max(6);
 
+const verificationMethod = z.enum(["DNS_TXT", "DNS_CNAME", "FILE", "META", "ANALYTICS", "TAG_MANAGER"]);
+
 const schemas: Record<GoogleActionKey, z.ZodTypeAny> = {
   "gsc.sitemap.submit": z.object({ sitemapUrl: z.string().url().max(2000) }).strict(),
   "gsc.sitemap.delete": z.object({ sitemapUrl: z.string().url().max(2000) }).strict(),
   "gsc.site.add": z.object({}).strict(),
   "gsc.site.remove": z.object({}).strict(),
+  "gsc.verification.get_token": z.object({ verificationMethod }).strict(),
+  "gsc.verification.verify": z.object({ verificationMethod }).strict(),
 
   "gtm.workspace.create": z.object({ name: text(200), description: z.string().max(2000).optional() }).strict(),
   "gtm.tag.create": z.object({ workspacePath: gtmWorkspace, tag: gtmTagBody }).strict(),
   "gtm.tag.update": z.object({ tagPath: gtmTag, fingerprint: text(200).optional(), tag: gtmTagBody }).strict(),
   "gtm.tag.delete": z.object({ tagPath: gtmTag, fingerprint: text(200).optional() }).strict(),
   "gtm.version.create": z.object({ workspacePath: gtmWorkspace, name: text(200), notes: z.string().max(2000).optional() }).strict(),
+  "gtm.workspace.preview": z.object({ workspacePath: gtmWorkspace }).strict(),
   "gtm.version.publish": z.object({ versionPath: gtmVersion, fingerprint: text(200).optional() }).strict(),
   "gtm.user.create": z.object({
     emailAddress: z.string().email().max(200),
@@ -150,7 +155,7 @@ export type GoogleActionContract = {
   payload: Record<string, unknown>;
   payloadHash: string;
   deterministicDiff: {
-    operation: "create" | "update" | "delete" | "publish";
+    operation: "create" | "update" | "delete" | "publish" | "read";
     resourceRef: string;
     fields: Record<string, unknown>;
   };
@@ -163,6 +168,16 @@ export function validateGoogleAction(action: GoogleActionKey, resourceRef: strin
   validateGoogleResourceRef(policy.resourceType, resourceRef);
 
   const payload = schemas[action].parse(rawPayload) as Record<string, unknown>;
+
+  if (action.startsWith("gsc.verification.")) {
+    const method = String(payload.verificationMethod || "");
+    if (resourceRef.startsWith("sc-domain:") && !["DNS_TXT", "DNS_CNAME"].includes(method)) {
+      throw new Error("google_verification_method_invalid_for_domain");
+    }
+    if (!resourceRef.startsWith("sc-domain:") && ["DNS_TXT", "DNS_CNAME"].includes(method)) {
+      throw new Error("google_verification_method_invalid_for_url_prefix");
+    }
+  }
 
   if (action.startsWith("gtm.")) {
     const ref = String(
@@ -192,6 +207,7 @@ export function validateGoogleAction(action: GoogleActionKey, resourceRef: strin
   }
 
   const operation =
+    action === "gsc.verification.get_token" || action === "gtm.workspace.preview" ? "read" :
     action.endsWith(".delete") || action.endsWith(".remove") ? "delete" :
     action.endsWith(".publish") || action.endsWith(".enable") ? "publish" :
     action.includes(".update") ? "update" : "create";
@@ -214,6 +230,13 @@ export type PreparedGoogleRequest = {
 
 const enc = encodeURIComponent;
 
+function siteVerificationTarget(resourceRef: string) {
+  if (resourceRef.startsWith("sc-domain:")) {
+    return { type: "INET_DOMAIN", identifier: resourceRef.slice("sc-domain:".length) };
+  }
+  return { type: "SITE", identifier: resourceRef };
+}
+
 export function prepareGoogleRequest(contract: GoogleActionContract, adsApiVersion = "v25"): PreparedGoogleRequest {
   const { action, resourceRef, payload } = contract;
   switch (action) {
@@ -225,6 +248,18 @@ export function prepareGoogleRequest(contract: GoogleActionContract, adsApiVersi
       return { method: "PUT", url: `https://www.googleapis.com/webmasters/v3/sites/${enc(resourceRef)}` };
     case "gsc.site.remove":
       return { method: "DELETE", url: `https://www.googleapis.com/webmasters/v3/sites/${enc(resourceRef)}` };
+    case "gsc.verification.get_token":
+      return {
+        method: "POST",
+        url: "https://www.googleapis.com/siteVerification/v1/token",
+        body: { site: siteVerificationTarget(resourceRef), verificationMethod: payload.verificationMethod },
+      };
+    case "gsc.verification.verify":
+      return {
+        method: "POST",
+        url: `https://www.googleapis.com/siteVerification/v1/webResource?verificationMethod=${enc(String(payload.verificationMethod))}`,
+        body: { site: siteVerificationTarget(resourceRef) },
+      };
 
     case "gtm.workspace.create":
       return { method: "POST", url: `https://tagmanager.googleapis.com/tagmanager/v2/${resourceRef}/workspaces`, body: payload };
@@ -248,6 +283,8 @@ export function prepareGoogleRequest(contract: GoogleActionContract, adsApiVersi
       const { workspacePath, name, notes } = payload;
       return { method: "POST", url: `https://tagmanager.googleapis.com/tagmanager/v2/${workspacePath}:create_version`, body: { name, ...(notes ? { notes } : {}) } };
     }
+    case "gtm.workspace.preview":
+      return { method: "POST", url: `https://tagmanager.googleapis.com/tagmanager/v2/${payload.workspacePath}:quick_preview` };
     case "gtm.version.publish": {
       const { versionPath, fingerprint } = payload;
       return { method: "POST", url: `https://tagmanager.googleapis.com/tagmanager/v2/${versionPath}:publish${fingerprint ? `?fingerprint=${enc(String(fingerprint))}` : ""}` };
@@ -329,5 +366,92 @@ export function prepareGoogleRequest(contract: GoogleActionContract, adsApiVersi
         url: `https://googleads.googleapis.com/${adsApiVersion}/${resourceRef}/campaignBudgets:mutate`,
         body: { operations: [{ update: { resourceName: payload.budgetResourceName, amountMicros: String(payload.amountMicros) }, updateMask: "amount_micros" }], partialFailure: false, validateOnly: false },
       };
+  }
+}
+
+export type GoogleRollbackPlan = {
+  mode: "none" | "automatic" | "conditional" | "manual";
+  action?: GoogleActionKey;
+  payload?: Record<string, unknown>;
+  note: string;
+};
+
+function providerResourceName(result: unknown) {
+  if (!result || typeof result !== "object") return "";
+  const row = result as Record<string, unknown>;
+  for (const key of ["path", "name", "resourceName"]) {
+    const value = row[key];
+    if (typeof value === "string" && value.length <= 500) return value;
+  }
+  return "";
+}
+
+export function googleRollbackPlan(contract: GoogleActionContract, executedResult?: unknown): GoogleRollbackPlan {
+  const { action, payload, resourceRef } = contract;
+  switch (action) {
+    case "gsc.sitemap.submit":
+      return { mode: "automatic", action: "gsc.sitemap.delete", payload: { sitemapUrl: payload.sitemapUrl }, note: "Delete the submitted sitemap." };
+    case "gsc.sitemap.delete":
+      return { mode: "automatic", action: "gsc.sitemap.submit", payload: { sitemapUrl: payload.sitemapUrl }, note: "Resubmit the deleted sitemap." };
+    case "gsc.site.add":
+      return { mode: "automatic", action: "gsc.site.remove", payload: {}, note: "Remove the added Search Console property." };
+    case "gsc.site.remove":
+      return { mode: "conditional", action: "gsc.site.add", payload: {}, note: "Re-add the property; ownership may need to be reverified." };
+    case "gsc.verification.get_token":
+      return { mode: "none", note: "Token retrieval does not mutate Google state." };
+    case "gsc.verification.verify":
+      return { mode: "manual", note: "Remove ownership only through a separately reviewed Site Verification revocation workflow." };
+    case "gtm.workspace.preview":
+      return { mode: "none", note: "Preview is read-only and does not mutate the container." };
+    case "gtm.workspace.create":
+      return { mode: "manual", note: "Delete the created workspace manually after confirming it contains no required changes." };
+    case "gtm.tag.create": {
+      const tagPath = providerResourceName(executedResult);
+      return tagPath
+        ? { mode: "conditional", action: "gtm.tag.delete", payload: { tagPath }, note: "Delete the created tag after validating its returned path." }
+        : { mode: "manual", note: "Delete the created tag from its workspace." };
+    }
+    case "gtm.tag.update":
+      return { mode: "manual", note: "Restore the prior tag definition/fingerprint from the pre-change review evidence." };
+    case "gtm.tag.delete":
+      return { mode: "manual", note: "Recreate the tag from the pre-change review evidence." };
+    case "gtm.version.create":
+      return { mode: "manual", note: "Retain the prior container version; do not publish the new version." };
+    case "gtm.version.publish":
+      return { mode: "manual", note: "Publish the previously approved container version as a new rollback version." };
+    case "gtm.user.create": {
+      const permissionPath = providerResourceName(executedResult);
+      return permissionPath
+        ? { mode: "conditional", action: "gtm.user.delete", payload: { permissionPath }, note: "Remove the newly created GTM user permission." }
+        : { mode: "manual", note: "Remove the newly created GTM user permission." };
+    }
+    case "gtm.user.update":
+      return { mode: "manual", note: "Restore the previous account/container permission set from the approval diff." };
+    case "gtm.user.delete":
+      return { mode: "manual", note: "Recreate the deleted permission using the pre-change access record." };
+    case "ga4.custom_dimension.create":
+      return { mode: "manual", note: "Archive or remove the created custom dimension using an explicitly reviewed GA4 cleanup action." };
+    case "ga4.key_event.create":
+      return { mode: "manual", note: "Remove the created key event using an explicitly reviewed GA4 cleanup action." };
+    case "ga4.access_binding.create": {
+      const bindingName = providerResourceName(executedResult);
+      return bindingName
+        ? { mode: "conditional", action: "ga4.access_binding.delete", payload: { bindingName }, note: "Delete the newly created GA4 access binding." }
+        : { mode: "manual", note: "Delete the newly created GA4 access binding." };
+    }
+    case "ga4.access_binding.update":
+      return { mode: "manual", note: "Restore the previous GA4 roles from the approval diff." };
+    case "ga4.access_binding.delete":
+      return { mode: "manual", note: "Recreate the deleted GA4 access binding using the pre-change access record." };
+    case "ads.campaign.create_paused":
+      return { mode: "manual", note: "Keep the new campaign paused, then remove or archive it through a reviewed Google Ads cleanup action." };
+    case "ads.campaign.update":
+      return { mode: "manual", note: "Restore the previous campaign fields recorded before mutation." };
+    case "ads.campaign.enable":
+      return { mode: "manual", note: "Pause the campaign immediately if activation must be reversed." };
+    case "ads.budget.create":
+      return { mode: "manual", note: "Detach or replace the new budget before removing it." };
+    case "ads.budget.update":
+      return { mode: "manual", note: "Restore the previous amount from the pre-change approval evidence." };
   }
 }
