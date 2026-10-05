@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import { setDefaultResultOrder } from "node:dns";
 import { safeGa4Dimension, safeGa4Metric, validateGa4Property } from "./ga4-sanitize.mjs";
+import { buildGscSearchRequest } from "./gsc-filter.mjs";
 
 setDefaultResultOrder("ipv4first");
 
@@ -16,10 +17,6 @@ const PORT = Number(process.env.GOOGLE_PROVIDER_PORT || 9131);
 const TOKEN = process.env.GOOGLE_PROVIDER_TOKEN || "";
 const CREDS = process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
 const MAX_BODY = 1_000_000;
-const ALLOWED_DIMENSIONS = new Set([
-  "date", "query", "page", "country", "device", "searchAppearance",
-]);
-const ALLOWED_TYPES = new Set(["web", "image", "video", "news", "discover", "googleNews"]);
 const GA4_REPORTS = Object.freeze({
   summary: {
     dimensions: [],
@@ -107,12 +104,6 @@ function validateDate(value, field) {
   return date;
 }
 
-function validateDimensions(value) {
-  const dimensions = Array.isArray(value) && value.length ? value.map(String) : ["date"];
-  if (dimensions.some((d) => !ALLOWED_DIMENSIONS.has(d))) throw new Error("invalid_dimensions");
-  return dimensions;
-}
-
 function normaliseSearchRows(rows = []) {
   return rows.map((row) => ({
     keys: Array.isArray(row.keys) ? row.keys.map(String) : [],
@@ -133,12 +124,7 @@ async function listSites() {
 
 async function searchAnalytics(input) {
   const siteUrl = validateSiteUrl(input.siteUrl);
-  const startDate = validateDate(input.startDate, "start_date");
-  const endDate = validateDate(input.endDate, "end_date");
-  const dimensions = validateDimensions(input.dimensions);
-  const rowLimit = Math.max(1, Math.min(25_000, Number(input.rowLimit || 1000)));
-  const type = ALLOWED_TYPES.has(input.type) ? input.type : "web";
-  const requestBody = { startDate, endDate, dimensions, rowLimit, type, dataState: "all" };
+  const { startDate, endDate, dimensions, requestBody } = buildGscSearchRequest(input);
   const response = await searchconsole.searchanalytics.query({ siteUrl, requestBody });
   return {
     siteUrl,
