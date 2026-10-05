@@ -9,7 +9,7 @@ import { readGatewayLedger } from "./reporting-ledger";
 import { loadSearchTable } from "./search-table";
 import { periodFromLabel } from "./reporting-snapshot-core";
 import { parseReportSections } from "./report-sections";
-import { clientEvidenceExportCsv, comparisonRows } from "./report-export";
+import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
 import { bindResolvedDashboardAccess, buildGatedClientDashboard } from "./client-report-view";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
@@ -91,16 +91,25 @@ export const getProjectReport = createServerFn({ method: "GET" })
       snapshotProjectId: snapshot.projectId,
       reportingConfigured: true,
     });
+    const view = buildGatedClientDashboard({
+      access: dashboardAccess,
+      site: snapshot.site,
+      periodLabel: snapshot.period.label,
+      comparisonLabel: snapshot.comparison?.label,
+      grants: access.reportSections ?? [],
+      sections,
+    });
     return {
-      view: buildGatedClientDashboard({
-        access: dashboardAccess,
-        site: snapshot.site,
-        periodLabel: snapshot.period.label,
-        comparisonLabel: snapshot.comparison?.label,
-        grants: access.reportSections ?? [],
-        sections,
+      view,
+      journal: mountInsightJournal({
+        snapshot,
+        insights: notes,
+        generate: false,
+        role: access.role,
+        projectId: dashboardAccess.boundProjectId,
+        truncated: noteWindow.truncated,
+        visibleLimit: noteWindow.limit,
       }),
-      journal: mountInsightJournal({ snapshot, insights: notes, generate: false, role: access.role, truncated: noteWindow.truncated, visibleLimit: noteWindow.limit }),
       notes: access.role === "client" ? [] : notes,
       notesTruncated: noteWindow.truncated,
       visibleNoteLimit: noteWindow.limit,
@@ -109,7 +118,9 @@ export const getProjectReport = createServerFn({ method: "GET" })
       canWriteNotes: access.role !== "client" && access.project.data_domain !== "medical",
       period: snapshot.period,
       comparison: snapshot.comparison,
-      comparisons: comparisonRows(snapshot),
+      comparisons: access.role === "client"
+        ? clientComparisonRows(snapshot, view.sections.map((section) => section.key))
+        : comparisonRows(snapshot),
     };
   });
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clientEvidenceExportCsv, comparisonRows, reportCsv } from "./report-export.ts";
+import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows, reportCsv } from "./report-export.ts";
 import type { ReportingSnapshot, SnapshotSection } from "./reporting-snapshot-core.ts";
 
 const section = (value: number | null, complete = true): SnapshotSection => ({ key: "search", status: complete ? "ok" : "partial", freshness: "2026-10-01", lastSyncAt: "2026-10-02", warning: null, metrics: [{ name: "clicks", value, provider: "gsc", provenance: "first_party", dataDate: "2026-10-01", coverage: { start: "2026-09-27", end: "2026-10-03", complete, observedDates: ["2026-10-01"] } }] });
@@ -43,6 +43,26 @@ test("coverage for the wrong window cannot establish a measured comparison", () 
   const data = snapshot(); data.comparisonSections![0].metrics[0].coverage!.end = "2026-10-03";
   assert.equal(comparisonRows(data)[0].difference, null);
   assert.equal(comparisonRows(data)[0].reason, "incomplete");
+});
+
+test("client comparisons stay inside granted sections and redact metric names", () => {
+  const data = snapshot();
+  data.sections.push({
+    ...section(4),
+    key: "acquisition",
+    metrics: [{ ...section(4).metrics[0], name: "api_key=secret", provider: "ga4" }],
+  });
+  data.comparisonSections!.push({
+    ...section(2),
+    key: "acquisition",
+    metrics: [{ ...section(2).metrics[0], name: "api_key=secret", provider: "ga4", coverage: { start: "2026-09-20", end: "2026-09-26", complete: true, observedDates: ["2026-09-20"] } }],
+  });
+  const rows = clientComparisonRows(data, ["search"]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].section, "search");
+  assert.equal(rows[0].metric, "clicks");
+  assert.equal(clientComparisonRows(data, ["acquisition"])[0].metric, "api_key=<redacted>");
+  assert.equal(clientComparisonRows(data, ["providerHealth"]).length, 0);
 });
 
 test("client evidence export keeps redacted metrics and visible note titles only", () => {

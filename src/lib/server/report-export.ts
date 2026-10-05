@@ -26,6 +26,18 @@ export function comparisonRows(snapshot: ReportingSnapshot): ComparisonRow[] {
   });
 }
 
+/** Client comparisons stay inside granted sections and drop credential-shaped metric names. */
+export function clientComparisonRows(
+  snapshot: ReportingSnapshot,
+  visibleSectionKeys: readonly string[],
+): ComparisonRow[] {
+  const allow = new Set(visibleSectionKeys.filter((key) => key !== "overview" && key !== "providerHealth"));
+  return comparisonRows(snapshot)
+    .filter((row) => allow.has(row.section))
+    .map((row) => ({ ...row, metric: redactClientText(row.metric) ?? "" }))
+    .filter((row) => row.metric.length > 0);
+}
+
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
