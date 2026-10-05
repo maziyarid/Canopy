@@ -274,7 +274,12 @@ async function inspectUrl(input) {
 
 function safeError(error) {
   const status = Number(error?.code || error?.response?.status || 500);
-  const message = String(error?.message || "provider_error").slice(0, 500);
+  let message = String(error?.message || "provider_error").slice(0, 500);
+  message = message
+    .replace(/(authorization["']?\s*[:=]\s*["']?\s*bearer\s+)[^"'\s&,;}]+/gi, "$1<redacted>")
+    .replace(/(bearer\s+)[^\s&,;]+/gi, "$1<redacted>")
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|private[_-]?key|password|cookie)\s*[:=]\s*)[^\s&,;]+/gi, "$1<redacted>")
+    .replace(/([?&](?:key|token|access_token|refresh_token|id_token|api_key|session)=)[^&\s]+/gi, "$1<redacted>");
   return { status: status >= 400 && status <= 599 ? status : 500, message };
 }
 
