@@ -151,7 +151,7 @@ export const GOOGLE_ACTION_POLICIES: Readonly<Record<GoogleActionKey, GoogleActi
   "gtm.user.delete": {
     provider: "gtm", capability: "google.gtm.user.manage", requiredScopes: [GTM_USERS],
     profileMode: "admin",
-    approval: "ada", mutationType: "DELETE", resourceType: "gtm_container",
+    approval: "ada", mutationType: "DELETE", resourceType: "gtm_account",
   },
   "ga4.custom_dimension.create": {
     provider: "ga4", capability: "google.ga4.config.write", requiredScopes: [ANALYTICS_EDIT],
