@@ -12,6 +12,7 @@ import { parseReportSections } from "./report-sections";
 import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows } from "./report-export";
 import { exportLoadedReportRecord } from "./report-export-service";
 import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod, isReportingConfiguredForRole, redactClientText } from "./client-report-view";
+import { readIfReportingConfigured } from "./reporting-read-gate";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
@@ -48,10 +49,7 @@ export const getReportingSnapshot = createServerFn({ method: "GET" })
       context.email,
       data.projectId,
     );
-    if (!isReportingConfiguredForRole(access.role)) {
-      throw new SnapshotAccessError(503, "Reporting unavailable");
-    }
-    return loadReportingSnapshot({
+    return readIfReportingConfigured(access.role, () => loadReportingSnapshot({
       sql,
       readLedger,
       resolveAccess,
@@ -61,7 +59,7 @@ export const getReportingSnapshot = createServerFn({ method: "GET" })
       periodLabel: data.period,
       comparisonLabel: data.comparison, endDate: data.endDate,
       correlationId: data.correlationId,
-    });
+    }));
   });
 
 export const refreshReportingSnapshot = createServerFn({ method: "POST" })
@@ -134,7 +132,7 @@ export const getProjectReport = createServerFn({ method: "GET" })
         comparisons: [],
       };
     }
-    const snapshot = await loadReportingSnapshot({ sql, readLedger, resolveAccess, userId: context.userId, email: context.email, projectId: access.project.id, periodLabel: data.period, comparisonLabel: data.comparison, endDate: data.endDate });
+    const snapshot = await readIfReportingConfigured(access.role, () => loadReportingSnapshot({ sql, readLedger, resolveAccess, userId: context.userId, email: context.email, projectId: access.project.id, periodLabel: data.period, comparisonLabel: data.comparison, endDate: data.endDate }));
     if (access.role !== "client") await persistSnapshotInsights(sql, access, snapshot);
     const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
     const notes = noteWindow.notes;
@@ -191,10 +189,7 @@ export const exportProjectReport = createServerFn({ method: "POST" })
       context.email,
       data.projectId,
     );
-    if (!isReportingConfiguredForRole(access.role)) {
-      throw new SnapshotAccessError(503, "Reporting unavailable");
-    }
-    const snapshot = await loadReportingSnapshot({
+    const snapshot = await readIfReportingConfigured(access.role, () => loadReportingSnapshot({
       sql,
       readLedger,
       resolveAccess,
@@ -204,7 +199,7 @@ export const exportProjectReport = createServerFn({ method: "POST" })
       periodLabel: data.period,
       comparisonLabel: data.comparison,
       endDate: data.endDate,
-    });
+    }));
     const boundProjectId = gateProjectExport({
       role: access.role,
       resolvedProjectId: access.project.id,
@@ -282,9 +277,9 @@ export const getProjectSearchTable = createServerFn({ method: "GET" })
       resolvedProjectId: access.project.id,
       requestedProjectId: data.projectId,
     });
-    return loadSearchTable({
+    return readIfReportingConfigured(access.role, () => loadSearchTable({
       sql, resolveAccess, userId: context.userId, email: context.email,
       projectId, period: periodFromLabel(data.period, reportClosingDate(data.endDate)),
       offset: data.offset, readRows: getProviderSearchRows,
-    });
+    }));
   });
