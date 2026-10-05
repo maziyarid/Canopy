@@ -222,6 +222,7 @@ export async function proposeGoogleAction(
     snapshotHash: input.snapshotHash?.trim() || "",
     approvalPolicy: policy.approval,
     approvalRef: "",
+    approvalRequestRef: "",
     idempotencyKey: input.idempotencyKey,
     status,
     expiresAt,
