@@ -175,7 +175,15 @@ class GatewayTest(unittest.TestCase):
         run=refresh['runs'][0]
         self.assertEqual(run['status'],'completed')
         self.assertGreaterEqual(run['rows_written'],5)
-        self.assertEqual(run['resource_ref'],'properties/100')
+        with sqlite3.connect(self.db_path) as connection:
+            stored=connection.execute(
+                "select payload from provider_snapshot where project_id=? and provider='ga4' and site=? and dataset='property'",
+                ('project-a','example.com'),
+            ).fetchone()
+        self.assertIsNotNone(stored)
+        property_snapshot=json.loads(stored[0])
+        self.assertEqual(property_snapshot['property'],'properties/100')
+        self.assertEqual(property_snapshot['timeZone'],'Asia/Tehran')
         _,metrics=self.request('/v1/metrics?provider=ga4&site=example.com&dataset=summary')
         self.assertEqual(len(metrics['rows']),1)
         self.assertEqual(metrics['rows'][0]['metrics']['sessions'],14.0)
