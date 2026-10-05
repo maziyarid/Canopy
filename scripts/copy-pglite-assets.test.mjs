@@ -3,16 +3,21 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyPgliteAssets, pgliteAssetTarget } from "./copy-pglite-assets.mjs";
+import { copyPgliteAssets, pgliteAssetTarget, prepareNitroOutput } from "./copy-pglite-assets.mjs";
 
 const files = ["pglite.data", "pglite.wasm", "initdb.wasm"];
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "pglite-assets-"));
-  const source = join(root, "node_modules", "@electric-sql", "pglite", "dist");
-  await mkdir(source, { recursive: true });
-  for (const name of files) await writeFile(join(source, name), `fixture:${name}`);
-  return root;
+  try {
+    const source = join(root, "node_modules", "@electric-sql", "pglite", "dist");
+    await mkdir(source, { recursive: true });
+    for (const name of files) await writeFile(join(source, name), `fixture:${name}`);
+    return root;
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 test("copies PGlite assets into the current node-server Nitro build", async () => {
@@ -69,6 +74,25 @@ test("selected preset fails closed when its current build output is missing", as
   const root = await fixture();
   try {
     await mkdir(join(root, ".vercel", "output", "functions", "__server.func"), { recursive: true });
+    await assert.rejects(
+      copyPgliteAssets(root, { NITRO_PRESET: "node-server" }),
+      /node-server build output not found/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+
+test("prepare removes a stale same-preset output so it cannot satisfy the post-build copy gate", async () => {
+  const root = await fixture();
+  try {
+    const stale = join(root, ".output", "server");
+    await mkdir(stale, { recursive: true });
+    await writeFile(join(stale, "stale-marker.txt"), "old build");
+
+    await prepareNitroOutput(root, { NITRO_PRESET: "node-server" });
+
     await assert.rejects(
       copyPgliteAssets(root, { NITRO_PRESET: "node-server" }),
       /node-server build output not found/,

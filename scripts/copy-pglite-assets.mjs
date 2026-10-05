@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { access, copyFile, mkdir } from "node:fs/promises";
+import { access, copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -35,6 +35,16 @@ export function pgliteAssetTarget(root, env = process.env) {
   throw new Error(`unsupported Nitro preset for PGlite asset packaging: ${preset}`);
 }
 
+export async function prepareNitroOutput(root = defaultRoot, env = process.env) {
+  const { preset } = pgliteAssetTarget(root, env);
+  const outputRoot =
+    preset === "node-server"
+      ? join(root, ".output")
+      : join(root, ".vercel", "output");
+  await rm(outputRoot, { recursive: true, force: true });
+  console.log(`[pglite-assets] cleared stale ${preset} output`);
+}
+
 export async function copyPgliteAssets(root = defaultRoot, env = process.env) {
   const source = join(root, "node_modules", "@electric-sql", "pglite", "dist");
   const { preset, parent, target } = pgliteAssetTarget(root, env);
@@ -50,6 +60,10 @@ export async function copyPgliteAssets(root = defaultRoot, env = process.env) {
 }
 
 async function main() {
+  if (process.argv.includes("--prepare")) {
+    await prepareNitroOutput();
+    return;
+  }
   await copyPgliteAssets();
 }
 
