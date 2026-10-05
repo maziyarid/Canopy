@@ -31,6 +31,23 @@ type ProfileRow = {
   status: GoogleConnectionProfile["status"];
 };
 
+export type GoogleCapabilityGrantView = {
+  id: string;
+  project_id: string;
+  principal_user_id: string;
+  role_template: string;
+  provider: GoogleProvider;
+  capability: GoogleCapability;
+  resource_type: GoogleResourceType;
+  resource_ref: string;
+  connection_profile_id: string;
+  status: string;
+  expires_at: string | null;
+  granted_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
 type EffectiveGrantRow = {
   grant_id: string;
   principal_user_id: string;
@@ -455,7 +472,7 @@ export async function listGoogleAccess(sql: Sql, access: AccessCtx) {
       "select * from google_connection_profiles where project_id=$1 order by created_at desc",
       [access.project.id],
     ),
-    sql.query<Record<string, unknown>>(
+    sql.query<GoogleCapabilityGrantView>(
       "select id,project_id,principal_user_id,role_template,provider,capability,resource_type,resource_ref," +
         "connection_profile_id,status,expires_at,granted_by,created_at,updated_at " +
         "from google_capability_grants where project_id=$1 order by created_at desc",
