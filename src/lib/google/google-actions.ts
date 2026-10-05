@@ -101,11 +101,11 @@ const schemas: Record<GoogleActionKey, z.ZodTypeAny> = {
   "ads.campaign.enable": z.object({ campaignResourceName: adsCampaign }).strict(),
   "ads.budget.create": z.object({
     name: text(255),
-    amountMicros: z.number().int().positive().safe(),
+    amountMicros: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   }).strict(),
   "ads.budget.update": z.object({
     budgetResourceName: adsBudget,
-    amountMicros: z.number().int().positive().safe(),
+    amountMicros: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   }).strict(),
 };
 
@@ -199,7 +199,7 @@ export function validateGoogleAction(action: GoogleActionKey, resourceRef: strin
 }
 
 export type PreparedGoogleRequest = {
-  method: "POST" | "PUT" | "DELETE";
+  method: "POST" | "PUT" | "PATCH" | "DELETE";
   url: string;
   body?: unknown;
   extraHeaders?: Record<string, string>;
@@ -281,7 +281,7 @@ export function prepareGoogleRequest(contract: GoogleActionContract, adsApiVersi
     case "ga4.access_binding.create":
       return { method: "POST", url: `https://analyticsadmin.googleapis.com/v1alpha/${resourceRef}/accessBindings`, body: { user: payload.emailAddress, roles: payload.roles } };
     case "ga4.access_binding.update":
-      return { method: "PATCH", url: `https://analyticsadmin.googleapis.com/v1alpha/${payload.bindingName}`, body: { roles: payload.roles } } as PreparedGoogleRequest;
+      return { method: "PATCH", url: `https://analyticsadmin.googleapis.com/v1alpha/${payload.bindingName}`, body: { roles: payload.roles } };
     case "ga4.access_binding.delete":
       return { method: "DELETE", url: `https://analyticsadmin.googleapis.com/v1alpha/${payload.bindingName}` };
 
