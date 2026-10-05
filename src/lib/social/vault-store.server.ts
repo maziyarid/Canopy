@@ -157,6 +157,56 @@ export async function resolveCredential(
   return plaintext;
 }
 
+export async function replaceCredential(
+  sql: Sql,
+  keyring: VaultKeyring,
+  input: {
+    credentialRef: string;
+    projectId: string;
+    provider: string;
+    plaintext: string;
+    actorRef: string;
+  },
+) {
+  const row = await scopedRow(sql, input.credentialRef, input.projectId);
+  if (row.provider !== input.provider) throw new Error("credential provider mismatch");
+  const version = keyring.activeVersion;
+  const aad = vaultAssociatedData({
+    tenantId: row.tenant_id,
+    projectId: row.project_id,
+    provider: row.provider,
+    credentialId: row.id,
+  });
+  const encrypted = encryptCredential(
+    input.plaintext,
+    keyFor(keyring, version),
+    aad,
+    version,
+  );
+  await sql.query(
+    `update credential_vault
+     set key_version=$2,algorithm=$3,nonce_b64=$4,ciphertext_b64=$5,auth_tag_b64=$6,updated_at=now()
+     where id=$1 and project_id=$7`,
+    [
+      row.id,
+      version,
+      encrypted.algorithm,
+      encrypted.nonceB64,
+      encrypted.ciphertextB64,
+      encrypted.authTagB64,
+      input.projectId,
+    ],
+  );
+  await receipt(sql, {
+    projectId: input.projectId,
+    actorRef: input.actorRef,
+    operation: "credential.replace",
+    targetRef: row.id,
+    evidence: { provider: row.provider, keyVersion: version },
+  });
+  return { credentialRef: row.id, keyVersion: version };
+}
+
 export async function rotateCredential(
   sql: Sql,
   keyring: VaultKeyring,
