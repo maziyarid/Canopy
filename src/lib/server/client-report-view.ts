@@ -19,6 +19,9 @@ export type SnapshotMetric = {
   provenance: ProvenanceKind;
   provider: string;
   dataDate: string | null;
+  property?: string | null;
+  timeZone?: string | null;
+  retrievedAt?: string | null;
   coverage?: { start: string; end: string; complete: boolean; observedDates: string[] };
 };
 

@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import { setDefaultResultOrder } from "node:dns";
+import { safeGa4Dimension, safeGa4Metric, validateGa4Property } from "./ga4-sanitize.mjs";
 
 setDefaultResultOrder("ipv4first");
 
@@ -19,6 +20,28 @@ const ALLOWED_DIMENSIONS = new Set([
   "date", "query", "page", "country", "device", "searchAppearance",
 ]);
 const ALLOWED_TYPES = new Set(["web", "image", "video", "news", "discover", "googleNews"]);
+const GA4_REPORTS = Object.freeze({
+  summary: {
+    dimensions: [],
+    metrics: ["activeUsers", "newUsers", "sessions", "engagedSessions", "engagementRate", "averageSessionDuration", "eventCount", "keyEvents"],
+    limit: 1,
+  },
+  daily: {
+    dimensions: ["date"],
+    metrics: ["activeUsers", "newUsers", "sessions", "engagedSessions", "engagementRate", "averageSessionDuration", "eventCount", "keyEvents"],
+    limit: 10000,
+  },
+  acquisition: {
+    dimensions: ["sessionDefaultChannelGroup"],
+    metrics: ["sessions", "activeUsers", "engagedSessions", "engagementRate", "keyEvents"],
+    limit: 1000,
+  },
+  landing_pages: {
+    dimensions: ["landingPage"],
+    metrics: ["sessions", "activeUsers", "engagedSessions", "keyEvents"],
+    limit: 1000,
+  },
+});
 
 if (!TOKEN) throw new Error("GOOGLE_PROVIDER_TOKEN is required");
 if (!CREDS) throw new Error("GOOGLE_APPLICATION_CREDENTIALS is required");
@@ -164,6 +187,60 @@ async function listGa4AccountSummaries() {
   };
 }
 
+async function runGa4Report(input) {
+  const property = validateGa4Property(input.property);
+  const startDate = validateDate(input.startDate, "start_date");
+  const endDate = validateDate(input.endDate, "end_date");
+  if (startDate > endDate) throw new Error("invalid_date_range");
+  const report = String(input.report || "summary");
+  const spec = GA4_REPORTS[report];
+  if (!spec) throw new Error("invalid_ga4_report");
+
+  const client = await auth.getClient();
+  const requestBody = {
+    dateRanges: [{ startDate, endDate }],
+    dimensions: spec.dimensions.map((name) => ({ name })),
+    metrics: spec.metrics.map((name) => ({ name })),
+    limit: spec.limit,
+    keepEmptyRows: false,
+    returnPropertyQuota: true,
+  };
+  const response = await client.request({
+    url: `https://analyticsdata.googleapis.com/v1beta/${property}:runReport`,
+    method: "POST",
+    data: requestBody,
+  });
+  const data = response.data || {};
+  const dimensionNames = (data.dimensionHeaders || []).map((item) => String(item.name || ""));
+  const metricNames = (data.metricHeaders || []).map((item) => String(item.name || ""));
+  const rows = (data.rows || []).map((row) => {
+    const dimensions = {};
+    const metrics = {};
+    dimensionNames.forEach((name, index) => {
+      dimensions[name] = safeGa4Dimension(name, row.dimensionValues?.[index]?.value);
+    });
+    metricNames.forEach((name, index) => {
+      metrics[name] = safeGa4Metric(row.metricValues?.[index]?.value);
+    });
+    return { dimensions, metrics };
+  });
+  return {
+    property,
+    report,
+    startDate,
+    endDate,
+    rows,
+    rowCount: Number(data.rowCount || rows.length),
+    metadata: {
+      currencyCode: data.metadata?.currencyCode || null,
+      timeZone: data.metadata?.timeZone || null,
+      dataLossFromOtherRow: Boolean(data.metadata?.dataLossFromOtherRow),
+    },
+    propertyQuota: data.propertyQuota || null,
+    fetchedAt: now(),
+  };
+}
+
 async function listGtmAccounts() {
   const response = await tagmanager.accounts.list();
   return {
@@ -197,7 +274,12 @@ async function inspectUrl(input) {
 
 function safeError(error) {
   const status = Number(error?.code || error?.response?.status || 500);
-  const message = String(error?.message || "provider_error").slice(0, 500);
+  let message = String(error?.message || "provider_error").slice(0, 500);
+  message = message
+    .replace(/(authorization["']?\s*[:=]\s*["']?\s*bearer\s+)[^"'\s&,;}]+/gi, "$1<redacted>")
+    .replace(/(bearer\s+)[^\s&,;]+/gi, "$1<redacted>")
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|private[_-]?key|password|cookie)\s*[:=]\s*)[^\s&,;]+/gi, "$1<redacted>")
+    .replace(/([?&](?:key|token|access_token|refresh_token|id_token|api_key|session)=)[^&\s]+/gi, "$1<redacted>");
   return { status: status >= 400 && status <= 599 ? status : 500, message };
 }
 
@@ -218,6 +300,10 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/v1/ga4/accounts") {
       send(res, 200, await listGa4AccountSummaries());
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/v1/ga4/run-report") {
+      send(res, 200, await runGa4Report(await bodyJson(req)));
       return;
     }
     if (req.method === "GET" && url.pathname === "/v1/gtm/accounts") {

@@ -123,6 +123,53 @@ def ledger_window_dates(window):
         return None,None
     return window_dates(window)
 
+def ga4_window_dates(window):
+    match=re.fullmatch(r'(\d{1,3})d',str(window or ''))
+    days=int(match.group(1)) if match else 28
+    days=max(1,min(90,days))
+    end=date.today()-timedelta(days=1)
+    start=end-timedelta(days=days-1)
+    return start.isoformat(),end.isoformat()
+
+def ga4_property_map(env=os.environ):
+    raw=env.get('MS_ROBOT_PROJECT_GA4_MAP_JSON','').strip()
+    if not raw:
+        return {}
+    try:
+        parsed=json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError('ga4_property_map_invalid') from exc
+    if not isinstance(parsed,dict):
+        raise RuntimeError('ga4_property_map_invalid')
+    output={}
+    for project_id,sites in parsed.items():
+        if not isinstance(project_id,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',project_id):
+            raise RuntimeError('ga4_property_map_invalid')
+        if not isinstance(sites,dict):
+            raise RuntimeError('ga4_property_map_invalid')
+        for raw_site,raw_property in sites.items():
+            site=normalise_domain(raw_site)
+            prop=str(raw_property or '').strip()
+            if prop.startswith('properties/'):
+                prop=prop.split('/',1)[1]
+            if not site or not re.fullmatch(r'[1-9]\d*',prop):
+                raise RuntimeError('ga4_property_map_invalid')
+            key=(project_id,site)
+            value='properties/'+prop
+            if key in output and output[key]!=value:
+                raise RuntimeError('ga4_property_map_invalid')
+            output[key]=value
+    return output
+
+def resolve_ga4_property(project_id,site,env=os.environ):
+    mapping=ga4_property_map(env)
+    if not mapping:
+        raise RuntimeError('ga4_property_map_missing')
+    property_ref=mapping.get((project_id,normalise_domain(site)))
+    if not property_ref:
+        raise RuntimeError('ga4_property_not_mapped')
+    return property_ref
+
 def connection_test_gsc(project_id):
     checked=now()
     try:
@@ -284,11 +331,106 @@ def run_gsc_sync(project_id,site,window,run_id):
         'cursor_before':'','cursor_after':'','rate_limit_state':'','quota_state':'',
     }
 
+def ga4_metric_values(row):
+    metrics=row.get('metrics') if isinstance(row,dict) else None
+    if not isinstance(metrics,dict):
+        return None
+    allowed=('activeUsers','newUsers','sessions','engagedSessions','engagementRate','averageSessionDuration','eventCount','keyEvents')
+    values={}
+    for key in allowed:
+        value=metrics.get(key)
+        if value is None:
+            continue
+        if not isinstance(value,(int,float)) or isinstance(value,bool) or not math.isfinite(value) or value<0:
+            return None
+        values[key]=float(value)
+    return values if values else None
+
+def run_ga4_sync(project_id,site,window,run_id):
+    start_date,end_date=ga4_window_dates(window)
+    property_ref=resolve_ga4_property(project_id,site)
+    reports={}
+    for report in ('summary','daily','acquisition','landing_pages'):
+        reports[report]=google_request('/v1/ga4/run-report','POST',{
+            'property':property_ref,
+            'startDate':start_date,
+            'endDate':end_date,
+            'report':report,
+        })
+        if reports[report].get('property')!=property_ref:
+            raise RuntimeError('ga4_property_response_mismatch')
+
+    stamp=now(); received=0; inserted=0; updated=0; skipped=0
+    with db() as c:
+        summary_rows=reports['summary'].get('rows',[])
+        received+=len(summary_rows)
+        if len(summary_rows)!=1:
+            skipped+=max(1,len(summary_rows))
+        else:
+            metrics=ga4_metric_values(summary_rows[0])
+            if metrics is None:
+                skipped+=1
+            else:
+                outcome=upsert_metric(
+                    c,project_id,'ga4',site,'summary',end_date,
+                    {'startDate':start_date,'endDate':end_date},metrics,end_date,run_id,stamp)
+                inserted+=outcome=='inserted'; updated+=outcome=='updated'
+
+        for row in reports['daily'].get('rows',[]):
+            received+=1
+            dims=row.get('dimensions') if isinstance(row,dict) else None
+            day=str((dims or {}).get('date') or '')
+            metrics=ga4_metric_values(row)
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or not start_date<=day<=end_date or metrics is None:
+                skipped+=1
+                continue
+            outcome=upsert_metric(c,project_id,'ga4',site,'site_daily',day,{'date':day},metrics,end_date,run_id,stamp)
+            inserted+=outcome=='inserted'; updated+=outcome=='updated'
+
+        for report,dataset,dimension in (
+            ('acquisition','acquisition_channel','sessionDefaultChannelGroup'),
+            ('landing_pages','landing_page','landingPage'),
+        ):
+            for row in reports[report].get('rows',[]):
+                received+=1
+                dims=row.get('dimensions') if isinstance(row,dict) else None
+                value=str((dims or {}).get(dimension) or '').strip()
+                metrics=ga4_metric_values(row)
+                if not value or metrics is None:
+                    skipped+=1
+                    continue
+                outcome=upsert_metric(
+                    c,project_id,'ga4',site,dataset,end_date,
+                    {dimension:value,'startDate':start_date,'endDate':end_date},metrics,end_date,run_id,stamp)
+                inserted+=outcome=='inserted'; updated+=outcome=='updated'
+
+        c.execute('''insert into provider_snapshot(project_id,provider,site,dataset,payload,freshness,sync_run_id,updated_at)
+                     values(?,'ga4',?,'property',?,?,?,?)
+                     on conflict(project_id,provider,site,dataset) do update set payload=excluded.payload,
+                       freshness=excluded.freshness,sync_run_id=excluded.sync_run_id,updated_at=excluded.updated_at''',
+                  (project_id,site,json.dumps({
+                      'property':property_ref,
+                      'timeZone':reports['summary'].get('metadata',{}).get('timeZone'),
+                      'currencyCode':reports['summary'].get('metadata',{}).get('currencyCode'),
+                  },separators=(',',':')),end_date,run_id,stamp))
+    return {
+        'requested_start':start_date,'requested_end':end_date,
+        'rows_received':received,'rows_inserted':inserted,'rows_updated':updated,
+        'rows_skipped':skipped,'rows_written':inserted+updated,
+        'data_freshness':end_date if inserted+updated else None,'resource_ref':property_ref,
+        'cursor_before':'','cursor_after':'','rate_limit_state':'',
+        'quota_state':json.dumps(reports['summary'].get('propertyQuota') or {},separators=(',',':'))[:1000],
+    }
+
 def sync_provider(project_id,provider,site,window,run_id):
     if provider=='gsc':
         if not GOOGLE_PROVIDER_URL or not GOOGLE_PROVIDER_TOKEN:
             raise RuntimeError('not_configured')
         return run_gsc_sync(project_id,site,window,run_id)
+    if provider=='ga4':
+        if not GOOGLE_PROVIDER_URL or not GOOGLE_PROVIDER_TOKEN:
+            raise RuntimeError('not_configured')
+        return run_ga4_sync(project_id,site,window,run_id)
     with db() as c:
         ensure_project_provider_state(c,project_id)
         state=c.execute(
@@ -344,7 +486,7 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
             c.execute('''update provider_state set status=?,auth_type=?,
                          last_success=?,last_attempt=?,last_error=null,freshness=?,updated_at=?
                          where project_id=? and provider=?''',
-                      ('degraded' if result.get('rows_skipped',0) else 'ok','service_account' if provider=='gsc' else '',finished,started,freshness,finished,
+                      ('degraded' if result.get('rows_skipped',0) else 'ok','service_account' if provider in ('gsc','ga4') else '',finished,started,freshness,finished,
                        project_id,provider))
             row=c.execute(
                 'select * from sync_run where id=? and project_id=?',
@@ -358,8 +500,11 @@ def create_or_run_sync(project_id,provider,site,window,started,request_key=None)
         message=safe_error_message(e)
         error_class='not_configured' if message=='not_configured' else (
             'adapter_not_implemented' if message=='adapter_not_implemented' else
-            ('property_not_authorised' if message.startswith('gsc_property_not_authorised') else 'provider_error'))
-        status='blocked' if error_class in ('not_configured','adapter_not_implemented') else 'error'
+            ('ga4_mapping_missing' if message=='ga4_property_map_missing' else
+             ('ga4_mapping_invalid' if message=='ga4_property_map_invalid' else
+              ('ga4_property_not_mapped' if message=='ga4_property_not_mapped' else
+               ('property_not_authorised' if message.startswith('gsc_property_not_authorised') or message.startswith('google_provider_403:') else 'provider_error')))))
+        status='blocked' if error_class in ('not_configured','adapter_not_implemented','ga4_mapping_missing','ga4_mapping_invalid','ga4_property_not_mapped') else 'error'
         with db() as c:
             c.execute('''update sync_run set status=?,finished_at=?,error_class=?,
                          error_message_safe=?,code_version=? where id=? and project_id=?''',
@@ -457,8 +602,42 @@ def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
         out.append(item)
     return out
 
+def metric_source_metadata(project_id,provider,site):
+    if provider not in ('gsc','ga4') or not site:
+        return None
+    with db() as c:
+        row=c.execute('''select payload,updated_at from provider_snapshot
+                         where project_id=? and provider=? and site=? and dataset='property'
+                         limit 1''',(project_id,provider,site)).fetchone()
+    if not row:
+        return None
+    try:
+        payload=json.loads(row['payload'] or '{}')
+    except (TypeError,json.JSONDecodeError):
+        return None
+    if provider=='gsc':
+        property_ref=str(payload.get('siteUrl') or '').strip()
+        return {
+            'provider':'gsc',
+            'property':property_ref or None,
+            'timeZone':'America/Los_Angeles',
+            'retrievedAt':row['updated_at'] or None,
+        }
+    property_ref=str(payload.get('property') or '').strip()
+    timezone=str(payload.get('timeZone') or '').strip()
+    return {
+        'provider':'ga4',
+        'property':property_ref or None,
+        'timeZone':timezone or None,
+        'retrievedAt':row['updated_at'] or None,
+    }
+
 def metric_coverage(project_id,provider,site,dataset,start,end):
-    if provider!='gsc' or dataset!='site_daily' or not site or not start or not end:
+    if provider not in ('gsc','ga4') or not site or not start or not end:
+        return {'ranges':[]}
+    if provider=='gsc' and dataset!='site_daily':
+        return {'ranges':[]}
+    if provider=='ga4' and dataset not in ('summary','site_daily'):
         return {'ranges':[]}
     with db() as c:
         rows=c.execute('''select distinct requested_start,requested_end from sync_run
@@ -493,6 +672,31 @@ def gsc_summary(project_id,site,window):
         'ctr':(clicks/impressions if impressions else 0),
         'averagePosition':(position_weight/impressions if impressions else 0),
     }
+
+def ga4_summary(project_id,site,window):
+    start_date,end_date=ga4_window_dates(window)
+    with db() as c:
+        rows=c.execute('''select dimensions,metrics from provider_metric
+                          where project_id=? and provider='ga4' and site=? and dataset='summary'
+                            and data_date between ? and ?
+                          order by updated_at desc''',
+                       (project_id,site,start_date,end_date)).fetchall()
+    for row in rows:
+        dimensions=json.loads(row['dimensions'] or '{}')
+        if dimensions.get('startDate')!=start_date or dimensions.get('endDate')!=end_date:
+            continue
+        values=json.loads(row['metrics'] or '{}')
+        return {
+            'users':values.get('activeUsers'),
+            'newUsers':values.get('newUsers'),
+            'sessions':values.get('sessions'),
+            'engagedSessions':values.get('engagedSessions'),
+            'engagementRate':values.get('engagementRate'),
+            'averageSessionDurationSeconds':values.get('averageSessionDuration'),
+            'eventCount':values.get('eventCount'),
+            'keyEvents':values.get('keyEvents'),
+        }
+    return None
 
 class H(BaseHTTPRequestHandler):
     server_version='MsRobotAnalytics/0.2'
@@ -560,9 +764,11 @@ class H(BaseHTTPRequestHandler):
                     self.sendj(400,{'error':'invalid_date_range'}); return
             try: limit=max(1,min(2000,int(q.get('limit',['500'])[0])))
             except Exception: limit=500
-            rows=metric_rows(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],limit+1,start,end)
-            coverage=metric_coverage(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],start,end)
-            self.sendj(200,{'rows':rows[:limit],'truncated':len(rows)>limit,'coverage':coverage,'generatedAt':now()}); return
+            provider=q.get('provider',[''])[0]; site=q.get('site',[''])[0]; dataset=q.get('dataset',[''])[0]
+            rows=metric_rows(project_id,provider,site,dataset,limit+1,start,end)
+            coverage=metric_coverage(project_id,provider,site,dataset,start,end)
+            source=metric_source_metadata(project_id,provider,site)
+            self.sendj(200,{'rows':rows[:limit],'truncated':len(rows)>limit,'coverage':coverage,'source':source,'generatedAt':now()}); return
         if u.path=='/v1/investigations':
             q=parse_qs(u.query)
             try: limit=max(1,min(500,int(q.get('limit',['100'])[0])))
@@ -573,14 +779,18 @@ class H(BaseHTTPRequestHandler):
         if len(parts)==4 and parts[0]=='v1' and parts[1]=='sites' and parts[3]=='snapshot':
             site=parts[2]; window=parse_qs(u.query).get('window',['7d'])[0]
             gsc=gsc_summary(project_id,site,window)
+            ga4=ga4_summary(project_id,site,window)
             warnings=[]
             if not gsc: warnings.append('No GSC metric rows are stored for this window.')
-            if health_for(project_id,'ga4')['status']=='not_configured': warnings.append('GA4 is not configured.')
+            if not ga4:
+                ga4_health=health_for(project_id,'ga4')
+                warnings.append('GA4 is not configured.' if ga4_health['status']=='not_configured' else 'No GA4 metric rows are stored for this window.')
             if health_for(project_id,'clarity')['status']=='not_configured': warnings.append('Clarity is not configured.')
             payload={'site':site,'generatedAt':now(),'window':window,
                      'health':[health_for(project_id,'gsc'),health_for(project_id,'ga4'),health_for(project_id,'clarity')],
                      'warnings':warnings}
             if gsc: payload['gsc']=gsc
+            if ga4: payload['ga4']=ga4
             self.sendj(200,payload); return
         self.sendj(404,{'error':'not_found'})
     def do_POST(self):

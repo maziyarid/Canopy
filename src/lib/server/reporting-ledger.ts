@@ -9,63 +9,172 @@ export type GatewayMetricRow = {
   provider: string; site: string; dataset: string; data_date: string;
   dimensions?: Record<string, unknown>; metrics: Record<string, unknown>; updated_at?: string;
 };
-export type GatewayMetricResponse = { rows: GatewayMetricRow[]; truncated?: boolean; coverage?: { ranges: Array<{ start: string; end: string }> } };
+export type GatewayMetricResponse = {
+  rows: GatewayMetricRow[];
+  truncated?: boolean;
+  coverage?: { ranges: Array<{ start: string; end: string }> };
+  source?: { provider?: string; property?: string | null; timeZone?: string | null; retrievedAt?: string | null } | null;
+};
 export type ReportGateway = {
   states(projectId: string): Promise<{ providers: State[] }>;
   metrics(projectId: string, provider: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse>;
 };
+
+function verifiedCoverage(period: SnapshotPeriod, ranges: Array<{ start: string; end: string }>, observedDates: string[]) {
+  const validRanges = ranges.filter(range =>
+    /^\d{4}-\d{2}-\d{2}$/.test(range.start) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(range.end) &&
+    Number.isFinite(Date.parse(range.start)) &&
+    Number.isFinite(Date.parse(range.end)) &&
+    range.start <= range.end,
+  );
+  const expectedDays = Math.round((Date.parse(period.end) - Date.parse(period.start)) / 86_400_000) + 1;
+  const complete = expectedDays > 0 && expectedDays <= 366 &&
+    Array.from({ length: expectedDays }, (_, day) =>
+      new Date(Date.parse(period.start) + day * 86_400_000).toISOString().slice(0, 10),
+    ).every(date => validRanges.some(range => range.start <= date && range.end >= date));
+  return {
+    start: complete ? period.start : (observedDates[0] ?? period.start),
+    end: complete ? period.end : (observedDates.at(-1) ?? period.start),
+    complete,
+    observedDates,
+  };
+}
+
+function finiteNonNegative(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
 
 /** The analytics ledger is SQLite behind the gateway, not the app's SQL database. */
 export async function readGatewayLedger(projectId: string, site: string, period: SnapshotPeriod, gateway: ReportGateway): Promise<{ rows: LedgerRow[]; available: boolean }> {
   let states: State[];
   try { states = (await gateway.states(projectId)).providers; }
   catch { return { rows: [], available: false }; }
+
   const rows: LedgerRow[] = states.map(state => ({
     provider: state.provider, status: state.status, lastSuccess: state.last_success,
     lastAttempt: state.last_attempt, lastError: state.last_error,
     freshness: state.freshness, updatedAt: state.updated_at ?? null,
   }));
-  const state = rows.find(row => row.provider === "gsc");
-  if (!state || state.status === "not_configured" || state.status === "disabled") return { rows, available: true };
-  let metrics: GatewayMetricRow[];
-  let ranges: Array<{ start: string; end: string }> = [];
-  try {
-    const response = await gateway.metrics(projectId, "gsc", site, "site_daily", period.start, period.end);
-    metrics = response.rows;
-    ranges = response.coverage?.ranges ?? [];
-  } catch {
-    state.status = "error";
-    state.lastError = "Search metrics could not be read. Try again later.";
-    return { rows, available: true };
+
+  const gscState = rows.find(row => row.provider === "gsc");
+  if (gscState && gscState.status !== "not_configured" && gscState.status !== "disabled") {
+    try {
+      const response = await gateway.metrics(projectId, "gsc", site, "site_daily", period.start, period.end);
+      const daily = response.rows.filter(row =>
+        row.provider === "gsc" && row.site === site && row.dataset === "site_daily" &&
+        row.data_date >= period.start && row.data_date <= period.end,
+      );
+      if (daily.length) {
+        const valid = daily.every(row =>
+          ["clicks", "impressions", "position"].every(key => finiteNonNegative(row.metrics[key])),
+        );
+        if (!valid || daily.length > 366 || new Set(daily.map(row => row.data_date)).size !== daily.length) {
+          gscState.status = "error";
+          gscState.lastError = "Search metrics could not be validated.";
+        } else {
+          let clicks = 0, impressions = 0, weightedPosition = 0;
+          for (const row of daily) {
+            clicks += row.metrics.clicks as number;
+            impressions += row.metrics.impressions as number;
+            weightedPosition += (row.metrics.position as number) * (row.metrics.impressions as number);
+          }
+          const observedDates = daily.map(row => row.data_date).sort();
+          const dataDate = observedDates.at(-1)!;
+          const coverage = verifiedCoverage(period, response.coverage?.ranges ?? [], observedDates);
+          if (!coverage.complete) {
+            if (gscState.status === "ok") gscState.status = "partial";
+            gscState.coverageWarning = `Partial Search data: ${observedDates.length} stored dates from ${coverage.start} to ${coverage.end}. Unverified dates are excluded from totals.`;
+          }
+          const updatedAt = daily.map(row => row.updated_at ?? "").sort().at(-1) || gscState.updatedAt;
+          const aggregate = {
+            clicks,
+            impressions,
+            ctr: impressions ? clicks / impressions : null,
+            averagePosition: impressions ? weightedPosition / impressions : null,
+          };
+          rows.splice(rows.indexOf(gscState), 1, ...Object.entries(aggregate).map(([metricName, metricValue]) => ({
+            ...gscState,
+            freshness: dataDate,
+            dataDate,
+            updatedAt,
+            metricName,
+            metricValue,
+            property: response.source?.property ?? null,
+            timeZone: response.source?.timeZone ?? null,
+            retrievedAt: response.source?.retrievedAt ?? updatedAt ?? null,
+            coverage,
+          })));
+        }
+      }
+    } catch {
+      gscState.status = "error";
+      gscState.lastError = "Search metrics could not be read. Try again later.";
+    }
   }
-  const daily = metrics.filter(row => row.provider === "gsc" && row.site === site && row.dataset === "site_daily" && row.data_date >= period.start && row.data_date <= period.end);
-  if (!daily.length) return { rows, available: true };
-  // Refuse partial/invalid rows instead of turning missing measurements into zero.
-  const valid = daily.every(row => ["clicks", "impressions", "position"].every(key => typeof row.metrics[key] === "number" && Number.isFinite(row.metrics[key]) && (row.metrics[key] as number) >= 0));
-  if (!valid || daily.length > 366 || new Set(daily.map(row => row.data_date)).size !== daily.length) {
-    state.status = "error";
-    state.lastError = "Search metrics could not be validated.";
-    return { rows, available: true };
+
+  const ga4State = rows.find(row => row.provider === "ga4");
+  if (ga4State && ga4State.status !== "not_configured" && ga4State.status !== "disabled") {
+    try {
+      const response = await gateway.metrics(projectId, "ga4", site, "summary", period.start, period.end);
+      const exact = response.rows.filter(row =>
+        row.provider === "ga4" &&
+        row.site === site &&
+        row.dataset === "summary" &&
+        row.dimensions?.startDate === period.start &&
+        row.dimensions?.endDate === period.end,
+      );
+      if (exact.length > 1) {
+        ga4State.status = "error";
+        ga4State.lastError = "Analytics metrics could not be validated.";
+      } else if (exact.length === 1) {
+        const row = exact[0];
+        const sourceToMetric = {
+          activeUsers: "users",
+          newUsers: "newUsers",
+          sessions: "sessions",
+          engagedSessions: "engagedSessions",
+          engagementRate: "engagementRate",
+          averageSessionDuration: "averageSessionDurationSeconds",
+          eventCount: "eventCount",
+          keyEvents: "keyEvents",
+        } as const;
+        const measured = Object.entries(sourceToMetric).flatMap(([source, metricName]) => {
+          const value = row.metrics[source];
+          return value === undefined || value === null
+            ? []
+            : finiteNonNegative(value)
+              ? [{ metricName, metricValue: value }]
+              : [{ metricName, metricValue: Number.NaN }];
+        });
+        if (measured.some(metric => !Number.isFinite(metric.metricValue))) {
+          ga4State.status = "error";
+          ga4State.lastError = "Analytics metrics could not be validated.";
+        } else {
+          const coverage = verifiedCoverage(period, response.coverage?.ranges ?? [], [period.end]);
+          if (!coverage.complete && ga4State.status === "ok") {
+            ga4State.status = "partial";
+            ga4State.coverageWarning = "Partial Analytics data: the requested period is not backed by a completed scoped sync receipt.";
+          }
+          const updatedAt = row.updated_at ?? ga4State.updatedAt;
+          rows.splice(rows.indexOf(ga4State), 1, ...measured.map(metric => ({
+            ...ga4State,
+            freshness: period.end,
+            dataDate: period.end,
+            updatedAt,
+            property: response.source?.property ?? null,
+            timeZone: response.source?.timeZone ?? null,
+            retrievedAt: response.source?.retrievedAt ?? updatedAt ?? null,
+            ...metric,
+            coverage,
+          })));
+        }
+      }
+    } catch {
+      ga4State.status = "error";
+      ga4State.lastError = "Analytics metrics could not be read. Try again later.";
+    }
   }
-  let clicks = 0, impressions = 0, weightedPosition = 0;
-  for (const row of daily) {
-    clicks += row.metrics.clicks as number;
-    impressions += row.metrics.impressions as number;
-    weightedPosition += (row.metrics.position as number) * (row.metrics.impressions as number);
-  }
-  const observedDates = daily.map(row => row.data_date).sort();
-  const dataDate = observedDates.at(-1)!;
-  const expectedDays = Math.round((Date.parse(period.end) - Date.parse(period.start)) / 86_400_000) + 1;
-  const validRanges = ranges.filter(range => /^\d{4}-\d{2}-\d{2}$/.test(range.start) && /^\d{4}-\d{2}-\d{2}$/.test(range.end) && Number.isFinite(Date.parse(range.start)) && Number.isFinite(Date.parse(range.end)) && range.start <= range.end);
-  const complete = expectedDays > 0 && expectedDays <= 366 && Array.from({ length: expectedDays }, (_, day) => new Date(Date.parse(period.start) + day * 86_400_000).toISOString().slice(0, 10)).every(date => validRanges.some(range => range.start <= date && range.end >= date));
-  // Receipt ranges establish coverage; sparse rows alone never establish zero days.
-  const coverage = { start: complete ? period.start : observedDates[0]!, end: complete ? period.end : dataDate, complete, observedDates };
-  if (!complete) {
-    if (state.status === "ok") state.status = "partial";
-    state.coverageWarning = `Partial Search data: ${observedDates.length} stored dates from ${coverage.start} to ${coverage.end}. Unverified dates are excluded from totals.`;
-  }
-  const updatedAt = daily.map(row => row.updated_at ?? "").sort().at(-1) || state.updatedAt;
-  const aggregate = { clicks, impressions, ctr: impressions ? clicks / impressions : null, averagePosition: impressions ? weightedPosition / impressions : null };
-  rows.splice(rows.indexOf(state), 1, ...Object.entries(aggregate).map(([metricName, metricValue]) => ({ ...state, freshness: dataDate, dataDate, updatedAt, metricName, metricValue, coverage })));
+
   return { rows, available: true };
 }

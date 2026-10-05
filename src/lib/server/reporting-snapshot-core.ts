@@ -39,6 +39,9 @@ export type SnapshotMetric = {
   provenance: ProvenanceKind;
   provider: string;
   dataDate: string | null;
+  property?: string | null;
+  timeZone?: string | null;
+  retrievedAt?: string | null;
   coverage?: MetricCoverage;
 };
 
@@ -80,6 +83,9 @@ export type LedgerRow = {
   dataDate?: string | null;
   updatedAt?: string | null;
   finishedAt?: string | null;
+  property?: string | null;
+  timeZone?: string | null;
+  retrievedAt?: string | null;
   coverage?: MetricCoverage;
   coverageWarning?: string;
 };
@@ -250,6 +256,9 @@ export function ledgerFingerprint(rows: LedgerRow[]): string {
         row.dataDate ?? "",
         row.updatedAt ?? "",
         row.finishedAt ?? "",
+        row.property ?? "",
+        row.timeZone ?? "",
+        row.retrievedAt ?? "",
         JSON.stringify(row.coverage ?? null),
         row.coverageWarning ?? "",
       ].join(":"),

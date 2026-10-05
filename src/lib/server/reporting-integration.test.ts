@@ -30,6 +30,95 @@ test("report reads the scoped gateway, aggregates only site daily data and weigh
   assert.deepEqual(metrics, { clicks: 20, impressions: 400, ctr: 0.05, averagePosition: 5 });
 });
 
+test("GA4 summary rows are normalized independently from GSC and require exact scoped coverage", async () => {
+  let observed: unknown;
+  const result = await readGatewayLedger("p1", "example.com", { start: "2026-09-24", end: "2026-09-30", label: "last_7d" }, {
+    states: async (projectId) => {
+      assert.equal(projectId, "p1");
+      return { providers: [{ provider: "ga4", status: "ok", last_success: "2026-10-01", last_attempt: null, last_error: null, freshness: "2026-09-30" }] };
+    },
+    metrics: async (...args) => {
+      observed = args;
+      return {
+        rows: [{
+          provider: "ga4",
+          site: "example.com",
+          dataset: "summary",
+          data_date: "2026-09-30",
+          dimensions: { startDate: "2026-09-24", endDate: "2026-09-30" },
+          metrics: {
+            activeUsers: 9,
+            newUsers: 3,
+            sessions: 14,
+            engagedSessions: 10,
+            engagementRate: 10 / 14,
+            averageSessionDuration: 61.5,
+            eventCount: 52,
+            keyEvents: 2,
+          },
+        }],
+        coverage: { ranges: [{ start: "2026-09-24", end: "2026-09-30" }] },
+        source: { provider: "ga4", property: "properties/100", timeZone: "Asia/Tehran", retrievedAt: "2026-10-01T00:00:00Z" },
+      };
+    },
+  });
+  assert.deepEqual(observed, ["p1", "ga4", "example.com", "summary", "2026-09-24", "2026-09-30"]);
+  const metrics = Object.fromEntries(result.rows.filter(r => r.metricName).map(r => [r.metricName, r.metricValue]));
+  assert.deepEqual(metrics, {
+    users: 9,
+    newUsers: 3,
+    sessions: 14,
+    engagedSessions: 10,
+    engagementRate: 10 / 14,
+    averageSessionDurationSeconds: 61.5,
+    eventCount: 52,
+    keyEvents: 2,
+  });
+  assert.equal(result.rows.find(row => row.metricName === "sessions")?.coverage?.complete, true);
+  assert.equal(result.rows.find(row => row.metricName === "sessions")?.property, "properties/100");
+  assert.equal(result.rows.find(row => row.metricName === "sessions")?.timeZone, "Asia/Tehran");
+  assert.equal(result.rows.find(row => row.metricName === "sessions")?.retrievedAt, "2026-10-01T00:00:00Z");
+
+  const snapshot = buildReportingSnapshot({
+    projectId: "p1",
+    site: "example.com",
+    period: { start: "2026-09-24", end: "2026-09-30", label: "last_7d" },
+    comparison: null,
+    correlationId: "ga4",
+    requestedAt: "t",
+    generatedAt: "t",
+    rows: result.rows,
+    ledgerAvailable: true,
+  });
+  assert.equal(snapshot.sections.find(section => section.key === "acquisition")?.metrics.find(metric => metric.name === "sessions")?.value, 14);
+  assert.equal(snapshot.sections.find(section => section.key === "conversions")?.metrics.find(metric => metric.name === "keyEvents")?.value, 2);
+});
+
+test("GA4 gateway failure degrades Analytics without discarding valid GSC rows", async () => {
+  const result = await readGatewayLedger("p1", "example.com", { start: "2026-09-24", end: "2026-09-30", label: "last_7d" }, {
+    states: async () => ({ providers: [
+      { provider: "gsc", status: "ok", last_success: "2026-09-30", last_attempt: null, last_error: null, freshness: "2026-09-30" },
+      { provider: "ga4", status: "ok", last_success: "2026-09-30", last_attempt: null, last_error: null, freshness: "2026-09-30" },
+    ] }),
+    metrics: async (_projectId, provider) => {
+      if (provider === "ga4") throw new Error("upstream failed");
+      return {
+        rows: [{
+          provider: "gsc",
+          site: "example.com",
+          dataset: "site_daily",
+          data_date: "2026-09-30",
+          metrics: { clicks: 4, impressions: 100, position: 7 },
+        }],
+        coverage: { ranges: [{ start: "2026-09-24", end: "2026-09-30" }] },
+      };
+    },
+  });
+  assert.equal(result.rows.find(row => row.provider === "gsc" && row.metricName === "clicks")?.metricValue, 4);
+  assert.equal(result.rows.find(row => row.provider === "ga4")?.status, "error");
+  assert.match(result.rows.find(row => row.provider === "ga4")?.lastError ?? "", /could not be read/);
+});
+
 test("keyword-scoped members cannot read project aggregates, before gateway access", async () => {
   let reads = 0;
   await assert.rejects(loadReportingSnapshot({ sql, resolveAccess: async () => ({ ...owner, role: "editor", filter: "limited" }), userId: "u", email: "", projectId: "p1", readLedger: async () => { reads++; return { rows: [row], available: true }; } }), /Forbidden/);

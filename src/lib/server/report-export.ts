@@ -38,11 +38,11 @@ function cell(value: unknown): string {
 
 /** Input has already passed current access/grant filtering on the server. */
 export function reportCsv(snapshot: ReportingSnapshot): string {
-  const header = ["site", "period_start", "period_end", "section", "provider", "metric", "value", "provenance", "data_date", "coverage_complete", "status", "comparison_start", "comparison_end", "previous_value", "difference", "relative_change", "comparison_state"];
+  const header = ["site", "period_start", "period_end", "section", "provider", "property", "timezone", "retrieved_at", "metric", "value", "provenance", "data_date", "coverage_complete", "status", "comparison_start", "comparison_end", "previous_value", "difference", "relative_change", "comparison_state"];
   const comparisons = comparisonRows(snapshot);
   const rows = snapshot.sections.filter(section => section.key !== "overview").flatMap(section => section.metrics.map((metric: SnapshotMetric) => {
     const comparison = comparisons.find(row => row.section === section.key && row.metric === metric.name && row.provider === metric.provider);
-    return [snapshot.site, snapshot.period.start, snapshot.period.end, section.key, metric.provider, metric.name, finite(metric.value), metric.provenance, metric.dataDate, metric.coverage?.complete ?? false, section.status, snapshot.comparison?.start, snapshot.comparison?.end, comparison?.previous, comparison?.difference, comparison?.relativeChange, comparison?.reason];
+    return [snapshot.site, snapshot.period.start, snapshot.period.end, section.key, metric.provider, metric.property ?? "", metric.timeZone ?? "", metric.retrievedAt ?? "", metric.name, finite(metric.value), metric.provenance, metric.dataDate, metric.coverage?.complete ?? false, section.status, snapshot.comparison?.start, snapshot.comparison?.end, comparison?.previous, comparison?.difference, comparison?.relativeChange, comparison?.reason];
   }));
   return [header, ...rows].map(row => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
