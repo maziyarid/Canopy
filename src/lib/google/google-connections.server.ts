@@ -1,6 +1,7 @@
 import type { Sql } from "../db.ts";
 import type { AccessCtx } from "../server/access.ts";
 import {
+  GOOGLE_ACTION_POLICIES,
   googleActionPolicy,
   type GoogleCapability,
   type GoogleProvider,
@@ -10,6 +11,7 @@ import {
 import {
   actionProvider,
   profileSatisfiesAction,
+  scopesSatisfy,
   validateConnectionBindings,
   validateConnectionScopes,
   validateRoleCapability,
@@ -322,6 +324,23 @@ export async function grantGoogleCapability(
   if (!profileRows[0]) throw new Error("active_google_connection_required");
   const profile = profileFromRow(profileRows[0]);
   if (profile.provider !== actionProvider(input.capability)) throw new Error("capability_provider_mismatch");
+
+  const actionPolicies = Object.values(GOOGLE_ACTION_POLICIES).filter(
+    (policy) =>
+      policy.provider === profile.provider &&
+      policy.capability === input.capability &&
+      policy.resourceType === input.resourceType,
+  );
+  if (
+    actionPolicies.length &&
+    !actionPolicies.some(
+      (policy) =>
+        policy.profileMode === profile.profileMode &&
+        scopesSatisfy(profile.scopes, policy.requiredScopes),
+    )
+  ) {
+    throw new Error("capability_connection_profile_mismatch");
+  }
 
   const resourceRef = validateGoogleResourceRef(input.resourceType, input.resourceRef);
   if (!profile.resourceBindings.some((binding) => binding.type === input.resourceType && binding.ref === resourceRef)) {
