@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getSql } from "@/lib/db";
-import { attachAmbientDataDomain } from "@/lib/ambient-data-domain";
 import { resolveAccess } from "./access";
 import { studioAuth } from "./studio-auth";
 import {
@@ -58,14 +57,29 @@ export const getGoogleDelegatedAccess = createServerFn({ method: "GET" })
   .validator(ProjectScope)
   .handler(async ({ context, data }) => {
     const { sql, access } = await accessFor(context, data);
-    const [accessState, proposals] = await Promise.all([
+    const [accessState, proposals, members] = await Promise.all([
       listGoogleAccess(sql, access),
       listGoogleProposals(sql, access),
+      sql.query<{ user_id: string | null; email: string; role: string }>(
+        "select user_id,email,role from project_access where project_id=$1 order by created_at",
+        [data.projectId],
+      ),
     ]);
+    const principals = [
+      { userId: access.project.owner_id, label: "Owner", role: "owner" },
+      ...members
+        .filter((member) => Boolean(member.user_id))
+        .map((member) => ({
+          userId: member.user_id as string,
+          label: member.email || member.user_id || "Member",
+          role: member.role,
+        })),
+    ];
     return {
       projectId: data.projectId,
       ...accessState,
       proposals,
+      principals,
       roleTemplates: Object.fromEntries(
         Object.entries(GOOGLE_ROLE_TEMPLATES).map(([role, capabilities]) => [role, [...capabilities]]),
       ),
