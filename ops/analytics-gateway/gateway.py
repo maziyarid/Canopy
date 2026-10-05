@@ -602,6 +602,36 @@ def metric_rows(project_id,provider,site,dataset,limit=500,start=None,end=None):
         out.append(item)
     return out
 
+def metric_source_metadata(project_id,provider,site):
+    if provider not in ('gsc','ga4') or not site:
+        return None
+    with db() as c:
+        row=c.execute('''select payload,updated_at from provider_snapshot
+                         where project_id=? and provider=? and site=? and dataset='property'
+                         limit 1''',(project_id,provider,site)).fetchone()
+    if not row:
+        return None
+    try:
+        payload=json.loads(row['payload'] or '{}')
+    except (TypeError,json.JSONDecodeError):
+        return None
+    if provider=='gsc':
+        property_ref=str(payload.get('siteUrl') or '').strip()
+        return {
+            'provider':'gsc',
+            'property':property_ref or None,
+            'timeZone':'America/Los_Angeles',
+            'retrievedAt':row['updated_at'] or None,
+        }
+    property_ref=str(payload.get('property') or '').strip()
+    timezone=str(payload.get('timeZone') or '').strip()
+    return {
+        'provider':'ga4',
+        'property':property_ref or None,
+        'timeZone':timezone or None,
+        'retrievedAt':row['updated_at'] or None,
+    }
+
 def metric_coverage(project_id,provider,site,dataset,start,end):
     if provider not in ('gsc','ga4') or not site or not start or not end:
         return {'ranges':[]}
@@ -734,9 +764,11 @@ class H(BaseHTTPRequestHandler):
                     self.sendj(400,{'error':'invalid_date_range'}); return
             try: limit=max(1,min(2000,int(q.get('limit',['500'])[0])))
             except Exception: limit=500
-            rows=metric_rows(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],limit+1,start,end)
-            coverage=metric_coverage(project_id,q.get('provider',[''])[0],q.get('site',[''])[0],q.get('dataset',[''])[0],start,end)
-            self.sendj(200,{'rows':rows[:limit],'truncated':len(rows)>limit,'coverage':coverage,'generatedAt':now()}); return
+            provider=q.get('provider',[''])[0]; site=q.get('site',[''])[0]; dataset=q.get('dataset',[''])[0]
+            rows=metric_rows(project_id,provider,site,dataset,limit+1,start,end)
+            coverage=metric_coverage(project_id,provider,site,dataset,start,end)
+            source=metric_source_metadata(project_id,provider,site)
+            self.sendj(200,{'rows':rows[:limit],'truncated':len(rows)>limit,'coverage':coverage,'source':source,'generatedAt':now()}); return
         if u.path=='/v1/investigations':
             q=parse_qs(u.query)
             try: limit=max(1,min(500,int(q.get('limit',['100'])[0])))
