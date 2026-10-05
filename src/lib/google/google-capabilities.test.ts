@@ -23,6 +23,25 @@ test("editing and publishing are separate GTM capabilities and scopes", () => {
   assert.deepEqual(GOOGLE_ACTION_POLICIES["gtm.version.publish"].requiredScopes, ["https://www.googleapis.com/auth/tagmanager.publish"]);
 });
 
+
+test("Search Console ownership verification is separate from property administration", () => {
+  assert.equal(GOOGLE_ACTION_POLICIES["gsc.verification.get_token"].capability, "google.gsc.verification.token");
+  assert.equal(GOOGLE_ACTION_POLICIES["gsc.verification.get_token"].approval, "grant");
+  assert.equal(GOOGLE_ACTION_POLICIES["gsc.verification.verify"].capability, "google.gsc.verification.verify");
+  assert.equal(GOOGLE_ACTION_POLICIES["gsc.verification.verify"].approval, "ada");
+  assert.deepEqual(
+    GOOGLE_ACTION_POLICIES["gsc.verification.verify"].requiredScopes,
+    ["https://www.googleapis.com/auth/siteverification.verify_only"],
+  );
+});
+
+test("GTM preview is separate from publish and remains on the write profile", () => {
+  assert.equal(GOOGLE_ACTION_POLICIES["gtm.workspace.preview"].capability, "google.gtm.preview");
+  assert.equal(GOOGLE_ACTION_POLICIES["gtm.workspace.preview"].profileMode, "write");
+  assert.equal(GOOGLE_ACTION_POLICIES["gtm.workspace.preview"].approval, "grant");
+  assert.equal(GOOGLE_ACTION_POLICIES["gtm.version.publish"].profileMode, "publish");
+});
+
 test("GA4 configuration and user management cannot share one implicit capability", () => {
   assert.equal(GOOGLE_ACTION_POLICIES["ga4.custom_dimension.create"].capability, "google.ga4.config.write");
   assert.equal(GOOGLE_ACTION_POLICIES["ga4.access_binding.create"].capability, "google.ga4.user.manage");
