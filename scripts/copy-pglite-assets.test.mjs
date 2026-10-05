@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyPgliteAssets, pgliteAssetTarget, prepareNitroOutput } from "./copy-pglite-assets.mjs";
+import { copyPgliteAssets, isMissingOutputError, outputParentExists, pgliteAssetTarget, prepareNitroOutput } from "./copy-pglite-assets.mjs";
 
 const files = ["pglite.data", "pglite.wasm", "initdb.wasm"];
 
@@ -83,7 +83,6 @@ test("selected preset fails closed when its current build output is missing", as
   }
 });
 
-
 test("prepare removes a stale same-preset output so it cannot satisfy the post-build copy gate", async () => {
   const root = await fixture();
   try {
@@ -100,4 +99,22 @@ test("prepare removes a stale same-preset output so it cannot satisfy the post-b
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("output existence reports only ENOENT and ENOTDIR as missing", async () => {
+  assert.equal(isMissingOutputError(Object.assign(new Error("gone"), { code: "ENOENT" })), true);
+  assert.equal(isMissingOutputError(Object.assign(new Error("not dir"), { code: "ENOTDIR" })), true);
+  assert.equal(isMissingOutputError(Object.assign(new Error("denied"), { code: "EACCES" })), false);
+  await assert.rejects(
+    outputParentExists("/tmp/does-not-matter", async () => {
+      throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+    }),
+    (error) => error.code === "EACCES",
+  );
+  assert.equal(
+    await outputParentExists("/tmp/does-not-matter", async () => {
+      throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    }),
+    false,
+  );
 });
