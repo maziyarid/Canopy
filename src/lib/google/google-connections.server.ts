@@ -5,6 +5,7 @@ import {
   type GoogleCapability,
   type GoogleProvider,
   type GoogleRoleTemplate,
+  type GoogleActionKey,
 } from "./google-capabilities.ts";
 import {
   actionProvider,
@@ -15,7 +16,7 @@ import {
   type GoogleConnectionProfile,
   type GoogleResourceBinding,
 } from "./google-governance-core.ts";
-import { validateGoogleResourceRef, type GoogleActionKey, type GoogleResourceType } from "./google-actions.ts";
+import { validateGoogleResourceRef, type GoogleResourceType } from "./google-actions.ts";
 
 type ProfileRow = {
   id: string;
