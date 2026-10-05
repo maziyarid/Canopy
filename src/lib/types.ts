@@ -16,6 +16,7 @@ export type ProjectTab =
   | "progress"
   | "report"
   | "providers"
+  | "google"
   | "connect";
 
 export type Project = {
