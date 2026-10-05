@@ -10,7 +10,7 @@ import { loadSearchTable } from "./search-table";
 import { periodFromLabel } from "./reporting-snapshot-core";
 import { parseReportSections } from "./report-sections";
 import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows } from "./report-export";
-import { exportReportRecord } from "./report-export-service";
+import { exportLoadedReportRecord } from "./report-export-service";
 import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod, isReportingConfiguredForRole, redactClientText } from "./client-report-view";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
@@ -123,7 +123,7 @@ export const getProjectReport = createServerFn({ method: "GET" })
         canManageNotes: false,
         canReadSearchTable: false,
         canWriteNotes: false,
-        period: clientSafePeriod(period),
+        period: clientSafePeriod(period)!,
         comparison: null,
         comparisons: [],
       };
@@ -165,7 +165,7 @@ export const getProjectReport = createServerFn({ method: "GET" })
       canManageNotes: access.role !== "client",
       canReadSearchTable: !access.filter.trim() && (access.role !== "client" || parseReportSections(access.reportSections).includes("search")),
       canWriteNotes: access.role !== "client" && access.project.data_domain !== "medical",
-      period: access.role === "client" ? clientSafePeriod(snapshot.period) : snapshot.period,
+      period: access.role === "client" ? clientSafePeriod(snapshot.period)! : snapshot.period,
       comparison: access.role === "client" ? clientSafePeriod(snapshot.comparison) : snapshot.comparison,
       comparisons: access.role === "client"
         ? clientComparisonRows(snapshot, view.sections.map((section) => section.key))
@@ -178,7 +178,13 @@ export const exportProjectReport = createServerFn({ method: "POST" })
   .validator(GetSchema)
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const access = await resolveSnapshotAccess(
+      resolveAccess,
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+    );
     if (!isReportingConfiguredForRole(access.role)) {
       throw new SnapshotAccessError(503, "Reporting unavailable");
     }
@@ -242,16 +248,10 @@ export const exportProjectReport = createServerFn({ method: "POST" })
         values (${crypto.randomUUID()},${boundProjectId},${context.userId},'report.export.csv',${boundProjectId},'completed',${JSON.stringify({ schemaVersion: snapshot.schemaVersion, start: periodStart, end: periodEnd, clientSafe: true, evidenceTitleCount: journal.journal.days.reduce((count, day) => count + day.cards.length, 0) })})`;
       return { content, contentType: "text/csv;charset=utf-8", filename: "ms-robot-client-report.csv" };
     }
-    return exportReportRecord({
+    return exportLoadedReportRecord({
       sql,
-      readLedger,
-      resolveAccess,
       userId: context.userId,
-      email: context.email,
-      projectId: boundProjectId,
-      periodLabel: data.period,
-      comparisonLabel: data.comparison,
-      endDate: data.endDate,
+      snapshot,
     });
   });
 
@@ -261,7 +261,13 @@ export const getProjectSearchTable = createServerFn({ method: "GET" })
   .validator(GetSchema.extend({ offset: z.number().int().min(0).max(2000).optional() }))
   .handler(async ({ context, data }) => {
     const sql = await getSql();
-    const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const access = await resolveSnapshotAccess(
+      resolveAccess,
+      sql,
+      context.userId,
+      context.email,
+      data.projectId,
+    );
     if (!isReportingConfiguredForRole(access.role)) {
       throw new SnapshotAccessError(503, "Reporting unavailable");
     }
