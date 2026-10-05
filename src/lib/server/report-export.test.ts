@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { comparisonRows, reportCsv } from "./report-export.ts";
+import { clientEvidenceExportCsv, comparisonRows, reportCsv } from "./report-export.ts";
 import type { ReportingSnapshot, SnapshotSection } from "./reporting-snapshot-core.ts";
 
 const section = (value: number | null, complete = true): SnapshotSection => ({ key: "search", status: complete ? "ok" : "partial", freshness: "2026-10-01", lastSyncAt: "2026-10-02", warning: null, metrics: [{ name: "clicks", value, provider: "gsc", provenance: "first_party", dataDate: "2026-10-01", coverage: { start: "2026-09-27", end: "2026-10-03", complete, observedDates: ["2026-10-01"] } }] });
@@ -43,4 +43,26 @@ test("coverage for the wrong window cannot establish a measured comparison", () 
   const data = snapshot(); data.comparisonSections![0].metrics[0].coverage!.end = "2026-10-03";
   assert.equal(comparisonRows(data)[0].difference, null);
   assert.equal(comparisonRows(data)[0].reason, "incomplete");
+});
+
+test("client evidence export keeps redacted metrics and visible note titles only", () => {
+  const csv = clientEvidenceExportCsv({
+    site: "example.com",
+    periodStart: "2026-09-27",
+    periodEnd: "2026-10-03",
+    sections: [{
+      key: "search",
+      status: "ok",
+      metrics: [{ name: "clicks", provider: "gsc", value: 3, provenance: "first_party", dataDate: "2026-10-01" }],
+    }, {
+      key: "providerHealth",
+      status: "degraded",
+      metrics: [{ name: "api_key=secret", provider: "gsc", value: 1, provenance: "first_party", dataDate: null }],
+    }],
+    evidenceTitles: ["Approved clicks note"],
+  });
+  assert.match(csv, /Approved clicks note/);
+  assert.doesNotMatch(csv, /api_key/);
+  assert.doesNotMatch(csv, /providerHealth/);
+  assert.match(csv, /evidence_note/);
 });
