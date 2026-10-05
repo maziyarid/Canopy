@@ -12,7 +12,7 @@ import { parseReportSections } from "./report-sections";
 import { comparisonRows } from "./report-export";
 import { exportReportRecord } from "./report-export-service";
 import { bindResolvedDashboardAccess, buildGatedClientDashboard } from "./client-report-view";
-import { gateProjectExport } from "./project-export-gate";
+import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
 
@@ -153,8 +153,17 @@ export const exportProjectReport = createServerFn({ method: "POST" })
 export const getProjectSearchTable = createServerFn({ method: "GET" })
   .middleware([studioAuth])
   .validator(GetSchema.extend({ offset: z.number().int().min(0).max(2000).optional() }))
-  .handler(async ({ context, data }) => loadSearchTable({
-    sql: await getSql(), resolveAccess, userId: context.userId, email: context.email,
-    projectId: data.projectId, period: periodFromLabel(data.period, reportClosingDate(data.endDate)),
-    offset: data.offset, readRows: getProviderSearchRows,
-  }));
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const access = await resolveAccess(sql, context.userId, context.email, data.projectId);
+    const projectId = gateProjectSearch({
+      role: access.role,
+      resolvedProjectId: access.project.id,
+      requestedProjectId: data.projectId,
+    });
+    return loadSearchTable({
+      sql, resolveAccess, userId: context.userId, email: context.email,
+      projectId, period: periodFromLabel(data.period, reportClosingDate(data.endDate)),
+      offset: data.offset, readRows: getProviderSearchRows,
+    });
+  });

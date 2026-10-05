@@ -19,3 +19,18 @@ export function gateProjectExport(input: {
     reportingConfigured: true,
   }).boundProjectId;
 }
+
+/** Search-table reads must use the resolved project id, never a client alias. */
+export function gateProjectSearch(input: {
+  role: ReportRole;
+  resolvedProjectId: string;
+  requestedProjectId: string;
+}): string {
+  return bindResolvedDashboardAccess({
+    role: input.role,
+    resolvedProjectId: input.resolvedProjectId,
+    requestedProjectId: input.requestedProjectId,
+    snapshotProjectId: input.resolvedProjectId,
+    reportingConfigured: true,
+  }).boundProjectId;
+}
