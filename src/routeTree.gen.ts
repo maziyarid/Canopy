@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LaunchAcceptRouteImport } from './routes/launch.accept'
 import { Route as PIdRouteImport } from './routes/p.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiGoogleOauthCallbackRouteImport } from './routes/api/google/oauth/callback'
 import { Route as ApiV1ReportingSnapshotRouteImport } from './routes/api/v1/reporting/snapshot'
 
 const IndexRoute = IndexRouteImport.update({
@@ -41,6 +42,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiGoogleOauthCallbackRoute = ApiGoogleOauthCallbackRouteImport.update({
+  id: '/api/google/oauth/callback',
+  path: '/api/google/oauth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiV1ReportingSnapshotRoute = ApiV1ReportingSnapshotRouteImport.update({
   id: '/api/v1/reporting/snapshot',
   path: '/api/v1/reporting/snapshot',
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/launch/accept': typeof LaunchAcceptRoute
   '/p/$id': typeof PIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/google/oauth/callback': typeof ApiGoogleOauthCallbackRoute
   '/api/v1/reporting/snapshot': typeof ApiV1ReportingSnapshotRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/launch/accept': typeof LaunchAcceptRoute
   '/p/$id': typeof PIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/google/oauth/callback': typeof ApiGoogleOauthCallbackRoute
   '/api/v1/reporting/snapshot': typeof ApiV1ReportingSnapshotRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/launch/accept': typeof LaunchAcceptRoute
   '/p/$id': typeof PIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/google/oauth/callback': typeof ApiGoogleOauthCallbackRoute
   '/api/v1/reporting/snapshot': typeof ApiV1ReportingSnapshotRoute
 }
 export interface FileRouteTypes {
@@ -80,6 +89,7 @@ export interface FileRouteTypes {
     | '/launch/accept'
     | '/p/$id'
     | '/api/auth/$'
+    | '/api/google/oauth/callback'
     | '/api/v1/reporting/snapshot'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -88,6 +98,7 @@ export interface FileRouteTypes {
     | '/launch/accept'
     | '/p/$id'
     | '/api/auth/$'
+    | '/api/google/oauth/callback'
     | '/api/v1/reporting/snapshot'
   id:
     | '__root__'
@@ -96,6 +107,7 @@ export interface FileRouteTypes {
     | '/launch/accept'
     | '/p/$id'
     | '/api/auth/$'
+    | '/api/google/oauth/callback'
     | '/api/v1/reporting/snapshot'
   fileRoutesById: FileRoutesById
 }
@@ -105,6 +117,7 @@ export interface RootRouteChildren {
   LaunchAcceptRoute: typeof LaunchAcceptRoute
   PIdRoute: typeof PIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiGoogleOauthCallbackRoute: typeof ApiGoogleOauthCallbackRoute
   ApiV1ReportingSnapshotRoute: typeof ApiV1ReportingSnapshotRoute
 }
 
@@ -145,6 +158,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/google/oauth/callback': {
+      id: '/api/google/oauth/callback'
+      path: '/api/google/oauth/callback'
+      fullPath: '/api/google/oauth/callback'
+      preLoaderRoute: typeof ApiGoogleOauthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/v1/reporting/snapshot': {
       id: '/api/v1/reporting/snapshot'
       path: '/api/v1/reporting/snapshot'
@@ -161,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   LaunchAcceptRoute: LaunchAcceptRoute,
   PIdRoute: PIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiGoogleOauthCallbackRoute: ApiGoogleOauthCallbackRoute,
   ApiV1ReportingSnapshotRoute: ApiV1ReportingSnapshotRoute,
 }
 export const routeTree = rootRouteImport

@@ -32,6 +32,7 @@ export type ProviderAdminProvider = ProviderState & {
 export type ProviderAdminView = {
   projectId: string;
   site: string;
+  canManageDelegatedAccess: boolean;
   runtimeAvailable: boolean;
   runtimeError?: string;
   generatedAt?: string;
@@ -162,6 +163,7 @@ export const getProviderAdmin = createServerFn({ method: "GET" })
     return {
       projectId: data.projectId,
       site: project.domain,
+      canManageDelegatedAccess: role === "owner" && !filter.trim(),
       runtimeAvailable,
       runtimeError,
       generatedAt,

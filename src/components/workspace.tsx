@@ -3,6 +3,7 @@ import { ReportSectionGrants } from "./report-section-grants";
 import { Badge, Button, Field, Input, Textarea } from "@/components/ui";
 import { Spark } from "@/components/spark";
 import { ProviderAdminPanel } from "@/components/provider-admin";
+import { GoogleAccessPanel } from "@/components/google-access";
 import { attachAmbientDataDomain, readAmbientDataDomain, writeAmbientDataDomain, type DataDomain } from "@/lib/ambient-data-domain";
 import { cn } from "@/lib/cn";
 import { AGENT_ROSTER, type CopyKey } from "@/lib/i18n";
@@ -70,6 +71,7 @@ const TAB_IDS: { id: ProjectTab; owner?: boolean; hideClient?: boolean }[] = [
   { id: "progress" },
   { id: "access", owner: true },
   { id: "providers", hideClient: true },
+  { id: "google" },
   { id: "connect", hideClient: true },
 ];
 
@@ -119,6 +121,7 @@ export function Workspace({ id }: { id: string }) {
     if (x.owner && role !== "owner") return false;
     if (x.hideClient && role === "client") return false;
     if (x.id === "report" && bundle.project.keywordFilter.trim()) return false;
+    if (x.id === "google" && bundle.project.keywordFilter.trim()) return false;
     return true;
   });
 
@@ -189,6 +192,7 @@ export function Workspace({ id }: { id: string }) {
       {tab === "agents" && <AgentsPanel bundle={bundle} reload={reload} />}
       {tab === "progress" && <ProgressPanel bundle={bundle} />}
       {tab === "access" && <AccessPanel bundle={bundle} reload={reload} />}
+      {tab === "google" && <GoogleAccessPanel projectId={bundle.project.id} />}
       {tab === "providers" && (
         <ProviderAdminPanel
           key={`${bundle.project.id}:${bundle.project.role}:${bundle.project.keywordFilter}`}
