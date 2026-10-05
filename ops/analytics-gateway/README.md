@@ -59,6 +59,40 @@ The provider calls the official Google Analytics Data API `v1beta properties.run
 
 Raw provider credentials never leave the Google adapter. Query strings and fragments are removed from landing-page values; identifier-shaped path segments are redacted before persistence. Reporting snapshots expose only normalized aggregate facts. They include provider, exact property reference, measurement date, provider timezone when supplied, retrieval timestamp, freshness and partial/complete coverage status.
 
+Default GA4 sync and reporting windows use the previous UTC calendar date as
+an inclusive closing date. Explicit reporting `endDate` remains inclusive and
+is not shifted. GA4 still interprets date dimensions in its property timezone;
+this UTC cutoff does not certify finalization or remove provider processing
+latency. Summary users come only from an exact-window provider summary, never
+from summing daily unique users. GSC retains its separate delayed sync window;
+missing dates remain partial.
+
+The provider returns bounded quality metadata (`complete`, `omittedRows`,
+`truncated`, and fixed reason codes). Every member of a sanitized landing-page
+collision is omitted; neither replacement nor addition of unique-user counts
+is valid. Each successful response replaces only its scoped measurement slice in one
+transaction: exact project/site/dataset/window for summaries and dimensions,
+and the requested date range for daily rows. Invalid or omitted rows from an
+earlier run cannot survive as though they were current. Upstream request
+failures occur before that transaction and preserve the prior measurements. A report exceeding the
+row limit, sampled or thresholded data, provider data loss, or invalid metrics
+is explicitly incomplete. `rows_skipped` counts known omitted rows only;
+unknown truncation cardinality is not invented. These conditions degrade the
+provider state while retaining valid measured values.
+
+The additive SQLite coordinator now adds `provider_metric.source_metadata`.
+It stores the property, timezone, actual provider retrieval time and quality
+with each measurement in the same write transaction. Remapping a site does not
+relabel retained historical rows. Existing rows receive empty provenance and
+must be re-synced to establish it; there is no latest-snapshot backfill. The
+response-level `source` is only a compatibility summary of returned rows with
+one consistent identity. Canonical reports use each row's source, and reject
+GSC aggregates that combine different known property identities. Summary coverage is bound to receipts referenced by current rows, rather than
+unrelated older successful syncs. GA4 daily coverage certifies only currently
+verified stored dates; sparse or deleted dates are unverified, even if an older
+receipt covered them. Daily users are never used as period totals. Back up and independently review this additive migration
+before any authorized runtime rollout; no deployment is implied by the patch.
+
 GA4 is independent from GSC: a GA4 failure must not erase valid Search Console data, and a GSC failure must not turn missing Analytics data into zero. Do not enable GA4 for a project until the mapped property is actually authorised to the existing Google identity and a bounded real read has succeeded.
 
 ## Ada bridge receipts (AAX-69)

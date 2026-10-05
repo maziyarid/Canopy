@@ -5,15 +5,20 @@ type State = {
   last_attempt: string | null; last_error: string | null; freshness: string | null;
   updated_at?: string;
 };
+type MetricSource = {
+  provider?: string; property?: string | null; timeZone?: string | null; retrievedAt?: string | null;
+  coverage?: { complete: boolean; omittedRows?: number; truncated?: boolean };
+};
 export type GatewayMetricRow = {
   provider: string; site: string; dataset: string; data_date: string;
   dimensions?: Record<string, unknown>; metrics: Record<string, unknown>; updated_at?: string;
+  source?: MetricSource | null;
 };
 export type GatewayMetricResponse = {
   rows: GatewayMetricRow[];
   truncated?: boolean;
   coverage?: { ranges: Array<{ start: string; end: string }> };
-  source?: { provider?: string; property?: string | null; timeZone?: string | null; retrievedAt?: string | null } | null;
+  source?: MetricSource | null;
 };
 export type ReportGateway = {
   states(projectId: string): Promise<{ providers: State[] }>;
@@ -69,7 +74,10 @@ export async function readGatewayLedger(projectId: string, site: string, period:
         const valid = daily.every(row =>
           ["clicks", "impressions", "position"].every(key => finiteNonNegative(row.metrics[key])),
         );
-        if (!valid || daily.length > 366 || new Set(daily.map(row => row.data_date)).size !== daily.length) {
+        const sourceIdentities = new Set(daily.filter(row => row.source?.property).map(row =>
+          JSON.stringify([row.source?.property, row.source?.timeZone]),
+        ));
+        if (!valid || sourceIdentities.size > 1 || daily.length > 366 || new Set(daily.map(row => row.data_date)).size !== daily.length) {
           gscState.status = "error";
           gscState.lastError = "Search metrics could not be validated.";
         } else {
@@ -82,6 +90,9 @@ export async function readGatewayLedger(projectId: string, site: string, period:
           const observedDates = daily.map(row => row.data_date).sort();
           const dataDate = observedDates.at(-1)!;
           const coverage = verifiedCoverage(period, response.coverage?.ranges ?? [], observedDates);
+          coverage.complete = coverage.complete && !response.truncated;
+          const source = daily.every(row => row.source?.property) ? daily[0].source : null;
+          const retrievedAt = daily.map(row => row.source?.retrievedAt ?? row.updated_at ?? "").sort().at(-1) || null;
           if (!coverage.complete) {
             if (gscState.status === "ok") gscState.status = "partial";
             gscState.coverageWarning = `Partial Search data: ${observedDates.length} stored dates from ${coverage.start} to ${coverage.end}. Unverified dates are excluded from totals.`;
@@ -100,9 +111,9 @@ export async function readGatewayLedger(projectId: string, site: string, period:
             updatedAt,
             metricName,
             metricValue,
-            property: response.source?.property ?? null,
-            timeZone: response.source?.timeZone ?? null,
-            retrievedAt: response.source?.retrievedAt ?? updatedAt ?? null,
+            property: source?.property ?? null,
+            timeZone: source?.timeZone ?? null,
+            retrievedAt,
             coverage,
           })));
         }
@@ -152,9 +163,10 @@ export async function readGatewayLedger(projectId: string, site: string, period:
           ga4State.lastError = "Analytics metrics could not be validated.";
         } else {
           const coverage = verifiedCoverage(period, response.coverage?.ranges ?? [], [period.end]);
-          if (!coverage.complete && ga4State.status === "ok") {
-            ga4State.status = "partial";
-            ga4State.coverageWarning = "Partial Analytics data: the requested period is not backed by a completed scoped sync receipt.";
+          coverage.complete = coverage.complete && !response.truncated && row.source?.coverage?.complete === true;
+          if (!coverage.complete) {
+            if (ga4State.status === "ok") ga4State.status = "partial";
+            ga4State.coverageWarning = "Partial Analytics data: provider quality or the requested period could not be fully verified.";
           }
           const updatedAt = row.updated_at ?? ga4State.updatedAt;
           rows.splice(rows.indexOf(ga4State), 1, ...measured.map(metric => ({
@@ -162,9 +174,9 @@ export async function readGatewayLedger(projectId: string, site: string, period:
             freshness: period.end,
             dataDate: period.end,
             updatedAt,
-            property: response.source?.property ?? null,
-            timeZone: response.source?.timeZone ?? null,
-            retrievedAt: response.source?.retrievedAt ?? updatedAt ?? null,
+            property: row.source?.property ?? null,
+            timeZone: row.source?.timeZone ?? null,
+            retrievedAt: row.source?.retrievedAt ?? row.updated_at ?? null,
             ...metric,
             coverage,
           })));

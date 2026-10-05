@@ -10,7 +10,10 @@ implementation. There is no environment-only enable flag.
 
 - `period`: `last_7d`, `last_14d`, `last_28d`, `last_30d`, `last_90d`; default `last_28d`.
 - `comparison`: `previous` or `none`; default `previous`.
-- `endDate`: optional real, nonfuture UTC date `YYYY-MM-DD`.
+- `endDate`: optional real, nonfuture UTC date `YYYY-MM-DD`, used inclusively.
+  When omitted, the closing date is the previous UTC calendar date, matching
+  GA4 sync windows. Explicit dates are not shifted. Provider processing delays
+  and property timezones still apply; coverage and freshness remain explicit.
   Both requested and comparison windows must remain within positive four-digit
   years 0001–9999; underflow returns 400 rather than a malformed historical date.
 - `If-None-Match`: optional entity-tag or list, including weak validators.

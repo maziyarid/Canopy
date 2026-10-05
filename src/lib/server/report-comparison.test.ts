@@ -11,14 +11,14 @@ const measured = (value: number) => ({ provider: "gsc", status: "ok", lastSucces
 test("comparison loads the actual preceding window and stores its independent values", async () => {
   snapshotCache.clear();
   const requests: string[] = [];
-  const snapshot = await loadReportingSnapshot({ ...opts, readLedger: async (_project, _site, period) => { requests.push(`${period.start}/${period.end}`); return { rows: [measured(period.start === "2026-09-27" ? 30 : 10)], available: true }; } });
-  assert.deepEqual(requests.sort(), ["2026-09-20/2026-09-26", "2026-09-27/2026-10-03"]);
+  const snapshot = await loadReportingSnapshot({ ...opts, readLedger: async (_project, _site, period) => { requests.push(`${period.start}/${period.end}`); return { rows: [measured(period.start === "2026-09-26" ? 30 : 10)], available: true }; } });
+  assert.deepEqual(requests.sort(), ["2026-09-19/2026-09-25", "2026-09-26/2026-10-02"]);
   assert.equal(snapshot.comparisonSections?.find(s => s.key === "search")?.metrics[0]?.value, 10);
 });
 
 test("late writes to the previous window invalidate both cache and ETag", async () => {
   snapshotCache.clear(); let previous = 10;
-  const readLedger = async (_project: string, _site: string, period: { start: string }) => ({ rows: [measured(period.start === "2026-09-27" ? 30 : previous)], available: true });
+  const readLedger = async (_project: string, _site: string, period: { start: string }) => ({ rows: [measured(period.start === "2026-09-26" ? 30 : previous)], available: true });
   const before = await loadReportingSnapshot({ ...opts, readLedger });
   previous = 20;
   const after = await loadReportingSnapshot({ ...opts, readLedger });
@@ -33,7 +33,7 @@ test("comparison cannot bypass client grants through previous overview or provid
 });
 
 test("a failed comparison reader degrades previous data without erasing current measurements", async () => {
-  const snapshot = await loadReportingSnapshot({ ...opts, readLedger: async (_project, _site, period) => { if (period.start === "2026-09-20") throw new Error("private provider failure"); return { rows: [measured(30)], available: true }; } });
+  const snapshot = await loadReportingSnapshot({ ...opts, readLedger: async (_project, _site, period) => { if (period.start === "2026-09-19") throw new Error("private provider failure"); return { rows: [measured(30)], available: true }; } });
   assert.equal(snapshot.sections.find(s => s.key === "search")?.metrics[0]?.value, 30);
   assert.equal(snapshot.comparisonSections?.find(s => s.key === "search")?.status, "unavailable");
   assert.equal(JSON.stringify(snapshot).includes("private provider failure"), false);

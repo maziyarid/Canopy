@@ -1,4 +1,5 @@
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { loadReportingSnapshot, refreshReportingSnapshotRecord, buildReportingSnapshot, snapshotCache, type SnapshotSql } from "./reporting-snapshot-service.ts";
 import { readGatewayLedger } from "./reporting-ledger.ts";
@@ -45,6 +46,7 @@ test("GA4 summary rows are normalized independently from GSC and require exact s
           site: "example.com",
           dataset: "summary",
           data_date: "2026-09-30",
+          source: { provider: "ga4", property: "properties/100", timeZone: "Asia/Tehran", retrievedAt: "2026-10-01T00:00:00Z", coverage: { complete: true } },
           dimensions: { startDate: "2026-09-24", endDate: "2026-09-30" },
           metrics: {
             activeUsers: 9,
@@ -205,4 +207,88 @@ test("successful sync ranges establish coverage independently of sparse daily ro
   assert.equal(result.rows[0].coverage?.complete, true);
   assert.equal(result.rows[0].coverage?.start, "2026-09-24");
   assert.equal(result.rows[0].metricValue, 10);
+});
+
+
+test("fresh GA4 sync feeds the default completed UTC-day snapshot without summing daily users", async () => {
+  const receipt = JSON.parse(execFileSync("python3", ["-c", `
+import json, os, sys, tempfile
+from datetime import datetime, date, timezone
+from unittest.mock import patch
+sys.path.insert(0, 'ops/analytics-gateway')
+import gateway
+class Clock(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2026, 10, 5, 0, 15, tzinfo=timezone.utc)
+class LocalDate(date):
+    @classmethod
+    def today(cls):
+        return date(2026, 10, 4)
+def upstream(path, method, body):
+    summary = {'dimensions': {}, 'metrics': {'activeUsers': 9, 'sessions': 14}}
+    daily = [{'dimensions': {'date': body[key]}, 'metrics': {'activeUsers': 9, 'sessions': 7}} for key in ('startDate', 'endDate')]
+    return {'property': body['property'], 'rows': [summary] if body['report'] == 'summary' else daily if body['report'] == 'daily' else [], 'metadata': {'timeZone': 'Asia/Tehran'}, 'fetchedAt': '2026-10-05T00:15:00Z', 'coverage': {'complete': True, 'omittedRows': 0, 'truncated': False, 'reasons': []}}
+with tempfile.TemporaryDirectory() as tmp, patch.object(gateway, 'DB', tmp + '/test.db'), patch.object(gateway, 'datetime', Clock), patch.object(gateway, 'date', LocalDate), patch.object(gateway, 'google_request', side_effect=upstream), patch.dict(os.environ, {'MS_ROBOT_PROJECT_GA4_MAP_JSON': '{"p1":{"example.com":"100"}}'}):
+    gateway.init_db()
+    sync = gateway.run_ga4_sync('p1', 'example.com', '7d', 'fixture')
+    print(json.dumps({'sync': sync, 'rows': gateway.metric_rows('p1', 'ga4', 'example.com', 'summary')}))
+`], { encoding: "utf8" }));
+  snapshotCache.clear();
+  const snapshot = await loadReportingSnapshot({
+    sql, resolveAccess: async () => owner, userId: "owner", email: "owner@example.com", projectId: "p1",
+    periodLabel: "last_7d", comparisonLabel: "", now: new Date("2026-10-05T00:15:00Z"),
+    readLedger: (projectId, site, period) => readGatewayLedger(projectId, site, period, {
+      states: async () => ({ providers: [{ provider: "ga4", status: "ok", last_success: "2026-10-05", last_attempt: null, last_error: null, freshness: receipt.sync.requested_end }] }),
+      metrics: async () => ({ rows: receipt.rows, coverage: { ranges: [{ start: receipt.sync.requested_start, end: receipt.sync.requested_end }] } }),
+    }),
+  });
+  assert.deepEqual(snapshot.period, { label: "last_7d", start: "2026-09-28", end: "2026-10-04" });
+  assert.equal(receipt.sync.requested_start, snapshot.period.start);
+  assert.equal(receipt.sync.requested_end, snapshot.period.end);
+  const users = snapshot.sections.find(section => section.key === "acquisition")?.metrics.find(metric => metric.name === "users");
+  assert.equal(users?.value, 9);
+  assert.equal(users?.property, "properties/100");
+});
+
+test("GA4 historical provenance and partial quality come from the matched metric, never latest site metadata", async () => {
+  const result = await readGatewayLedger("p1", "example.com", { start: "2026-09-24", end: "2026-09-30", label: "last_7d" }, {
+    states: async () => ({ providers: [{ provider: "ga4", status: "ok", last_success: "2026-10-06", last_attempt: null, last_error: null, freshness: "2026-10-05" }] }),
+    metrics: async () => ({
+      rows: [{ provider: "ga4", site: "example.com", dataset: "summary", data_date: "2026-09-30", dimensions: { startDate: "2026-09-24", endDate: "2026-09-30" }, metrics: { activeUsers: 9 },
+        source: { provider: "ga4", property: "properties/100", timeZone: "Asia/Tehran", retrievedAt: "2026-10-01T00:00:00Z", coverage: { complete: false } } }],
+      source: { provider: "ga4", property: "properties/200", timeZone: "UTC", retrievedAt: "2026-10-06T00:00:00Z" },
+      coverage: { ranges: [{ start: "2026-09-24", end: "2026-09-30" }] },
+    }),
+  });
+  assert.equal(result.rows[0].property, "properties/100");
+  assert.equal(result.rows[0].timeZone, "Asia/Tehran");
+  assert.equal(result.rows[0].retrievedAt, "2026-10-01T00:00:00Z");
+  assert.equal(result.rows[0].coverage?.complete, false);
+  assert.equal(result.rows[0].status, "partial");
+});
+
+test("GSC aggregates refuse mixed historical property identities", async () => {
+  const result = await readGatewayLedger("p1", "example.com", { start: "2026-10-01", end: "2026-10-02", label: "two-days" }, {
+    states: async () => ({ providers: [{ provider: "gsc", status: "ok", last_success: "2026-10-03", last_attempt: null, last_error: null, freshness: "2026-10-02" }] }),
+    metrics: async () => ({ rows: [
+      { provider: "gsc", site: "example.com", dataset: "site_daily", data_date: "2026-10-01", metrics: { clicks: 10, impressions: 100, position: 2 }, source: { property: "sc-domain:example.com", timeZone: "America/Los_Angeles" } },
+      { provider: "gsc", site: "example.com", dataset: "site_daily", data_date: "2026-10-02", metrics: { clicks: 10, impressions: 100, position: 2 }, source: { property: "https://example.com/", timeZone: "America/Los_Angeles" } },
+    ], coverage: { ranges: [{ start: "2026-10-01", end: "2026-10-02" }] } }),
+  });
+  assert.equal(result.rows[0].status, "error");
+  assert.equal(result.rows.some(row => row.metricName), false);
+});
+
+test("legacy GA4 measurements never inherit response-level latest property or retrieval time", async () => {
+  const result = await readGatewayLedger("p1", "example.com", { start: "2026-10-01", end: "2026-10-02", label: "two-days" }, {
+    states: async () => ({ providers: [{ provider: "ga4", status: "ok", last_success: "2026-10-06", last_attempt: null, last_error: null, freshness: "2026-10-05" }] }),
+    metrics: async () => ({ rows: [{
+      provider: "ga4", site: "example.com", dataset: "summary", data_date: "2026-10-02",
+      dimensions: { startDate: "2026-10-01", endDate: "2026-10-02" }, metrics: { activeUsers: 4 }, updated_at: "2026-10-03T00:00:00Z",
+    }], source: { property: "properties/200", retrievedAt: "2026-10-06T00:00:00Z" }, coverage: { ranges: [{ start: "2026-10-01", end: "2026-10-02" }] } }),
+  });
+  assert.equal(result.rows[0].property, null);
+  assert.equal(result.rows[0].retrievedAt, "2026-10-03T00:00:00Z");
+  assert.equal(result.rows[0].coverage?.complete, false);
 });
