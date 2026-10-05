@@ -133,6 +133,16 @@ function parentOf(path: string, segment: string) {
   return index < 0 ? "" : path.slice(0, index);
 }
 
+export type GoogleResourceType = "gsc_site" | "gtm_account" | "gtm_container" | "ga4_property" | "ads_customer";
+
+export function validateGoogleResourceRef(resourceType: GoogleResourceType, resourceRef: string) {
+  if (resourceType === "gsc_site") return gscSite.parse(resourceRef);
+  if (resourceType === "gtm_account") return gtmAccount.parse(resourceRef);
+  if (resourceType === "gtm_container") return gtmContainer.parse(resourceRef);
+  if (resourceType === "ga4_property") return ga4Property.parse(resourceRef);
+  return adsCustomer.parse(resourceRef);
+}
+
 export type GoogleActionContract = {
   action: GoogleActionKey;
   resourceRef: string;
@@ -149,11 +159,7 @@ export function validateGoogleAction(action: GoogleActionKey, resourceRef: strin
   const policy = googleActionPolicy(action);
   if (!policy) throw new Error("unknown_google_action");
 
-  if (policy.resourceType === "gsc_site") gscSite.parse(resourceRef);
-  else if (policy.resourceType === "gtm_account") gtmAccount.parse(resourceRef);
-  else if (policy.resourceType === "gtm_container") gtmContainer.parse(resourceRef);
-  else if (policy.resourceType === "ga4_property") ga4Property.parse(resourceRef);
-  else if (policy.resourceType === "ads_customer") adsCustomer.parse(resourceRef);
+  validateGoogleResourceRef(policy.resourceType, resourceRef);
 
   const payload = schemas[action].parse(rawPayload) as Record<string, unknown>;
 
