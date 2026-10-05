@@ -465,6 +465,53 @@ export async function effectiveGoogleGrant(
   return { grantId: row.grant_id, profile, policy };
 }
 
+export type EffectiveGoogleGrantView = {
+  id: string;
+  provider: GoogleProvider;
+  capability: GoogleCapability;
+  resourceType: GoogleResourceType;
+  resourceRef: string;
+  connectionProfileId: string;
+  profileMode: "write" | "admin";
+  expiresAt: string | null;
+};
+
+export async function listEffectiveGoogleGrants(
+  sql: Sql,
+  access: AccessCtx,
+  principalUserId: string,
+): Promise<EffectiveGoogleGrantView[]> {
+  assertActionMember(access);
+  const rows = await sql.query<{
+    id: string;
+    provider: GoogleProvider;
+    capability: GoogleCapability;
+    resource_type: GoogleResourceType;
+    resource_ref: string;
+    connection_profile_id: string;
+    profile_mode: "write" | "admin";
+    expires_at: string | null;
+  }>(
+    "select g.id,g.provider,g.capability,g.resource_type,g.resource_ref,g.connection_profile_id," +
+      "c.profile_mode,g.expires_at from google_capability_grants g " +
+      "join google_connection_profiles c on c.id=g.connection_profile_id and c.project_id=g.project_id " +
+      "where g.project_id=$1 and g.principal_user_id=$2 and g.status='active' " +
+      "and (g.expires_at is null or g.expires_at>now()) and c.status='active' " +
+      "order by g.provider,g.resource_ref,g.capability",
+    [access.project.id, principalUserId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    provider: row.provider,
+    capability: row.capability,
+    resourceType: row.resource_type,
+    resourceRef: row.resource_ref,
+    connectionProfileId: row.connection_profile_id,
+    profileMode: row.profile_mode,
+    expiresAt: row.expires_at,
+  }));
+}
+
 export async function listGoogleAccess(sql: Sql, access: AccessCtx) {
   assertOwner(access);
   const [profileRows, grants] = await Promise.all([
