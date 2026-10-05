@@ -278,4 +278,31 @@ describe("AAX-82 insight journal mount", () => {
       assert.match(model.warnings[0] ?? "", /GA4 is unavailable for this period/);
     }
   });
+
+  it("redacts credential-shaped client journal text without a second mount", () => {
+    const approved = approveForClient(
+      createInsight(draft({
+        title: "Clicks api_key=super-secret-value",
+        body: "Bearer token-value in the approved note",
+        limitation: "refresh_token=old-token remains internal",
+        recommendedAction: "Do not paste access_token=abc",
+      }), new Date("2026-09-28T12:00:00Z")),
+      "editor-1",
+    );
+    const model = mountInsightJournal({
+      insights: [approved],
+      snapshot,
+      role: "client",
+    });
+    const card = model.journal.days.flatMap((day) => day.cards)[0];
+    assert.ok(card);
+    assert.match(card.title, /<redacted>/);
+    assert.match(card.body, /<redacted>/);
+    assert.equal(`${card.title} ${card.body} ${card.limitation} ${card.recommendedAction}`.includes("super-secret-value"), false);
+    assert.equal(`${card.title} ${card.body} ${card.limitation} ${card.recommendedAction}`.includes("token-value"), false);
+    assert.equal(model.beside.some((row) => JSON.stringify(row).includes("super-secret-value")), false);
+    const editor = mountInsightJournal({ insights: [approved], snapshot, role: "editor" });
+    const editorText = editor.journal.days.flatMap((day) => day.cards).map((card) => card.title).join(" ");
+    assert.match(editorText, /super-secret-value/);
+  });
 });
