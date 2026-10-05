@@ -307,6 +307,30 @@ export async function markGoogleActionRejected(
   });
 }
 
+export async function markGoogleActionExpired(
+  sql: Sql,
+  projectId: string,
+  proposalId: string,
+  approvalRef: string,
+  actorRef: string,
+) {
+  const ref = approvalRef.trim();
+  const rows = await sql.query<{ id: string }>(
+    "update google_action_proposals set status='expired',approval_ref=$3,updated_at=now() " +
+      "where id=$1 and project_id=$2 and status='pending_approval' returning id",
+    [proposalId, projectId, ref],
+  );
+  if (!rows[0]) throw new Error("google_action_state_conflict");
+  await receipt(sql, {
+    projectId,
+    actorRef,
+    operation: "google.action.expire",
+    targetRef: proposalId,
+    status: "expired",
+    approvalRef: ref,
+  });
+}
+
 export async function cancelGoogleAction(
   sql: Sql,
   access: AccessCtx,
@@ -372,6 +396,9 @@ export async function beginGoogleActionExecution(
   if (proposal.approvalPolicy === "ada") {
     expectedStatus = "pending_approval";
     if (!input.approvalProof || !input.consumeAdaApproval) throw new Error("ada_approval_required");
+    if (!proposal.approvalRequestRef || input.approvalProof.ticketId !== proposal.approvalRequestRef) {
+      throw new Error("ada_approval_ticket_mismatch");
+    }
     if (input.approvalProof.payloadHash !== proposal.payloadHash) {
       throw new Error("ada_approval_payload_mismatch");
     }
