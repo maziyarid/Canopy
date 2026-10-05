@@ -54,7 +54,7 @@ async function fixture() {
     principalUserId:"editor",roleTemplate:"marketing_editor",capability:"google.gsc.sitemap.submit",
     connectionProfileId:profile.id,resourceType:"gsc_site",resourceRef:"sc-domain:example.com",
   });
-  return {db,sql,owner,editor,key,profileId:profile.id,grantId:grant.id};
+  return {db,sql,owner,editor,key,keyring,credentialRef:stored.credentialRef,profileId:profile.id,grantId:grant.id};
 }
 
 test("executor decrypts project credential only server-side and completes a granted mutation", async () => {
@@ -86,6 +86,103 @@ test("executor decrypts project credential only server-side and completes a gran
   assert.equal(stored.status,"succeeded");
   assert.equal(stored.result_receipt.includes("rrrr"),false);
   assert.equal(stored.result_receipt.includes("aaaa"),false);
+  assert.match(stored.result_receipt, /"rollback":\{"action":"gsc.sitemap.delete"/);
+});
+
+
+test("verification token is transient and only its hash reaches receipts", async () => {
+  const f=await fixture();
+  const profile=await createGoogleConnectionProfile(f.sql,f.owner,"owner",{
+    provider:"gsc",profileMode:"admin",credentialRef:f.credentialRef,authType:"oauth2",
+    scopes:["https://www.googleapis.com/auth/siteverification.verify_only"],
+    resourceBindings:[{type:"gsc_site",ref:"sc-domain:example.com"}],
+  });
+  await activateGoogleConnectionProfile(f.sql,f.owner,"owner",profile.id);
+  await grantGoogleCapability(f.sql,f.owner,"owner",{
+    principalUserId:"editor",roleTemplate:"property_admin",capability:"google.gsc.verification.token",
+    connectionProfileId:profile.id,resourceType:"gsc_site",resourceRef:"sc-domain:example.com",
+  });
+  const proposed=await proposeGoogleAction(f.sql,f.editor,"editor",{
+    action:"gsc.verification.get_token",resourceRef:"sc-domain:example.com",
+    payload:{verificationMethod:"DNS_TXT"},idempotencyKey:"verification-token",
+  });
+  const secretToken="google-site-verification=SECRET_VALUE";
+  const fetchImpl=async (url:string|URL|Request)=>{
+    if(String(url)==="https://oauth2.googleapis.com/token"){
+      return new Response(JSON.stringify({access_token:"a".repeat(40),expires_in:3600}),{status:200,headers:{"Content-Type":"application/json"}});
+    }
+    return new Response(JSON.stringify({method:"DNS_TXT",token:secretToken}),{status:200,headers:{"Content-Type":"application/json"}});
+  };
+  const result=await executeGovernedGoogleAction(f.sql,f.editor,"editor",proposed.proposal.id,{},{
+    env:{
+      MAZ_ROBOT_VAULT_ACTIVE_VERSION:"1",MAZ_ROBOT_VAULT_KEYS:JSON.stringify({"1":f.key}),
+      GOOGLE_WRITE_OAUTH_CLIENT_ID:"client",GOOGLE_WRITE_OAUTH_CLIENT_SECRET:"secret",
+    } as NodeJS.ProcessEnv,
+    fetchImpl:fetchImpl as typeof fetch,
+  });
+  assert.equal(result.sensitiveResult?.kind,"site_verification_token");
+  assert.equal(result.sensitiveResult?.token,secretToken);
+  const stored=(await f.db.query<{result_receipt:string}>(
+    "select result_receipt from google_action_proposals where id=$1",[proposed.proposal.id]
+  )).rows[0];
+  assert.equal(stored.result_receipt.includes(secretToken),false);
+  assert.match(stored.result_receipt,/"tokenHash":/);
+  const receipts=(await f.db.query<{evidence:string}>(
+    "select evidence from operation_receipts where project_id='p1'"
+  )).rows;
+  assert.equal(receipts.some((row)=>row.evidence.includes(secretToken)),false);
+});
+
+test("GTM preview persists only structural summary, never tag contents", async () => {
+  const f=await fixture();
+  const gtmCredential=await storeCredential(f.sql,f.keyring,{
+    projectId:"p1",provider:"google:gtm",label:"gtm-write",
+    plaintext:JSON.stringify({refreshToken:"g".repeat(40)}),actorRef:"owner",
+  });
+  const profile=await createGoogleConnectionProfile(f.sql,f.owner,"owner",{
+    provider:"gtm",profileMode:"write",credentialRef:gtmCredential.credentialRef,authType:"oauth2",
+    scopes:["https://www.googleapis.com/auth/tagmanager.edit.containerversions"],
+    resourceBindings:[{type:"gtm_container",ref:"accounts/1/containers/2"}],
+  });
+  await activateGoogleConnectionProfile(f.sql,f.owner,"owner",profile.id);
+  await grantGoogleCapability(f.sql,f.owner,"owner",{
+    principalUserId:"editor",roleTemplate:"marketing_editor",capability:"google.gtm.preview",
+    connectionProfileId:profile.id,resourceType:"gtm_container",resourceRef:"accounts/1/containers/2",
+  });
+  const proposed=await proposeGoogleAction(f.sql,f.editor,"editor",{
+    action:"gtm.workspace.preview",resourceRef:"accounts/1/containers/2",
+    payload:{workspacePath:"accounts/1/containers/2/workspaces/4"},idempotencyKey:"preview-1",
+  });
+  const privateMarkup="<script>PRIVATE_TAG_CODE</script>";
+  const fetchImpl=async (url:string|URL|Request)=>{
+    if(String(url)==="https://oauth2.googleapis.com/token"){
+      return new Response(JSON.stringify({access_token:"a".repeat(40),expires_in:3600}),{status:200,headers:{"Content-Type":"application/json"}});
+    }
+    return new Response(JSON.stringify({
+      compilerError:false,
+      syncStatus:{mergeConflict:false,syncError:false},
+      containerVersion:{
+        containerVersionId:"77",
+        tag:[{name:"Private tag",parameter:[{value:privateMarkup}]}],
+        trigger:[{}],variable:[{},{}],folder:[],builtInVariable:[{}],
+      },
+    }),{status:200,headers:{"Content-Type":"application/json"}});
+  };
+  const result=await executeGovernedGoogleAction(f.sql,f.editor,"editor",proposed.proposal.id,{},{
+    env:{
+      MAZ_ROBOT_VAULT_ACTIVE_VERSION:"1",MAZ_ROBOT_VAULT_KEYS:JSON.stringify({"1":f.key}),
+      GOOGLE_WRITE_OAUTH_CLIENT_ID:"client",GOOGLE_WRITE_OAUTH_CLIENT_SECRET:"secret",
+    } as NodeJS.ProcessEnv,
+    fetchImpl:fetchImpl as typeof fetch,
+  });
+  assert.deepEqual(result.preview?.counts,{
+    tags:1,triggers:1,variables:2,folders:0,builtInVariables:1,clients:0,zones:0,customTemplates:0,
+  });
+  const stored=(await f.db.query<{result_receipt:string}>(
+    "select result_receipt from google_action_proposals where id=$1",[proposed.proposal.id]
+  )).rows[0];
+  assert.equal(stored.result_receipt.includes("PRIVATE_TAG_CODE"),false);
+  assert.match(stored.result_receipt,/"tags":1/);
 });
 
 test("executor rechecks grant before decrypting credential", async () => {
