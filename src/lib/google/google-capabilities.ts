@@ -7,10 +7,13 @@ export const GOOGLE_CAPABILITIES = [
   "google.gsc.sitemap.delete",
   "google.gsc.site.add",
   "google.gsc.site.remove",
+  "google.gsc.verification.token",
+  "google.gsc.verification.verify",
   "google.gtm.read",
   "google.gtm.workspace.create",
   "google.gtm.entity.write",
   "google.gtm.version.create",
+  "google.gtm.preview",
   "google.gtm.publish",
   "google.gtm.user.manage",
   "google.ga4.read",
@@ -30,18 +33,22 @@ export type GoogleMutationType =
   | "PUBLISH"
   | "POLICY_CHANGE"
   | "CANONICAL_OWNERSHIP"
-  | "BUDGET_WRITE";
+  | "BUDGET_WRITE"
+  | "SENSITIVE_READ";
 
 export type GoogleActionKey =
   | "gsc.sitemap.submit"
   | "gsc.sitemap.delete"
   | "gsc.site.add"
   | "gsc.site.remove"
+  | "gsc.verification.get_token"
+  | "gsc.verification.verify"
   | "gtm.workspace.create"
   | "gtm.tag.create"
   | "gtm.tag.update"
   | "gtm.tag.delete"
   | "gtm.version.create"
+  | "gtm.workspace.preview"
   | "gtm.version.publish"
   | "gtm.user.create"
   | "gtm.user.update"
@@ -69,6 +76,7 @@ export type GoogleActionPolicy = {
 };
 
 const WEBMASTERS = "https://www.googleapis.com/auth/webmasters";
+const SITE_VERIFICATION = "https://www.googleapis.com/auth/siteverification.verify_only";
 const GTM_EDIT = "https://www.googleapis.com/auth/tagmanager.edit.containers";
 const GTM_VERSION = "https://www.googleapis.com/auth/tagmanager.edit.containerversions";
 const GTM_PUBLISH = "https://www.googleapis.com/auth/tagmanager.publish";
@@ -79,8 +87,9 @@ const ADS = "https://www.googleapis.com/auth/adwords";
 
 export const GOOGLE_ACTION_KEYS = [
   "gsc.sitemap.submit", "gsc.sitemap.delete", "gsc.site.add", "gsc.site.remove",
+  "gsc.verification.get_token", "gsc.verification.verify",
   "gtm.workspace.create", "gtm.tag.create", "gtm.tag.update", "gtm.tag.delete",
-  "gtm.version.create", "gtm.version.publish", "gtm.user.create", "gtm.user.update", "gtm.user.delete",
+  "gtm.version.create", "gtm.workspace.preview", "gtm.version.publish", "gtm.user.create", "gtm.user.update", "gtm.user.delete",
   "ga4.custom_dimension.create", "ga4.key_event.create",
   "ga4.access_binding.create", "ga4.access_binding.update", "ga4.access_binding.delete",
   "ads.campaign.create_paused", "ads.campaign.update", "ads.campaign.enable",
@@ -108,6 +117,16 @@ export const GOOGLE_ACTION_POLICIES: Readonly<Record<GoogleActionKey, GoogleActi
     profileMode: "admin",
     approval: "ada", mutationType: "DELETE", resourceType: "gsc_site",
   },
+  "gsc.verification.get_token": {
+    provider: "gsc", capability: "google.gsc.verification.token", requiredScopes: [SITE_VERIFICATION],
+    profileMode: "admin",
+    approval: "grant", mutationType: "SENSITIVE_READ", resourceType: "gsc_site",
+  },
+  "gsc.verification.verify": {
+    provider: "gsc", capability: "google.gsc.verification.verify", requiredScopes: [SITE_VERIFICATION],
+    profileMode: "admin",
+    approval: "ada", mutationType: "CANONICAL_OWNERSHIP", resourceType: "gsc_site",
+  },
   "gtm.workspace.create": {
     provider: "gtm", capability: "google.gtm.workspace.create", requiredScopes: [GTM_EDIT],
     profileMode: "write",
@@ -132,6 +151,11 @@ export const GOOGLE_ACTION_POLICIES: Readonly<Record<GoogleActionKey, GoogleActi
     provider: "gtm", capability: "google.gtm.version.create", requiredScopes: [GTM_VERSION],
     profileMode: "write",
     approval: "grant", mutationType: "WRITE", resourceType: "gtm_container",
+  },
+  "gtm.workspace.preview": {
+    provider: "gtm", capability: "google.gtm.preview", requiredScopes: [GTM_VERSION],
+    profileMode: "write",
+    approval: "grant", mutationType: "SENSITIVE_READ", resourceType: "gtm_container",
   },
   "gtm.version.publish": {
     provider: "gtm", capability: "google.gtm.publish", requiredScopes: [GTM_PUBLISH],
@@ -211,16 +235,16 @@ export const GOOGLE_ROLE_TEMPLATES = {
   marketing_editor: [
     "google.gsc.read", "google.gsc.sitemap.submit", "google.ga4.read", "google.ga4.config.write",
     "google.gtm.read", "google.gtm.workspace.create", "google.gtm.entity.write", "google.gtm.version.create",
-    "google.ads.read",
+    "google.gtm.preview", "google.ads.read",
   ],
   marketing_publisher: [
     "google.gsc.read", "google.gsc.sitemap.submit", "google.ga4.read", "google.ga4.config.write",
     "google.gtm.read", "google.gtm.workspace.create", "google.gtm.entity.write", "google.gtm.version.create",
-    "google.gtm.publish", "google.ads.read",
+    "google.gtm.preview", "google.gtm.publish", "google.ads.read",
   ],
   property_admin: [
     "google.gsc.read", "google.gsc.sitemap.submit", "google.gsc.sitemap.delete", "google.gsc.site.add",
-    "google.gsc.site.remove", "google.ga4.read", "google.ga4.config.write", "google.ga4.user.manage",
+    "google.gsc.site.remove", "google.gsc.verification.token", "google.gsc.verification.verify", "google.ga4.read", "google.ga4.config.write", "google.ga4.user.manage",
     "google.gtm.read", "google.gtm.workspace.create", "google.gtm.entity.write", "google.gtm.version.create",
     "google.gtm.publish", "google.gtm.user.manage",
   ],
