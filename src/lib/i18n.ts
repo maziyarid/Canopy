@@ -97,6 +97,7 @@ export const copy = {
   access: { en: "Access", fa: "دسترسی" },
   progress: { en: "Client progress", fa: "پیشرفت مشتری" },
   providers: { en: "Providers", fa: "منابع داده" },
+  google: { en: "Google access", fa: "دسترسی گوگل" },
   connect: { en: "Connect", fa: "اتصال" },
 
   top10: { en: "In top 10", fa: "در ۱۰ تای اول" },
