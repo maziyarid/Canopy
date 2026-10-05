@@ -59,10 +59,13 @@ async function fixture() {
   return { db, sql, owner, editor, client };
 }
 
-async function activeGscProfile(f: Awaited<ReturnType<typeof fixture>>) {
+async function activeGscProfile(
+  f: Awaited<ReturnType<typeof fixture>>,
+  profileMode: "write" | "admin" = "write",
+) {
   const created = await createGoogleConnectionProfile(f.sql, f.owner, "owner", {
     provider: "gsc",
-    profileMode: "write",
+    profileMode,
     credentialRef: "cred1",
     authType: "oauth2",
     scopes: ["https://www.googleapis.com/auth/webmasters"],
@@ -173,7 +176,7 @@ test("reversible granted action becomes ready and idempotent", async () => {
 
 test("high-impact action stays pending until one-time ADA proof is consumed", async () => {
   const f = await fixture();
-  const profileId = await activeGscProfile(f);
+  const profileId = await activeGscProfile(f, "admin");
   await grantGoogleCapability(f.sql, f.owner, "owner", {
     principalUserId: "client-user",
     roleTemplate: "property_admin",
@@ -191,6 +194,11 @@ test("high-impact action stays pending until one-time ADA proof is consumed", as
   assert.equal(proposed.proposal.status, "pending_approval");
   assert.equal(proposed.approvalEnvelope?.event_type, "ms_robot.action.proposal");
   assert.equal(proposed.approvalEnvelope?.payload.payload_sha256, proposed.proposal.payloadHash);
+
+  await f.sql.query(
+    "update google_action_proposals set approval_request_ref='ticket-1' where id=$1",
+    [proposed.proposal.id],
+  );
 
   await assert.rejects(
     () => beginGoogleActionExecution(f.sql, f.client, "client-user", proposed.proposal.id, {}),
