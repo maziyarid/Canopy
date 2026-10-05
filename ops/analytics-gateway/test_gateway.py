@@ -187,7 +187,11 @@ class GatewayTest(unittest.TestCase):
         _,metrics=self.request('/v1/metrics?provider=ga4&site=example.com&dataset=summary')
         self.assertEqual(len(metrics['rows']),1)
         self.assertEqual(metrics['rows'][0]['metrics']['sessions'],14.0)
-        self.assertEqual(metrics['coverage']['ranges'][0]['start'],metrics['rows'][0]['dimensions']['startDate'])
+        window=metrics['rows'][0]['dimensions']
+        _,bounded=self.request(
+            '/v1/metrics?provider=ga4&site=example.com&dataset=summary'
+            f"&start={window['startDate']}&end={window['endDate']}")
+        self.assertEqual(bounded['coverage']['ranges'],[{'start':window['startDate'],'end':window['endDate']}])
         _,snapshot=self.request('/v1/sites/example.com/snapshot?window=7d')
         self.assertEqual(snapshot['ga4']['sessions'],14.0)
         self.assertEqual(snapshot['ga4']['keyEvents'],2.0)
