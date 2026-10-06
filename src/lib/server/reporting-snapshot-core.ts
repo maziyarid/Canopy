@@ -82,6 +82,7 @@ export type LedgerRow = {
   finishedAt?: string | null;
   coverage?: MetricCoverage;
   coverageWarning?: string;
+  measurementKind?: string | null;
 };
 
 const SECRET_RE =
@@ -169,6 +170,17 @@ export function mapProviderStatus(raw: string | null | undefined): SectionStatus
 
 export function firstPartyProvider(provider: string): boolean {
   return provider === "gsc" || provider === "ga4" || provider === "clarity" || provider === "bing_webmaster";
+}
+
+const ESTIMATED_MEASUREMENT_KINDS = new Set(["sampled", "modeled", "estimated", "third_party"]);
+
+/** Fail closed: only an exact canonical provider with an observed measurement is first-party. */
+export function metricProvenance(row: { provider?: string | null; measurementKind?: string | null }): ProvenanceKind {
+  const kind = (row.measurementKind ?? "").trim().toLowerCase();
+  if (ESTIMATED_MEASUREMENT_KINDS.has(kind)) return "third_party_estimate";
+  const provider = row.provider ?? "";
+  if (provider !== provider.trim() || !firstPartyProvider(provider)) return "third_party_estimate";
+  return "first_party";
 }
 
 /** Deterministic multi-provider aggregate. Pure ok wins over no_data; mixed non-empty is partial. */

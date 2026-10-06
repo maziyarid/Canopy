@@ -16,6 +16,9 @@ import {
   type SnapshotSection,
 } from "./reporting-snapshot-core.ts";
 import {
+  metricProvenance,
+} from "./reporting-snapshot-core.ts";
+import {
   SnapshotAccessError,
   assertRefreshCapability,
   buildReportingSnapshot,
@@ -469,4 +472,38 @@ test("unexpected injected ledger errors propagate instead of silent unavailable"
       }),
     /connection reset by peer/,
   );
+});
+
+
+test("sampled or modeled GA4 metrics are not labeled first-party", () => {
+  assert.equal(metricProvenance({ provider: "ga4", measurementKind: "sampled" }), "third_party_estimate");
+  assert.equal(metricProvenance({ provider: "ga4", measurementKind: "modeled" }), "third_party_estimate");
+  assert.equal(metricProvenance({ provider: "ga4", measurementKind: " estimated " }), "third_party_estimate");
+  assert.equal(metricProvenance({ provider: " ga4" }), "third_party_estimate");
+  assert.equal(metricProvenance({ provider: "ga4", measurementKind: "observed" }), "first_party");
+  const snapshot = buildReportingSnapshot({
+    projectId: "proj-1",
+    site: "example.com",
+    period: { start: "2026-10-01", end: "2026-10-01", label: "custom" },
+    comparison: null,
+    correlationId: "corr-prov",
+    requestedAt: "2026-10-06T00:00:00.000Z",
+    generatedAt: "2026-10-06T00:00:00.000Z",
+    ledgerAvailable: true,
+    rows: [{
+      provider: "ga4",
+      status: "ok",
+      lastSuccess: "2026-10-01T00:00:00.000Z",
+      lastAttempt: "2026-10-01T00:00:00.000Z",
+      freshness: "2026-10-01",
+      lastError: null,
+      metricName: "sessions",
+      metricValue: 12,
+      dataDate: "2026-10-01",
+      measurementKind: "sampled",
+    }],
+  });
+  const acquisition = snapshot.sections.find((section) => section.key === "acquisition");
+  assert.equal(acquisition?.metrics[0]?.provenance, "third_party_estimate");
+  assert.equal(acquisition?.metrics[0]?.provider, "ga4");
 });
