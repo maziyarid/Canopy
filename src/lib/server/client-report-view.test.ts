@@ -267,26 +267,27 @@ describe("AAX-80 gated client dashboard", () => {
 
   it("wires the client activation gate before reporting data reads in every client entrypoint", () => {
     const source = readFileSync(new URL("./reporting-snapshot.ts", import.meta.url), "utf8");
-    const slices = [
-      ["getReportingSnapshot", "refreshReportingSnapshot"],
-      ["getProjectReport", "exportProjectReport"],
-      ["exportProjectReport", "getProjectSearchTable"],
-      ["getProjectSearchTable", ""],
-    ] as const;
-    for (const [startName, endName] of slices) {
-      const start = source.indexOf(`export const ${startName}`);
-      const end = endName ? source.indexOf(`export const ${endName}`, start + 1) : source.length;
-      assert.ok(start >= 0 && end > start, `missing source slice for ${startName}`);
-      const block = source.slice(start, end);
-      assert.match(block, /isReportingConfiguredForRole/);
-      const gateAt = block.indexOf("isReportingConfiguredForRole");
-      const readAt = Math.min(
-        ...["loadReportingSnapshot", "loadSearchTable"]
-          .map((token) => block.indexOf(token))
-          .filter((index) => index >= 0),
-      );
-      if (Number.isFinite(readAt)) assert.ok(gateAt < readAt, `${startName} must gate before data read`);
+    const handlers = ["getReportingSnapshot", "getProjectReport", "exportProjectReport", "getProjectSearchTable"];
+    for (const name of handlers) {
+      const start = source.indexOf(`export const ${name}`);
+      const next = source.indexOf("export const ", start + 1);
+      const block = source.slice(start, next === -1 ? source.length : next);
+      assert.ok(start >= 0, `missing ${name}`);
+      for (const reader of ["loadReportingSnapshot", "loadSearchTable"]) {
+        const readAt = block.indexOf(reader);
+        if (readAt < 0) continue;
+        const wrapperAt = block.lastIndexOf("readIfReportingConfigured", readAt);
+        assert.ok(wrapperAt >= 0 && wrapperAt < readAt, `${name} must pass ${reader} through readIfReportingConfigured`);
+        const between = block.slice(wrapperAt, readAt);
+        assert.match(between, /=>\s*$/m, `${name} ${reader} must stay inside the unread callback`);
+      }
     }
+    const reportStart = source.indexOf("export const getProjectReport");
+    const reportEnd = source.indexOf("export const exportProjectReport", reportStart + 1);
+    const report = source.slice(reportStart, reportEnd);
+    const emptyReturn = report.indexOf("if (!reportingConfigured)");
+    const reportRead = report.indexOf("readIfReportingConfigured");
+    assert.ok(emptyReturn >= 0 && reportRead > emptyReturn, "unconfigured getProjectReport must return before any reporting read");
   });
 
   it("normalizes export/search access and reuses the already loaded admin snapshot", () => {
