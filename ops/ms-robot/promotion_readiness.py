@@ -480,6 +480,67 @@ def check_recommendation_execution_gate(root: Path) -> list[str]:
     return ["recommendation_execution_fail_closed"]
 
 
+def check_snapshot_provenance_gate(root: Path) -> list[str]:
+    """AAX-81 snapshot stays non-client-ready until provenance is complete.
+
+    Does not enable the reporting HTTP route and does not replace the
+    TypeScript sampled-metric fail-closed on the separate AAX-81 branch.
+    """
+    source_path = root / "ops/ms-robot/snapshot_provenance_gate.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_snapshot",
+        "snapshot_route_disabled",
+        "snapshot_sampled_not_client_ready",
+        '"clientReady": False',
+        '"reportingRouteEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("snapshot_provenance_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("snapshot_provenance_mutates_storage")
+    proof = (root / "ops/ms-robot/test_snapshot_provenance_gate.py").read_text(encoding="utf-8")
+    if "test_sampled_metric_is_refused" not in proof or "test_enable_mode_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_provenance_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("snapshot_provenance_gate_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("snapshot_provenance_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_snapshot(
+        {
+            "projectId": "proj-1",
+            "boundProjectId": "proj-1",
+            "provenance": "first_party",
+            "measurementKind": "observed",
+            "sourceRef": "ga4:property:1",
+            "reportingRouteEnabled": False,
+        },
+        mode="inspect",
+    )
+    if plan.get("clientReady") or plan.get("reportingRouteEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("snapshot_provenance_not_inert")
+    try:
+        module.classify_snapshot(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "provenance": "first_party",
+                "measurementKind": "sampled",
+                "sourceRef": "ga4:property:1",
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotProvenanceRefused:
+        pass
+    else:
+        raise PromotionReadinessError("snapshot_sampled_not_refused")
+    return ["snapshot_provenance_fail_closed"]
+
+
 def assess(root: Path | None = None) -> dict:
     root = repo_root_from(root)
     checks = []
@@ -494,6 +555,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_main_privacy_reconciliation(root))
     checks.extend(check_operational_retention_gate(root))
     checks.extend(check_recommendation_execution_gate(root))
+    checks.extend(check_snapshot_provenance_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
