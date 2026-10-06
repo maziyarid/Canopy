@@ -274,7 +274,15 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
     zero_width_proof = (root / "ops/ms-robot/test_portfolio_zero_width_host_conflict_process.py").read_text(encoding="utf-8")
     if "test_zero_width_host_conflicts_with_ascii_before_discovery" not in zero_width_proof:
         raise PromotionReadinessError("zero_width_host_conflict_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed", "writable_gsc_permission_fail_closed", "fullwidth_dot_conflict_fail_closed", "zero_width_host_conflict_fail_closed"]
+    slash_proof = (root / "ops/ms-robot/test_portfolio_fullwidth_slash_conflict_process.py").read_text(encoding="utf-8")
+    if "test_fullwidth_slash_conflicts_with_ascii_before_discovery" not in slash_proof:
+        raise PromotionReadinessError("fullwidth_slash_conflict_process_proof_missing")
+    if 'raw.lower().startswith("sc-domain:")' not in source:
+        raise PromotionReadinessError("sc_domain_prefix_case_not_folded")
+    sc_proof = (root / "ops/ms-robot/test_portfolio_sc_domain_case_conflict_process.py").read_text(encoding="utf-8")
+    if "test_sc_domain_prefix_case_conflicts_before_discovery" not in sc_proof:
+        raise PromotionReadinessError("sc_domain_prefix_case_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed", "writable_gsc_permission_fail_closed", "fullwidth_dot_conflict_fail_closed", "zero_width_host_conflict_fail_closed", "fullwidth_slash_conflict_fail_closed", "sc_domain_prefix_case_fail_closed"]
 
 
 
