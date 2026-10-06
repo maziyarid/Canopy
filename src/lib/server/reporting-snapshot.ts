@@ -12,7 +12,7 @@ import { parseReportSections } from "./report-sections";
 import { clientComparisonRows, clientEvidenceExportCsv, comparisonRows } from "./report-export";
 import { exportLoadedReportRecord } from "./report-export-service";
 import { bindResolvedDashboardAccess, buildGatedClientDashboard, clientSafePeriod, isReportingConfiguredForRole, redactClientText } from "./client-report-view";
-import { readIfReportingConfigured } from "./reporting-read-gate";
+import { loadProjectReport, readIfReportingConfigured } from "./reporting-read-gate";
 import { gateProjectExport, gateProjectSearch } from "./project-export-gate";
 import { mountInsightJournal } from "./insight-journal-mount";
 import { persistSnapshotInsights, readPeriodNoteWindow } from "./insight-persistence";
@@ -94,7 +94,7 @@ export const getProjectReport = createServerFn({ method: "GET" })
       data.projectId,
     );
     const reportingConfigured = isReportingConfiguredForRole(access.role);
-    if (!reportingConfigured) {
+    const unavailableReport = (() => {
       const period = periodFromLabel(data.period, reportClosingDate(data.endDate));
       const dashboardAccess = bindResolvedDashboardAccess({
         role: access.role,
@@ -131,6 +131,11 @@ export const getProjectReport = createServerFn({ method: "GET" })
         comparison: null,
         comparisons: [],
       };
+    })();
+    if (!reportingConfigured) {
+      return loadProjectReport(access.role, unavailableReport, async () => {
+        throw new SnapshotAccessError(503, "Reporting unavailable");
+      });
     }
     const snapshot = await readIfReportingConfigured(access.role, () => loadReportingSnapshot({ sql, readLedger, resolveAccess, userId: context.userId, email: context.email, projectId: access.project.id, periodLabel: data.period, comparisonLabel: data.comparison, endDate: data.endDate }));
     if (access.role !== "client") await persistSnapshotInsights(sql, access, snapshot);

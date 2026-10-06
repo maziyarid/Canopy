@@ -62,4 +62,5 @@ describe("AAX-80 reporting read gate", () => {
     );
     assert.equal(reads, 0);
   });
+
 });
