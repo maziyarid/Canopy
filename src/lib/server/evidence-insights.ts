@@ -283,7 +283,7 @@ export function editManualInsight(
     previousBody: insight.body,
   };
   const needsReReview = insight.reviewState === "approved" || insight.visibility === "client";
-  return {
+  return normalizeRecommendationSafety({
     ...insight,
     title,
     body,
@@ -291,7 +291,7 @@ export function editManualInsight(
     reviewState: needsReReview ? "pending_review" : insight.reviewState,
     reviewedBy: needsReReview ? null : insight.reviewedBy,
     visibility: needsReReview && insight.visibility === "client" ? "internal" : insight.visibility,
-  };
+  });
 }
 
 export function approveForClient(insight: InsightRecord, reviewerId: string): InsightRecord {
@@ -315,8 +315,9 @@ export class InsightStore {
   private readonly byId = new Map<string, InsightRecord>();
 
   put(insight: InsightRecord): InsightRecord {
-    this.byId.set(insight.id, insight);
-    return insight;
+    const safe = normalizeRecommendationSafety(insight);
+    this.byId.set(safe.id, safe);
+    return safe;
   }
 
   listForProject(projectId: string, role: InsightRole): InsightRecord[] {

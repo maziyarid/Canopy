@@ -210,6 +210,27 @@ describe("AAX-82 evidence-linked insights", () => {
     assert.equal(store.listForProject("proj_a", "owner").length, 1);
   });
 
+
+  it("strips a non-proposal disposition on edit and store", () => {
+    const recommendation = createInsight(
+      baseDraft({
+        type: "recommendation",
+        generatedBy: "human:editor",
+        recommendedAction: "Review the page manually.",
+      }),
+    );
+    const forged = {
+      ...recommendation,
+      recommendationDisposition: "execute",
+    } as unknown as InsightRecord;
+    const edited = editManualInsight(forged, { title: "Review the page again" }, "human:editor");
+    assert.equal(edited.recommendationDisposition, "proposal_only");
+    const store = new InsightStore();
+    const stored = store.put(forged);
+    assert.equal(stored.recommendationDisposition, "proposal_only");
+    assert.equal(store.listForProject("proj_a", "owner")[0].recommendationDisposition, "proposal_only");
+  });
+
   it("does not invent numeric facts inside the model", () => {
     const insight = createInsight(baseDraft());
     assert.equal(insight.evidenceRefs[0].value, 120);
