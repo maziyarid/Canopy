@@ -378,6 +378,55 @@ def check_sqlite_coordinator_skips_postgres_0008(root: Path) -> list[str]:
     return ["sqlite_coordinator_does_not_apply_postgres_0008"]
 
 
+
+def check_operational_retention_gate(root: Path) -> list[str]:
+    """AAX-55 operational retention must stay fail-closed.
+
+    Medical retention is not approved. Execute/apply/delete modes are refused.
+    The planner may dry-run thesis/other only, and must not delete rows.
+    """
+    source_path = root / "ops/ms-robot/operational_retention.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def plan_operational_retention",
+        "retention_refused_domain",
+        "retention_execution_disabled",
+        "medicalRetentionActivated",
+        '"action": "none"',
+        '"executed": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("operational_retention_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("operational_retention_deletes_rows")
+    proof = (root / "ops/ms-robot/test_operational_retention.py").read_text(encoding="utf-8")
+    if "test_medical_domain_is_refused" not in proof or "test_execute_mode_is_refused" not in proof:
+        raise PromotionReadinessError("operational_retention_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("operational_retention_gate", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("operational_retention_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=0)
+    if plan.get("executed") or plan.get("action") != "none" or plan.get("medicalRetentionActivated"):
+        raise PromotionReadinessError("operational_retention_dry_run_not_inert")
+    try:
+        module.plan_operational_retention(data_domain="medical", mode="dry-run", candidate_rows=0)
+    except module.RetentionRefused:
+        pass
+    else:
+        raise PromotionReadinessError("operational_retention_medical_not_refused")
+    try:
+        module.plan_operational_retention(data_domain="other", mode="execute", candidate_rows=0)
+    except module.RetentionRefused:
+        pass
+    else:
+        raise PromotionReadinessError("operational_retention_execute_not_refused")
+    return ["operational_retention_fail_closed"]
+
+
 def assess(root: Path | None = None) -> dict:
     root = repo_root_from(root)
     checks = []
@@ -390,6 +439,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_upstream_tree_reconciliation(root))
     checks.extend(check_sqlite_coordinator_skips_postgres_0008(root))
     checks.extend(check_main_privacy_reconciliation(root))
+    checks.extend(check_operational_retention_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
