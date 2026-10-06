@@ -138,7 +138,10 @@ def bare_host(value):
 
 
 def site_key(site_url):
-    raw = str(site_url or "").strip()
+    # NFKC and format-character stripping before scheme detection. A fullwidth
+    # slash or zero-width character must not make the same host a second key.
+    raw = unicodedata.normalize("NFKC", str(site_url or "").strip())
+    raw = "".join(char for char in raw if unicodedata.category(char) != "Cf")
     if raw.startswith("sc-domain:"):
         return normalise_host(bare_host(raw.split(":", 1)[1]))
     if "://" in raw:
