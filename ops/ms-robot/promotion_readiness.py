@@ -427,6 +427,59 @@ def check_operational_retention_gate(root: Path) -> list[str]:
     return ["operational_retention_fail_closed"]
 
 
+
+
+def check_recommendation_execution_gate(root: Path) -> list[str]:
+    """AAX-82 recommendations stay proposal-only. No publisher is invoked."""
+    source_path = root / "ops/ms-robot/recommendation_execution_gate.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_recommendation",
+        "recommendation_execution_disabled",
+        "proposal_only",
+        '"executed": False',
+        '"publisherInvoked": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("recommendation_execution_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("recommendation_execution_mutates_storage")
+    proof = (root / "ops/ms-robot/test_recommendation_execution_gate.py").read_text(encoding="utf-8")
+    if "test_publish_mode_is_refused" not in proof or "test_missing_evidence_is_refused" not in proof:
+        raise PromotionReadinessError("recommendation_execution_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("recommendation_execution_gate_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("recommendation_execution_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_recommendation(
+        {
+            "recommendationDisposition": "proposal_only",
+            "recommendedAction": "Review the measured query drop before any change.",
+            "evidenceRefs": ["snapshot:ga4:1"],
+        },
+        mode="propose",
+    )
+    if plan.get("executed") or plan.get("publisherInvoked") or plan.get("action") != "none":
+        raise PromotionReadinessError("recommendation_execution_not_inert")
+    try:
+        module.classify_recommendation(
+            {
+                "recommendationDisposition": "proposal_only",
+                "recommendedAction": "Review the measured query drop before any change.",
+                "evidenceRefs": ["snapshot:ga4:1"],
+            },
+            mode="publish",
+        )
+    except module.RecommendationExecutionRefused:
+        pass
+    else:
+        raise PromotionReadinessError("recommendation_publish_not_refused")
+    return ["recommendation_execution_fail_closed"]
+
+
 def assess(root: Path | None = None) -> dict:
     root = repo_root_from(root)
     checks = []
@@ -440,6 +493,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_sqlite_coordinator_skips_postgres_0008(root))
     checks.extend(check_main_privacy_reconciliation(root))
     checks.extend(check_operational_retention_gate(root))
+    checks.extend(check_recommendation_execution_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
