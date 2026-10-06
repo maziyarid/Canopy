@@ -172,14 +172,14 @@ export function firstPartyProvider(provider: string): boolean {
   return provider === "gsc" || provider === "ga4" || provider === "clarity" || provider === "bing_webmaster";
 }
 
-const ESTIMATED_MEASUREMENT_KINDS = new Set(["sampled", "modeled", "estimated", "third_party"]);
+const OBSERVED_MEASUREMENT_KINDS = new Set(["observed", "complete", "unsampled", ""]);
 
-/** Fail closed: only an exact canonical provider with an observed measurement is first-party. */
+/** Fail closed: a non-empty unknown measurement kind is not first-party. Absent kind stays first-party for canonical providers so older ledger rows do not flip. */
 export function metricProvenance(row: { provider?: string | null; measurementKind?: string | null }): ProvenanceKind {
   const kind = (row.measurementKind ?? "").trim().toLowerCase();
-  if (ESTIMATED_MEASUREMENT_KINDS.has(kind)) return "third_party_estimate";
   const provider = row.provider ?? "";
   if (provider !== provider.trim() || !firstPartyProvider(provider)) return "third_party_estimate";
+  if (!OBSERVED_MEASUREMENT_KINDS.has(kind)) return "third_party_estimate";
   return "first_party";
 }
 
@@ -264,6 +264,7 @@ export function ledgerFingerprint(rows: LedgerRow[]): string {
         row.finishedAt ?? "",
         JSON.stringify(row.coverage ?? null),
         row.coverageWarning ?? "",
+        row.measurementKind ?? "",
       ].join(":"),
     )
     .sort();

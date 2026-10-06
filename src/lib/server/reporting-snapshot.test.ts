@@ -507,3 +507,16 @@ test("sampled or modeled GA4 metrics are not labeled first-party", () => {
   assert.equal(acquisition?.metrics[0]?.provenance, "third_party_estimate");
   assert.equal(acquisition?.metrics[0]?.provider, "ga4");
 });
+
+test("unknown measurement kinds and fingerprint changes fail closed", () => {
+  assert.equal(metricProvenance({ provider: "ga4", measurementKind: "thresholded" }), "third_party_estimate");
+  assert.equal(metricProvenance({ provider: "ga4", measurementKind: "SAMPLED" }), "third_party_estimate");
+  assert.equal(metricProvenance({ provider: "gsc" }), "first_party");
+  const observed = ledgerFingerprint([
+    { provider: "ga4", status: "ok", lastSuccess: "t1", lastAttempt: "t1", freshness: "d1", lastError: null, metricName: "sessions", metricValue: 1, measurementKind: "observed" },
+  ]);
+  const sampled = ledgerFingerprint([
+    { provider: "ga4", status: "ok", lastSuccess: "t1", lastAttempt: "t1", freshness: "d1", lastError: null, metricName: "sessions", metricValue: 1, measurementKind: "sampled" },
+  ]);
+  assert.notEqual(observed, sampled);
+});
