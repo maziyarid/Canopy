@@ -48,7 +48,7 @@ test("client note page is not exhausted by hidden newer notes", async () => {
   try {
     await db.exec(`create table report_insights(id text primary key, project_id text not null, site text not null, period_start date not null, period_end date not null, generated_at timestamptz not null, revision integer not null default 0, payload text not null);`);
     const evidence = [{ provider: "gsc", provenance: "first_party", kind: "metric", metricName: "clicks", site: "example.com", periodStart: "2026-09-01", periodEnd: "2026-09-28", value: 12 }];
-    const base = { projectId: "p1", periodStart: "2026-09-01", periodEnd: "2026-09-28", type: "observation", body: "body", evidenceRefs: evidence, provenance: "first_party", confidence: 0.8, limitation: "", recommendedAction: null, generatedBy: "test", reviewedBy: null, linkedTaskId: null, editHistory: [] };
+    const base = { projectId: "p1", periodStart: "2026-09-01", periodEnd: "2026-09-28", type: "observation", body: "body", evidenceRefs: evidence, provenance: "first_party", confidence: 0.8, limitation: "", recommendedAction: null, recommendationDisposition: null, generatedBy: "test", reviewedBy: null, linkedTaskId: null, editHistory: [] };
     for (let i = 0; i < 100; i += 1) {
       const payload = { ...base, id: `hidden_${i}`, title: `Hidden ${i}`, generatedAt: new Date(Date.UTC(2026, 8, 29, 12, 0, i)).toISOString(), reviewState: "draft", visibility: "internal" };
       await sql`insert into report_insights(id,project_id,site,period_start,period_end,generated_at,payload) values (${payload.id},${"p1"},${"example.com"},${"2026-09-01"},${"2026-09-28"},${payload.generatedAt},${JSON.stringify(payload)})`;
@@ -74,7 +74,7 @@ test("client section grants are filtered in SQL so ungranted notes do not page",
   try {
     await db.exec(`create table report_insights(id text primary key, project_id text not null, site text not null, period_start date not null, period_end date not null, generated_at timestamptz not null, revision integer not null default 0, payload text not null);`);
     const evidence = (provider: string, metricName: string) => [{ provider, provenance: "first_party", kind: "metric", metricName, site: "example.com", periodStart: "2026-09-01", periodEnd: "2026-09-28", value: 12 }];
-    const base = { projectId: "p1", periodStart: "2026-09-01", periodEnd: "2026-09-28", type: "observation", body: "body", provenance: "first_party", confidence: 0.8, limitation: "", recommendedAction: null, generatedBy: "test", reviewedBy: "owner-1", linkedTaskId: null, editHistory: [], reviewState: "approved", visibility: "client" };
+    const base = { projectId: "p1", periodStart: "2026-09-01", periodEnd: "2026-09-28", type: "observation", body: "body", provenance: "first_party", confidence: 0.8, limitation: "", recommendedAction: null, recommendationDisposition: null, generatedBy: "test", reviewedBy: "owner-1", linkedTaskId: null, editHistory: [], reviewState: "approved", visibility: "client" };
     for (let i = 0; i < 150; i += 1) {
       const payload = { ...base, id: `ga4_${i}`, title: `Acquisition ${i}`, generatedAt: new Date(Date.UTC(2026, 8, 29, 12, 0, i)).toISOString(), evidenceRefs: evidence("ga4", "sessions") };
       await sql`insert into report_insights(id,project_id,site,period_start,period_end,generated_at,payload) values (${payload.id},${"p1"},${"example.com"},${"2026-09-01"},${"2026-09-28"},${payload.generatedAt},${JSON.stringify(payload)})`;
