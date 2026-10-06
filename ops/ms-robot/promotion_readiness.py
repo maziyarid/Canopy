@@ -541,6 +541,72 @@ def check_snapshot_provenance_gate(root: Path) -> list[str]:
     return ["snapshot_provenance_fail_closed"]
 
 
+
+def check_ga4_property_binding_gate(root: Path) -> list[str]:
+    """GA4 property binding stays non-sync until an explicit authorised map exists.
+
+    Does not call Google, does not enable scheduled portfolio sync, and does
+    not replace the GA4 sync correctness owned by draft PR #28.
+    """
+    source_path = root / "ops/ms-robot/ga4_property_binding.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_ga4_binding",
+        "ga4_sync_disabled",
+        "ga4_property_unbound",
+        "ga4_authorised_read_missing",
+        '"providerReady": False',
+        '"scheduledSyncEnabled": False',
+        '"clientReportingEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("ga4_property_binding_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("ga4_property_binding_mutates_or_calls_provider")
+    proof = (root / "ops/ms-robot/test_ga4_property_binding.py").read_text(encoding="utf-8")
+    if "test_numeric_property_is_refused" not in proof or "test_enable_mode_is_refused" not in proof:
+        raise PromotionReadinessError("ga4_property_binding_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ga4_property_binding_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("ga4_property_binding_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_ga4_binding(
+        {
+            "projectId": "proj-1",
+            "boundProjectId": "proj-1",
+            "site": "example.com",
+            "boundSite": "example.com",
+            "property": "properties/123",
+            "boundProperty": "properties/123",
+            "authorisedRead": True,
+        },
+        mode="inspect",
+    )
+    if plan.get("providerReady") or plan.get("scheduledSyncEnabled") or plan.get("clientReportingEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("ga4_property_binding_not_inert")
+    try:
+        module.classify_ga4_binding(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "site": "example.com",
+                "boundSite": "example.com",
+                "property": "123",
+                "boundProperty": "123",
+                "authorisedRead": True,
+            },
+            mode="inspect",
+        )
+    except module.Ga4BindingRefused:
+        pass
+    else:
+        raise PromotionReadinessError("ga4_numeric_property_not_refused")
+    return ["ga4_property_binding_fail_closed"]
+
+
 def assess(root: Path | None = None) -> dict:
     root = repo_root_from(root)
     checks = []
@@ -556,6 +622,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_operational_retention_gate(root))
     checks.extend(check_recommendation_execution_gate(root))
     checks.extend(check_snapshot_provenance_gate(root))
+    checks.extend(check_ga4_property_binding_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
