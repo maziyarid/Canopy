@@ -288,6 +288,13 @@ describe("AAX-80 gated client dashboard", () => {
     const emptyReturn = report.indexOf("if (!reportingConfigured)");
     const reportRead = report.indexOf("readIfReportingConfigured");
     assert.ok(emptyReturn >= 0 && reportRead > emptyReturn, "unconfigured getProjectReport must return before any reporting read");
+    const exportStart = source.indexOf("export const exportProjectReport");
+    const exportEnd = source.indexOf("export const getProjectSearchTable", exportStart + 1);
+    const exportBlock = source.slice(exportStart, exportEnd);
+    const exportReject = exportBlock.indexOf("Reporting unavailable");
+    const exportRead = exportBlock.indexOf("loadReportingSnapshot");
+    assert.ok(exportReject >= 0 && exportRead > exportReject, "unconfigured exportProjectReport must reject before snapshot load");
+    assert.match(exportBlock, /projectId: access\.project\.id/);
   });
 
   it("normalizes export/search access and reuses the already loaded admin snapshot", () => {

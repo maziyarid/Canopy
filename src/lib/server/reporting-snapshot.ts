@@ -189,13 +189,16 @@ export const exportProjectReport = createServerFn({ method: "POST" })
       context.email,
       data.projectId,
     );
+    if (!isReportingConfiguredForRole(access.role)) {
+      throw new SnapshotAccessError(503, "Reporting unavailable");
+    }
     const snapshot = await readIfReportingConfigured(access.role, () => loadReportingSnapshot({
       sql,
       readLedger,
       resolveAccess,
       userId: context.userId,
       email: context.email,
-      projectId: data.projectId,
+      projectId: access.project.id,
       periodLabel: data.period,
       comparisonLabel: data.comparison,
       endDate: data.endDate,
@@ -208,9 +211,6 @@ export const exportProjectReport = createServerFn({ method: "POST" })
     });
     if (access.role === "client") {
       const reportingConfigured = isReportingConfiguredForRole(access.role);
-      if (!reportingConfigured) {
-        throw new SnapshotAccessError(503, "Reporting unavailable");
-      }
       const noteWindow = await readPeriodNoteWindow(sql, access, snapshot.period);
       const dashboardAccess = bindResolvedDashboardAccess({
         role: access.role,
