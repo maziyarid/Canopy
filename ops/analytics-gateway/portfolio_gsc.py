@@ -137,11 +137,23 @@ def bare_host(value):
     return host.split("@")[-1]
 
 
+# NFKC does not fold these separators onto ASCII slash. They must not split a site key.
+_SLASH_CONFUSABLES = str.maketrans({
+    '\\': '/',
+    '∕': '/',
+    '∖': '/',
+    '⁄': '/',
+    '⧸': '/',
+    '╱': '/',
+    '⟋': '/',
+})
+
 def site_key(site_url):
     # NFKC and format-character stripping before scheme detection. A fullwidth
-    # slash or zero-width character must not make the same host a second key.
+    # slash, division slash, or backslash must not make the same host a second key.
     raw = unicodedata.normalize("NFKC", str(site_url or "").strip())
     raw = "".join(char for char in raw if unicodedata.category(char) != "Cf")
+    raw = raw.translate(_SLASH_CONFUSABLES)
     if raw.startswith("sc-domain:"):
         return normalise_host(bare_host(raw.split(":", 1)[1]))
     if "://" in raw:
