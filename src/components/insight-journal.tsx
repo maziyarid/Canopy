@@ -21,6 +21,11 @@ export function InsightJournal({ view, emptyLabel = "No notes for this period." 
               <h4 className="font-medium">{card.title}</h4>
               <p>{card.body}</p>
               <p className="text-xs text-muted" data-testid="insight-limitation">{card.limitation}</p>
+              {card.recommendationDisposition === "proposal_only" ? (
+                <p className="text-xs font-medium text-muted" data-testid="insight-disposition">
+                  Proposal only — no automatic change
+                </p>
+              ) : null}
               {card.recommendedAction ? <p data-testid="insight-action">{card.recommendedAction}</p> : null}
               {card.metricNames.length ? (
                 <p data-testid="insight-metrics">{card.metricNames.join(", ")}</p>

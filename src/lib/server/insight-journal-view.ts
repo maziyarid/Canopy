@@ -9,6 +9,7 @@ export type InsightCardView = {
   provenance: InsightRecord["provenance"];
   limitation: string;
   recommendedAction: string | null;
+  recommendationDisposition: InsightRecord["recommendationDisposition"];
   metricNames: string[];
   evidenceCount: number;
 };
@@ -74,6 +75,7 @@ export function toInsightCardView(insight: InsightRecord): InsightCardView {
     provenance: insight.provenance,
     limitation: insight.limitation,
     recommendedAction: insight.recommendedAction,
+    recommendationDisposition: insight.type === "recommendation" ? "proposal_only" : null,
     metricNames: metricNamesForInsight(insight),
     evidenceCount: insight.evidenceRefs.length,
   };
