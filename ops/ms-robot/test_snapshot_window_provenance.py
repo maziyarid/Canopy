@@ -94,5 +94,27 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "snapshot_currency_mismatch")
 
 
+
+    def test_separator_metric_alias_still_requires_currency(self):
+        snapshot = dict(VALID)
+        snapshot["metrics"] = ["purchase_revenue"]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_currency_mismatch")
+
+    def test_row_outside_requested_window_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["rows"] = [{"date": "2026-09-08", "metrics": ["sessions"]}]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_row_outside_window")
+
+    def test_row_monetary_alias_without_currency_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["rows"] = [{"date": "2026-09-03", "metrics": ["total-revenue"]}]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_currency_mismatch")
+
 if __name__ == "__main__":
     unittest.main()

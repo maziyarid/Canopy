@@ -40,6 +40,12 @@ def _date(value, code):
     return text
 
 
+def _metric_key(metric):
+    if not isinstance(metric, str) or not metric.strip():
+        raise SnapshotWindowRefused("snapshot_metric_invalid")
+    return "".join(ch for ch in metric.casefold() if ch.isalpha())
+
+
 def classify_snapshot_window(snapshot, mode="inspect"):
     if not isinstance(snapshot, dict):
         raise SnapshotWindowRefused("snapshot_window_invalid")
@@ -64,7 +70,10 @@ def classify_snapshot_window(snapshot, mode="inspect"):
         raise SnapshotWindowRefused("snapshot_window_unspecified")
     if _date(requested_start, "snapshot_window_invalid") != start or _date(requested_end, "snapshot_window_invalid") != end:
         raise SnapshotWindowRefused("snapshot_window_mismatch")
-    metrics = {str(metric).strip().casefold() for metric in (snapshot.get("metrics") or [])}
+    raw_metrics = snapshot.get("metrics") or []
+    if not isinstance(raw_metrics, list):
+        raise SnapshotWindowRefused("snapshot_metric_invalid")
+    metrics = {_metric_key(metric) for metric in raw_metrics}
     requested_currency = str(snapshot.get("requestedCurrency") or "").strip().upper()
     response_currency = str(snapshot.get("currencyCode") or "").strip().upper()
     if metrics & MONETARY_METRICS:
@@ -73,6 +82,22 @@ def classify_snapshot_window(snapshot, mode="inspect"):
     elif requested_currency or response_currency:
         if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
             raise SnapshotWindowRefused("snapshot_currency_mismatch")
+    rows = snapshot.get("rows")
+    if rows is not None:
+        if not isinstance(rows, list):
+            raise SnapshotWindowRefused("snapshot_row_invalid")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise SnapshotWindowRefused("snapshot_row_invalid")
+            row_date = _date(row.get("date"), "snapshot_row_date_invalid")
+            if row_date < start or row_date > end:
+                raise SnapshotWindowRefused("snapshot_row_outside_window")
+            row_metrics = row.get("metrics") or []
+            if not isinstance(row_metrics, list):
+                raise SnapshotWindowRefused("snapshot_metric_invalid")
+            if {_metric_key(metric) for metric in row_metrics} & MONETARY_METRICS:
+                if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
+                    raise SnapshotWindowRefused("snapshot_currency_mismatch")
     return {
         "clientReady": False,
         "reportingRouteEnabled": False,
