@@ -347,6 +347,15 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "snapshot_row_monetary_not_declared")
         self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
 
+    def test_primary_row_monetary_alias_absent_from_metrics_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["metrics"] = ["sessions"]
+        snapshot["rows"] = [{"date": "2026-09-03", "metrics": ["sessions"], "purchase_revenue": 12}]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_row_monetary_not_declared")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
 
 if __name__ == "__main__":
     unittest.main()
