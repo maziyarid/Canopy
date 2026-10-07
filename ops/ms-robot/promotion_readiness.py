@@ -608,6 +608,75 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
     return ["ga4_measurement_provenance_fail_closed"]
 
 
+
+def check_snapshot_window_provenance_gate(root: Path) -> list[str]:
+    """AAX-81 snapshot window and currency stay non-client-ready.
+
+    Does not enable /api/v1/reporting/snapshot and does not replace the
+    sampled-metric classifier already on snapshot_provenance_gate.py.
+    """
+    source_path = root / "ops/ms-robot/snapshot_window_provenance.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_snapshot_window",
+        "snapshot_route_disabled",
+        "snapshot_window_mismatch",
+        "snapshot_currency_mismatch",
+        '"clientReady": False',
+        '"reportingRouteEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("snapshot_window_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper:
+        raise PromotionReadinessError("snapshot_window_mutates_or_calls_provider")
+    proof = (root / "ops/ms-robot/test_snapshot_window_provenance.py").read_text(encoding="utf-8")
+    if "test_requested_window_mismatch_is_refused" not in proof or "test_monetary_currency_omitted_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_window_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("snapshot_window_provenance_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("snapshot_window_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_snapshot_window(
+        {
+            "projectId": "proj-1",
+            "boundProjectId": "proj-1",
+            "startDate": "2026-09-01",
+            "endDate": "2026-09-07",
+            "requestedStartDate": "2026-09-01",
+            "requestedEndDate": "2026-09-07",
+            "metrics": ["sessions"],
+            "reportingRouteEnabled": False,
+        },
+        mode="inspect",
+    )
+    if plan.get("clientReady") or plan.get("reportingRouteEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("snapshot_window_not_inert")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-08",
+                "metrics": ["purchaseRevenue"],
+                "requestedCurrency": "USD",
+                "currencyCode": "USD",
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused:
+        pass
+    else:
+        raise PromotionReadinessError("snapshot_window_mismatch_not_refused")
+    return ["snapshot_window_provenance_fail_closed"]
+
+
 def check_ga4_property_binding_gate(root: Path) -> list[str]:
     """GA4 property binding stays non-sync until an explicit authorised map exists.
 
@@ -688,6 +757,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_operational_retention_gate(root))
     checks.extend(check_recommendation_execution_gate(root))
     checks.extend(check_snapshot_provenance_gate(root))
+    checks.extend(check_snapshot_window_provenance_gate(root))
     checks.extend(check_ga4_property_binding_gate(root))
     checks.extend(check_ga4_measurement_provenance_gate(root))
     return {
