@@ -307,5 +307,22 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "snapshot_comparison_metric_blank")
         self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
 
+
+    def test_padded_primary_window_does_not_hide_identical_comparison(self):
+        snapshot = dict(VALID)
+        snapshot["startDate"] = " 2026-09-01 "
+        snapshot["endDate"] = " 2026-09-07 "
+        snapshot["requestedStartDate"] = "2026-09-01"
+        snapshot["requestedEndDate"] = "2026-09-07"
+        snapshot["comparisonStartDate"] = "2026-09-01"
+        snapshot["comparisonEndDate"] = "2026-09-07"
+        snapshot["comparisonRequestedStartDate"] = "2026-09-01"
+        snapshot["comparisonRequestedEndDate"] = "2026-09-07"
+        snapshot["comparisonMetrics"] = ["sessions"]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_comparison_window_not_distinct")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -95,7 +95,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
     elif requested_currency or response_currency:
         if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
             raise SnapshotWindowRefused("snapshot_currency_mismatch")
-    comparison = _classify_comparison(snapshot, requested_currency, response_currency)
+    comparison = _classify_comparison(snapshot, requested_currency, response_currency, start, end)
     rows = snapshot.get("rows")
     if rows is not None:
         if not isinstance(rows, list):
@@ -131,7 +131,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
     }
 
 
-def _classify_comparison(snapshot, requested_currency, response_currency):
+def _classify_comparison(snapshot, requested_currency, response_currency, primary_start, primary_end):
     keys = (
         "comparisonStartDate",
         "comparisonEndDate",
@@ -157,7 +157,7 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
         or _date(requested_end, "snapshot_comparison_window_invalid") != end
     ):
         raise SnapshotWindowRefused("snapshot_comparison_window_mismatch")
-    if start == snapshot.get("startDate") and end == snapshot.get("endDate"):
+    if start == primary_start and end == primary_end:
         raise SnapshotWindowRefused("snapshot_comparison_window_not_distinct")
     raw_comparison_metrics = snapshot.get("comparisonMetrics")
     comparison_explicit = raw_comparison_metrics is not None
