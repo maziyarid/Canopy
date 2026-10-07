@@ -157,7 +157,10 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
             row_metrics = row.get("metrics") or []
             if not isinstance(row_metrics, list):
                 raise SnapshotWindowRefused("snapshot_metric_invalid")
-            row_keys = {_metric_key(metric) for metric in row_metrics}
+            row_key_list = [_metric_key(metric) for metric in row_metrics]
+            if len(row_key_list) != len(set(row_key_list)):
+                raise SnapshotWindowRefused("snapshot_comparison_row_metric_duplicate")
+            row_keys = set(row_key_list)
             if declared and row_keys - declared:
                 raise SnapshotWindowRefused("snapshot_comparison_row_metric_not_declared")
             metrics |= row_keys
