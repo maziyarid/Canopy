@@ -79,7 +79,9 @@ def classify_snapshot_window(snapshot, mode="inspect"):
         raise SnapshotWindowRefused("snapshot_window_unspecified")
     if _date(requested_start, "snapshot_window_invalid") != start or _date(requested_end, "snapshot_window_invalid") != end:
         raise SnapshotWindowRefused("snapshot_window_mismatch")
-    metrics = _declared_metrics(snapshot.get("metrics") or [], "snapshot_metric_duplicate")
+    raw_metrics = snapshot.get("metrics")
+    metrics_explicit = raw_metrics is not None
+    metrics = _declared_metrics(raw_metrics or [], "snapshot_metric_duplicate")
     requested_currency = str(snapshot.get("requestedCurrency") or "").strip().upper()
     response_currency = str(snapshot.get("currencyCode") or "").strip().upper()
     if metrics & MONETARY_METRICS:
@@ -108,6 +110,8 @@ def classify_snapshot_window(snapshot, mode="inspect"):
             if set(row_key_list) & MONETARY_METRICS:
                 if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
                     raise SnapshotWindowRefused("snapshot_currency_mismatch")
+            if metrics_explicit and not metrics and row_key_list:
+                raise SnapshotWindowRefused("snapshot_metric_set_empty")
             if metrics and set(row_key_list) - metrics:
                 raise SnapshotWindowRefused("snapshot_row_metric_not_declared")
     return {
@@ -150,7 +154,9 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
         raise SnapshotWindowRefused("snapshot_comparison_window_mismatch")
     if start == snapshot.get("startDate") and end == snapshot.get("endDate"):
         raise SnapshotWindowRefused("snapshot_comparison_window_not_distinct")
-    declared = _declared_metrics(snapshot.get("comparisonMetrics") or [], "snapshot_comparison_metric_duplicate")
+    raw_comparison_metrics = snapshot.get("comparisonMetrics")
+    comparison_explicit = raw_comparison_metrics is not None
+    declared = _declared_metrics(raw_comparison_metrics or [], "snapshot_comparison_metric_duplicate")
     metrics = set(declared)
     rows = snapshot.get("comparisonRows")
     if rows is not None:
@@ -169,6 +175,8 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
             if len(row_key_list) != len(set(row_key_list)):
                 raise SnapshotWindowRefused("snapshot_comparison_row_metric_duplicate")
             row_keys = set(row_key_list)
+            if comparison_explicit and not declared and row_key_list:
+                raise SnapshotWindowRefused("snapshot_comparison_metric_set_empty")
             if declared and row_keys - declared:
                 raise SnapshotWindowRefused("snapshot_comparison_row_metric_not_declared")
             metrics |= row_keys
