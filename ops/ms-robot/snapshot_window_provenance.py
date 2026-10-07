@@ -8,16 +8,17 @@ provider.
 from __future__ import annotations
 
 import re
+from datetime import date
 
 DATE_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 MONETARY_METRICS = frozenset({
     "revenue",
-    "purchaseRevenue",
-    "totalRevenue",
-    "advertiserAdCost",
-    "adCost",
-    "itemRevenue",
+    "purchaserevenue",
+    "totalrevenue",
+    "advertiseradcost",
+    "adcost",
+    "itemrevenue",
 })
 
 
@@ -32,8 +33,10 @@ def _date(value, code):
     if not DATE_RE.fullmatch(text):
         raise SnapshotWindowRefused(code)
     year, month, day = (int(part) for part in text.split("-"))
-    if month < 1 or month > 12 or day < 1 or day > 31:
-        raise SnapshotWindowRefused(code)
+    try:
+        date(year, month, day)
+    except ValueError:
+        raise SnapshotWindowRefused("snapshot_calendar_invalid") from None
     return text
 
 
@@ -61,7 +64,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
         raise SnapshotWindowRefused("snapshot_window_unspecified")
     if _date(requested_start, "snapshot_window_invalid") != start or _date(requested_end, "snapshot_window_invalid") != end:
         raise SnapshotWindowRefused("snapshot_window_mismatch")
-    metrics = {str(metric).strip() for metric in (snapshot.get("metrics") or [])}
+    metrics = {str(metric).strip().casefold() for metric in (snapshot.get("metrics") or [])}
     requested_currency = str(snapshot.get("requestedCurrency") or "").strip().upper()
     response_currency = str(snapshot.get("currencyCode") or "").strip().upper()
     if metrics & MONETARY_METRICS:

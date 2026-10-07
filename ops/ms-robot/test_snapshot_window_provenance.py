@@ -66,6 +66,33 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
             classify_snapshot_window(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_currency_mismatch")
 
+    def test_impossible_calendar_date_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["endDate"] = "2026-02-31"
+        snapshot["requestedEndDate"] = "2026-02-31"
+        snapshot["startDate"] = "2026-02-01"
+        snapshot["requestedStartDate"] = "2026-02-01"
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_calendar_invalid")
+
+    def test_non_leap_february_29_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["endDate"] = "2026-02-29"
+        snapshot["requestedEndDate"] = "2026-02-29"
+        snapshot["startDate"] = "2026-02-01"
+        snapshot["requestedStartDate"] = "2026-02-01"
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_calendar_invalid")
+
+    def test_mixed_case_monetary_metric_still_requires_currency(self):
+        snapshot = dict(VALID)
+        snapshot["metrics"] = ["PurchaseRevenue"]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_currency_mismatch")
+
 
 if __name__ == "__main__":
     unittest.main()
