@@ -51,6 +51,7 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertIn("recommendation_execution_fail_closed", report["checks"])
         self.assertIn("snapshot_provenance_fail_closed", report["checks"])
         self.assertIn("ga4_property_binding_fail_closed", report["checks"])
+        self.assertIn("ga4_measurement_provenance_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
     def test_missing_migration_fails_closed(self):

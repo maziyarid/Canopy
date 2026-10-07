@@ -542,6 +542,70 @@ def check_snapshot_provenance_gate(root: Path) -> list[str]:
 
 
 
+
+def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
+    """GA4 response provenance stays non-client-ready when sampling or thresholding is present.
+
+    Does not call Google, does not enable client reporting, and does not
+    hunk-merge draft PR #28 sync correctness.
+    """
+    source_path = root / "ops/ms-robot/ga4_measurement_provenance.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_ga4_measurement",
+        "ga4_measurement_reporting_disabled",
+        "ga4_measurement_not_observed",
+        "ga4_measurement_property_mismatch",
+        '"clientReady": False',
+        '"clientReportingEnabled": False',
+        '"scheduledSyncEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("ga4_measurement_provenance_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper or "REQUESTS." in upper:
+        raise PromotionReadinessError("ga4_measurement_provenance_mutates_or_calls_provider")
+    proof = (root / "ops/ms-robot/test_ga4_measurement_provenance.py").read_text(encoding="utf-8")
+    if "test_sampling_metadata_is_refused" not in proof or "test_enable_mode_is_refused" not in proof:
+        raise PromotionReadinessError("ga4_measurement_provenance_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ga4_measurement_provenance_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("ga4_measurement_provenance_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_ga4_measurement(
+        {
+            "property": "properties/123",
+            "responseProperty": "properties/123",
+            "qualityFlags": ["observed"],
+            "samplingMetadatas": [],
+            "subjectToThresholding": False,
+            "sourceRef": "ga4:properties/123:run-1",
+        },
+        mode="inspect",
+    )
+    if plan.get("clientReady") or plan.get("scheduledSyncEnabled") or plan.get("clientReportingEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("ga4_measurement_provenance_not_inert")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["sampled"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused:
+        pass
+    else:
+        raise PromotionReadinessError("ga4_measurement_sampled_not_refused")
+    return ["ga4_measurement_provenance_fail_closed"]
+
+
 def check_ga4_property_binding_gate(root: Path) -> list[str]:
     """GA4 property binding stays non-sync until an explicit authorised map exists.
 
@@ -623,6 +687,7 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_recommendation_execution_gate(root))
     checks.extend(check_snapshot_provenance_gate(root))
     checks.extend(check_ga4_property_binding_gate(root))
+    checks.extend(check_ga4_measurement_provenance_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
