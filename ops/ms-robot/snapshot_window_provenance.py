@@ -46,6 +46,15 @@ def _metric_key(metric):
     return "".join(ch for ch in metric.casefold() if ch.isalpha())
 
 
+def _declared_metrics(raw_metrics, duplicate_code):
+    if not isinstance(raw_metrics, list):
+        raise SnapshotWindowRefused("snapshot_metric_invalid")
+    keys = [_metric_key(metric) for metric in raw_metrics]
+    if len(keys) != len(set(keys)):
+        raise SnapshotWindowRefused(duplicate_code)
+    return set(keys)
+
+
 def classify_snapshot_window(snapshot, mode="inspect"):
     if not isinstance(snapshot, dict):
         raise SnapshotWindowRefused("snapshot_window_invalid")
@@ -70,10 +79,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
         raise SnapshotWindowRefused("snapshot_window_unspecified")
     if _date(requested_start, "snapshot_window_invalid") != start or _date(requested_end, "snapshot_window_invalid") != end:
         raise SnapshotWindowRefused("snapshot_window_mismatch")
-    raw_metrics = snapshot.get("metrics") or []
-    if not isinstance(raw_metrics, list):
-        raise SnapshotWindowRefused("snapshot_metric_invalid")
-    metrics = {_metric_key(metric) for metric in raw_metrics}
+    metrics = _declared_metrics(snapshot.get("metrics") or [], "snapshot_metric_duplicate")
     requested_currency = str(snapshot.get("requestedCurrency") or "").strip().upper()
     response_currency = str(snapshot.get("currencyCode") or "").strip().upper()
     if metrics & MONETARY_METRICS:
@@ -144,10 +150,7 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
         raise SnapshotWindowRefused("snapshot_comparison_window_mismatch")
     if start == snapshot.get("startDate") and end == snapshot.get("endDate"):
         raise SnapshotWindowRefused("snapshot_comparison_window_not_distinct")
-    raw_metrics = snapshot.get("comparisonMetrics") or []
-    if not isinstance(raw_metrics, list):
-        raise SnapshotWindowRefused("snapshot_metric_invalid")
-    declared = {_metric_key(metric) for metric in raw_metrics}
+    declared = _declared_metrics(snapshot.get("comparisonMetrics") or [], "snapshot_comparison_metric_duplicate")
     metrics = set(declared)
     rows = snapshot.get("comparisonRows")
     if rows is not None:

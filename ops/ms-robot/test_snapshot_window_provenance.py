@@ -228,5 +228,26 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
         self.assertEqual(result["comparisonStartDate"], "2026-08-01")
         self.assertEqual(result["comparisonEndDate"], "2026-08-07")
 
+
+    def test_primary_metric_duplicate_alias_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["metrics"] = ["sessions", "Sessions"]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_metric_duplicate")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
+    def test_comparison_metric_duplicate_alias_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["comparisonStartDate"] = "2026-08-01"
+        snapshot["comparisonEndDate"] = "2026-08-07"
+        snapshot["comparisonRequestedStartDate"] = "2026-08-01"
+        snapshot["comparisonRequestedEndDate"] = "2026-08-07"
+        snapshot["comparisonMetrics"] = ["sessions", "Sessions"]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_comparison_metric_duplicate")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
 if __name__ == "__main__":
     unittest.main()
