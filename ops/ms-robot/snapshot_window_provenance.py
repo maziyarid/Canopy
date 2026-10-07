@@ -96,7 +96,10 @@ def classify_snapshot_window(snapshot, mode="inspect"):
             row_metrics = row.get("metrics") or []
             if not isinstance(row_metrics, list):
                 raise SnapshotWindowRefused("snapshot_metric_invalid")
-            if {_metric_key(metric) for metric in row_metrics} & MONETARY_METRICS:
+            row_key_list = [_metric_key(metric) for metric in row_metrics]
+            if len(row_key_list) != len(set(row_key_list)):
+                raise SnapshotWindowRefused("snapshot_row_metric_duplicate")
+            if set(row_key_list) & MONETARY_METRICS:
                 if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
                     raise SnapshotWindowRefused("snapshot_currency_mismatch")
     return {
