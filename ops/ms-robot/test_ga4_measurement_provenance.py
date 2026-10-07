@@ -51,6 +51,27 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
             classify_ga4_measurement(row)
         self.assertEqual(caught.exception.code, "ga4_measurement_property_mismatch")
 
+    def test_omitted_quality_is_refused(self):
+        row = observed()
+        del row["samplingMetadatas"]
+        del row["subjectToThresholding"]
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_quality_unspecified")
+
+    def test_data_loss_and_currency_mismatch_are_refused(self):
+        loss = observed()
+        loss["dataLossFromOtherRow"] = True
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(loss)
+        self.assertEqual(caught.exception.code, "ga4_measurement_not_observed")
+        currency = observed()
+        currency["requestedCurrency"] = "USD"
+        currency["currencyCode"] = "EUR"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(currency)
+        self.assertEqual(caught.exception.code, "ga4_measurement_currency_mismatch")
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")

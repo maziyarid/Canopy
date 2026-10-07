@@ -556,6 +556,8 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
         "ga4_measurement_reporting_disabled",
         "ga4_measurement_not_observed",
         "ga4_measurement_property_mismatch",
+        "ga4_measurement_quality_unspecified",
+        "ga4_measurement_currency_mismatch",
         '"clientReady": False',
         '"clientReportingEnabled": False',
         '"scheduledSyncEnabled": False',
@@ -566,7 +568,7 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
     if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper or "REQUESTS." in upper:
         raise PromotionReadinessError("ga4_measurement_provenance_mutates_or_calls_provider")
     proof = (root / "ops/ms-robot/test_ga4_measurement_provenance.py").read_text(encoding="utf-8")
-    if "test_sampling_metadata_is_refused" not in proof or "test_enable_mode_is_refused" not in proof:
+    if "test_sampling_metadata_is_refused" not in proof or "test_enable_mode_is_refused" not in proof or "test_omitted_quality_is_refused" not in proof:
         raise PromotionReadinessError("ga4_measurement_provenance_proof_missing")
     import importlib.util
     spec = importlib.util.spec_from_file_location("ga4_measurement_provenance_check", source_path)

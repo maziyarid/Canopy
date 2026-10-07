@@ -33,11 +33,20 @@ def classify_ga4_measurement(measurement, mode="inspect"):
     response_property = str(measurement.get("responseProperty") or "").strip()
     if not PROPERTY_RE.fullmatch(property_ref) or property_ref != response_property:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_property_mismatch")
+    if "samplingMetadatas" not in measurement or "subjectToThresholding" not in measurement:
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_quality_unspecified")
     flags = {str(flag).strip().lower() for flag in (measurement.get("qualityFlags") or [])}
-    if flags & REFUSED_FLAGS or measurement.get("samplingMetadatas"):
+    sampling = measurement.get("samplingMetadatas")
+    if not isinstance(sampling, list) or sampling or flags & REFUSED_FLAGS:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_not_observed")
-    if measurement.get("subjectToThresholding") is True:
+    if measurement.get("subjectToThresholding") is not False:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_not_observed")
+    if measurement.get("dataLossFromOtherRow") is True:
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_not_observed")
+    requested_currency = str(measurement.get("requestedCurrency") or "").strip().upper()
+    response_currency = str(measurement.get("currencyCode") or "").strip().upper()
+    if requested_currency and requested_currency != response_currency:
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_mismatch")
     source_ref = str(measurement.get("sourceRef") or "").strip()
     if not source_ref.startswith("ga4:"):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_source_missing")
