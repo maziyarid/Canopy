@@ -142,6 +142,35 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
             classify_snapshot_window(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_comparison_currency_mismatch")
 
+    def test_comparison_row_outside_window_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["comparisonStartDate"] = "2026-08-01"
+        snapshot["comparisonEndDate"] = "2026-08-07"
+        snapshot["comparisonRequestedStartDate"] = "2026-08-01"
+        snapshot["comparisonRequestedEndDate"] = "2026-08-07"
+        snapshot["comparisonMetrics"] = ["sessions"]
+        snapshot["comparisonRows"] = [{"date": "2026-09-03", "metrics": ["sessions"]}]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_comparison_row_outside_window")
+
+    def test_comparison_row_on_window_boundary_stays_route_disabled(self):
+        snapshot = dict(VALID)
+        snapshot["comparisonStartDate"] = "2026-08-01"
+        snapshot["comparisonEndDate"] = "2026-08-07"
+        snapshot["comparisonRequestedStartDate"] = "2026-08-01"
+        snapshot["comparisonRequestedEndDate"] = "2026-08-07"
+        snapshot["comparisonMetrics"] = ["sessions"]
+        snapshot["comparisonRows"] = [
+            {"date": "2026-08-01", "metrics": ["sessions"]},
+            {"date": "2026-08-07", "metrics": ["sessions"]},
+        ]
+        result = classify_snapshot_window(snapshot, mode="inspect")
+        self.assertFalse(result["clientReady"])
+        self.assertFalse(result["reportingRouteEnabled"])
+        self.assertEqual(result["comparisonStartDate"], "2026-08-01")
+        self.assertEqual(result["comparisonEndDate"], "2026-08-07")
+
     def test_matching_comparison_stays_route_disabled(self):
         snapshot = dict(VALID)
         snapshot["comparisonStartDate"] = "2026-08-01"
