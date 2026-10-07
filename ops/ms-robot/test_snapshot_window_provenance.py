@@ -169,6 +169,14 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
 
 
 
+    def test_primary_row_metric_not_declared_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["rows"] = [{"date": "2026-09-03", "metrics": ["sessions", "engagedSessions"]}]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_row_metric_not_declared")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
     def test_primary_row_duplicate_metric_alias_is_refused(self):
         snapshot = dict(VALID)
         snapshot["rows"] = [{"date": "2026-09-03", "metrics": ["sessions", "Sessions"]}]

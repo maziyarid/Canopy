@@ -102,6 +102,8 @@ def classify_snapshot_window(snapshot, mode="inspect"):
             if set(row_key_list) & MONETARY_METRICS:
                 if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
                     raise SnapshotWindowRefused("snapshot_currency_mismatch")
+            if metrics and set(row_key_list) - metrics:
+                raise SnapshotWindowRefused("snapshot_row_metric_not_declared")
     return {
         "clientReady": False,
         "reportingRouteEnabled": False,
