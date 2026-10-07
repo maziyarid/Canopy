@@ -93,8 +93,6 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
             classify_snapshot_window(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_currency_mismatch")
 
-
-
     def test_separator_metric_alias_still_requires_currency(self):
         snapshot = dict(VALID)
         snapshot["metrics"] = ["purchase_revenue"]
@@ -167,8 +165,6 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "snapshot_comparison_row_metric_not_declared")
         self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
 
-
-
     def test_primary_row_metric_not_declared_is_refused(self):
         snapshot = dict(VALID)
         snapshot["rows"] = [{"date": "2026-09-03", "metrics": ["sessions", "engagedSessions"]}]
@@ -228,7 +224,6 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
         self.assertEqual(result["comparisonStartDate"], "2026-08-01")
         self.assertEqual(result["comparisonEndDate"], "2026-08-07")
 
-
     def test_primary_metric_duplicate_alias_is_refused(self):
         snapshot = dict(VALID)
         snapshot["metrics"] = ["sessions", "Sessions"]
@@ -248,7 +243,6 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
             classify_snapshot_window(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_comparison_metric_duplicate")
         self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
-
 
     def test_empty_declared_metric_list_with_row_metrics_is_refused(self):
         snapshot = dict(VALID)
@@ -270,6 +264,26 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
         with self.assertRaises(SnapshotWindowRefused) as caught:
             classify_snapshot_window(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_comparison_metric_set_empty")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
+    def test_blank_only_declared_metric_list_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["metrics"] = ["   ", "---"]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_metric_blank")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
+    def test_blank_only_comparison_metric_list_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["comparisonStartDate"] = "2026-08-01"
+        snapshot["comparisonEndDate"] = "2026-08-07"
+        snapshot["comparisonRequestedStartDate"] = "2026-08-01"
+        snapshot["comparisonRequestedEndDate"] = "2026-08-07"
+        snapshot["comparisonMetrics"] = [" ", "123"]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_comparison_metric_blank")
         self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
 
 if __name__ == "__main__":

@@ -40,16 +40,21 @@ def _date(value, code):
     return text
 
 
-def _metric_key(metric):
-    if not isinstance(metric, str) or not metric.strip():
+def _metric_key(metric, blank_code="snapshot_metric_blank"):
+    if not isinstance(metric, str):
         raise SnapshotWindowRefused("snapshot_metric_invalid")
-    return "".join(ch for ch in metric.casefold() if ch.isalpha())
+    if not metric.strip():
+        raise SnapshotWindowRefused(blank_code)
+    key = "".join(ch for ch in metric.casefold() if ch.isalpha())
+    if not key:
+        raise SnapshotWindowRefused(blank_code)
+    return key
 
 
-def _declared_metrics(raw_metrics, duplicate_code):
+def _declared_metrics(raw_metrics, duplicate_code, blank_code):
     if not isinstance(raw_metrics, list):
         raise SnapshotWindowRefused("snapshot_metric_invalid")
-    keys = [_metric_key(metric) for metric in raw_metrics]
+    keys = [_metric_key(metric, blank_code) for metric in raw_metrics]
     if len(keys) != len(set(keys)):
         raise SnapshotWindowRefused(duplicate_code)
     return set(keys)
@@ -81,7 +86,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
         raise SnapshotWindowRefused("snapshot_window_mismatch")
     raw_metrics = snapshot.get("metrics")
     metrics_explicit = raw_metrics is not None
-    metrics = _declared_metrics(raw_metrics or [], "snapshot_metric_duplicate")
+    metrics = _declared_metrics(raw_metrics or [], "snapshot_metric_duplicate", "snapshot_metric_blank")
     requested_currency = str(snapshot.get("requestedCurrency") or "").strip().upper()
     response_currency = str(snapshot.get("currencyCode") or "").strip().upper()
     if metrics & MONETARY_METRICS:
@@ -104,7 +109,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
             row_metrics = row.get("metrics") or []
             if not isinstance(row_metrics, list):
                 raise SnapshotWindowRefused("snapshot_metric_invalid")
-            row_key_list = [_metric_key(metric) for metric in row_metrics]
+            row_key_list = [_metric_key(metric, "snapshot_metric_blank") for metric in row_metrics]
             if len(row_key_list) != len(set(row_key_list)):
                 raise SnapshotWindowRefused("snapshot_row_metric_duplicate")
             if set(row_key_list) & MONETARY_METRICS:
@@ -156,7 +161,7 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
         raise SnapshotWindowRefused("snapshot_comparison_window_not_distinct")
     raw_comparison_metrics = snapshot.get("comparisonMetrics")
     comparison_explicit = raw_comparison_metrics is not None
-    declared = _declared_metrics(raw_comparison_metrics or [], "snapshot_comparison_metric_duplicate")
+    declared = _declared_metrics(raw_comparison_metrics or [], "snapshot_comparison_metric_duplicate", "snapshot_comparison_metric_blank")
     metrics = set(declared)
     rows = snapshot.get("comparisonRows")
     if rows is not None:
@@ -171,7 +176,7 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
             row_metrics = row.get("metrics") or []
             if not isinstance(row_metrics, list):
                 raise SnapshotWindowRefused("snapshot_metric_invalid")
-            row_key_list = [_metric_key(metric) for metric in row_metrics]
+            row_key_list = [_metric_key(metric, "snapshot_comparison_metric_blank") for metric in row_metrics]
             if len(row_key_list) != len(set(row_key_list)):
                 raise SnapshotWindowRefused("snapshot_comparison_row_metric_duplicate")
             row_keys = set(row_key_list)
