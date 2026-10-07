@@ -636,6 +636,7 @@ def check_snapshot_window_provenance_gate(root: Path) -> list[str]:
         "snapshot_comparison_metric_blank",
         "snapshot_comparison_window_not_distinct",
         "snapshot_comparison_row_monetary_not_declared",
+        "snapshot_row_monetary_not_declared",
         '"clientReady": False',
         '"reportingRouteEnabled": False',
     ):
@@ -1010,6 +1011,28 @@ def check_snapshot_window_provenance_gate(root: Path) -> list[str]:
             raise PromotionReadinessError("snapshot_comparison_row_monetary_not_declared_not_refused")
     else:
         raise PromotionReadinessError("snapshot_comparison_row_monetary_not_declared_not_refused")
+    if "test_primary_row_monetary_field_absent_from_metrics_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_row_monetary_not_declared_proof_missing")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "purchaseRevenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_row_monetary_not_declared_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_monetary_not_declared_not_refused")
     return ["snapshot_window_provenance_fail_closed"]
 
 

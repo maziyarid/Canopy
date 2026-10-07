@@ -121,6 +121,9 @@ def classify_snapshot_window(snapshot, mode="inspect"):
             row_key_list = [_metric_key(metric, "snapshot_metric_blank") for metric in row_metrics]
             if len(row_key_list) != len(set(row_key_list)):
                 raise SnapshotWindowRefused("snapshot_row_metric_duplicate")
+            hidden_monetary = _hidden_monetary_fields(row, "snapshot_metric_blank")
+            if hidden_monetary and (not metrics or set(hidden_monetary) - metrics):
+                raise SnapshotWindowRefused("snapshot_row_monetary_not_declared")
             if set(row_key_list) & MONETARY_METRICS:
                 if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
                     raise SnapshotWindowRefused("snapshot_currency_mismatch")
