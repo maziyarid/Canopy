@@ -60,6 +60,15 @@ def _declared_metrics(raw_metrics, duplicate_code, blank_code):
     return set(keys)
 
 
+def _hidden_monetary_fields(row, blank_code):
+    hidden = []
+    for key, value in row.items():
+        if key in {"date", "metrics"} or value in (None, "", [], {}):
+            continue
+        hidden.append(_metric_key(key, blank_code))
+    return [key for key in hidden if key in MONETARY_METRICS]
+
+
 def classify_snapshot_window(snapshot, mode="inspect"):
     if not isinstance(snapshot, dict):
         raise SnapshotWindowRefused("snapshot_window_invalid")
@@ -180,11 +189,15 @@ def _classify_comparison(snapshot, requested_currency, response_currency, primar
             if len(row_key_list) != len(set(row_key_list)):
                 raise SnapshotWindowRefused("snapshot_comparison_row_metric_duplicate")
             row_keys = set(row_key_list)
+            hidden_monetary = _hidden_monetary_fields(row, "snapshot_comparison_metric_blank")
+            if hidden_monetary and (not declared or set(hidden_monetary) - declared):
+                raise SnapshotWindowRefused("snapshot_comparison_row_monetary_not_declared")
             if comparison_explicit and not declared and row_key_list:
                 raise SnapshotWindowRefused("snapshot_comparison_metric_set_empty")
             if declared and row_keys - declared:
                 raise SnapshotWindowRefused("snapshot_comparison_row_metric_not_declared")
             metrics |= row_keys
+            metrics |= set(hidden_monetary)
     comparison_currency = str(snapshot.get("comparisonCurrency") or "").strip().upper()
     if metrics & MONETARY_METRICS or comparison_currency:
         if (
