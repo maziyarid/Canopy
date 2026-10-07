@@ -82,6 +82,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
     elif requested_currency or response_currency:
         if not CURRENCY_RE.fullmatch(requested_currency) or requested_currency != response_currency:
             raise SnapshotWindowRefused("snapshot_currency_mismatch")
+    comparison = _classify_comparison(snapshot, requested_currency, response_currency)
     rows = snapshot.get("rows")
     if rows is not None:
         if not isinstance(rows, list):
@@ -105,4 +106,63 @@ def classify_snapshot_window(snapshot, mode="inspect"):
         "startDate": start,
         "endDate": end,
         "currencyCode": response_currency or None,
+        "comparisonStartDate": comparison[0] if comparison else None,
+        "comparisonEndDate": comparison[1] if comparison else None,
     }
+
+
+def _classify_comparison(snapshot, requested_currency, response_currency):
+    keys = (
+        "comparisonStartDate",
+        "comparisonEndDate",
+        "comparisonRequestedStartDate",
+        "comparisonRequestedEndDate",
+        "comparisonCurrency",
+        "comparisonMetrics",
+        "comparisonRows",
+    )
+    present = any(snapshot.get(key) not in (None, "", []) for key in keys)
+    if not present:
+        return None
+    start = _date(snapshot.get("comparisonStartDate"), "snapshot_comparison_window_invalid")
+    end = _date(snapshot.get("comparisonEndDate"), "snapshot_comparison_window_invalid")
+    if end < start:
+        raise SnapshotWindowRefused("snapshot_comparison_window_inverted")
+    requested_start = snapshot.get("comparisonRequestedStartDate")
+    requested_end = snapshot.get("comparisonRequestedEndDate")
+    if requested_start is None or requested_end is None:
+        raise SnapshotWindowRefused("snapshot_comparison_window_unspecified")
+    if (
+        _date(requested_start, "snapshot_comparison_window_invalid") != start
+        or _date(requested_end, "snapshot_comparison_window_invalid") != end
+    ):
+        raise SnapshotWindowRefused("snapshot_comparison_window_mismatch")
+    if start == snapshot.get("startDate") and end == snapshot.get("endDate"):
+        raise SnapshotWindowRefused("snapshot_comparison_window_not_distinct")
+    raw_metrics = snapshot.get("comparisonMetrics") or []
+    if not isinstance(raw_metrics, list):
+        raise SnapshotWindowRefused("snapshot_metric_invalid")
+    metrics = {_metric_key(metric) for metric in raw_metrics}
+    rows = snapshot.get("comparisonRows")
+    if rows is not None:
+        if not isinstance(rows, list):
+            raise SnapshotWindowRefused("snapshot_row_invalid")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise SnapshotWindowRefused("snapshot_row_invalid")
+            row_date = _date(row.get("date"), "snapshot_comparison_row_date_invalid")
+            if row_date < start or row_date > end:
+                raise SnapshotWindowRefused("snapshot_comparison_row_outside_window")
+            row_metrics = row.get("metrics") or []
+            if not isinstance(row_metrics, list):
+                raise SnapshotWindowRefused("snapshot_metric_invalid")
+            metrics |= {_metric_key(metric) for metric in row_metrics}
+    comparison_currency = str(snapshot.get("comparisonCurrency") or "").strip().upper()
+    if metrics & MONETARY_METRICS or comparison_currency:
+        if (
+            not CURRENCY_RE.fullmatch(comparison_currency)
+            or comparison_currency != requested_currency
+            or (response_currency and comparison_currency != response_currency)
+        ):
+            raise SnapshotWindowRefused("snapshot_comparison_currency_mismatch")
+    return start, end
