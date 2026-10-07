@@ -154,6 +154,19 @@ class SnapshotWindowProvenanceTest(unittest.TestCase):
             classify_snapshot_window(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_comparison_row_outside_window")
 
+    def test_comparison_row_metric_not_declared_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["comparisonStartDate"] = "2026-08-01"
+        snapshot["comparisonEndDate"] = "2026-08-07"
+        snapshot["comparisonRequestedStartDate"] = "2026-08-01"
+        snapshot["comparisonRequestedEndDate"] = "2026-08-07"
+        snapshot["comparisonMetrics"] = ["sessions"]
+        snapshot["comparisonRows"] = [{"date": "2026-08-03", "metrics": ["sessions", "purchaseRevenue"]}]
+        with self.assertRaises(SnapshotWindowRefused) as caught:
+            classify_snapshot_window(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_comparison_row_metric_not_declared")
+        self.assertFalse(classify_snapshot_window(dict(VALID), mode="inspect")["reportingRouteEnabled"])
+
     def test_comparison_row_on_window_boundary_stays_route_disabled(self):
         snapshot = dict(VALID)
         snapshot["comparisonStartDate"] = "2026-08-01"

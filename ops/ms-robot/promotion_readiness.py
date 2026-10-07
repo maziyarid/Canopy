@@ -624,6 +624,7 @@ def check_snapshot_window_provenance_gate(root: Path) -> list[str]:
         "snapshot_currency_mismatch",
         "snapshot_comparison_currency_mismatch",
         "snapshot_comparison_row_outside_window",
+        "snapshot_comparison_row_metric_not_declared",
         '"clientReady": False',
         '"reportingRouteEnabled": False',
     ):
@@ -633,7 +634,7 @@ def check_snapshot_window_provenance_gate(root: Path) -> list[str]:
     if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper:
         raise PromotionReadinessError("snapshot_window_mutates_or_calls_provider")
     proof = (root / "ops/ms-robot/test_snapshot_window_provenance.py").read_text(encoding="utf-8")
-    if "test_requested_window_mismatch_is_refused" not in proof or "test_monetary_currency_omitted_is_refused" not in proof or "test_comparison_currency_mismatch_is_refused" not in proof or "test_comparison_row_outside_window_is_refused" not in proof:
+    if "test_requested_window_mismatch_is_refused" not in proof or "test_monetary_currency_omitted_is_refused" not in proof or "test_comparison_currency_mismatch_is_refused" not in proof or "test_comparison_row_outside_window_is_refused" not in proof or "test_comparison_row_metric_not_declared_is_refused" not in proof:
         raise PromotionReadinessError("snapshot_window_proof_missing")
     import importlib.util
     spec = importlib.util.spec_from_file_location("snapshot_window_provenance_check", source_path)
@@ -728,6 +729,31 @@ def check_snapshot_window_provenance_gate(root: Path) -> list[str]:
             raise PromotionReadinessError("snapshot_comparison_row_outside_window_not_refused")
     else:
         raise PromotionReadinessError("snapshot_comparison_row_outside_window_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["engagedSessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_metric_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_metric_not_declared_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_metric_not_declared_not_refused")
     return ["snapshot_window_provenance_fail_closed"]
 
 

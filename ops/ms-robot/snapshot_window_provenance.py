@@ -142,7 +142,8 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
     raw_metrics = snapshot.get("comparisonMetrics") or []
     if not isinstance(raw_metrics, list):
         raise SnapshotWindowRefused("snapshot_metric_invalid")
-    metrics = {_metric_key(metric) for metric in raw_metrics}
+    declared = {_metric_key(metric) for metric in raw_metrics}
+    metrics = set(declared)
     rows = snapshot.get("comparisonRows")
     if rows is not None:
         if not isinstance(rows, list):
@@ -156,7 +157,10 @@ def _classify_comparison(snapshot, requested_currency, response_currency):
             row_metrics = row.get("metrics") or []
             if not isinstance(row_metrics, list):
                 raise SnapshotWindowRefused("snapshot_metric_invalid")
-            metrics |= {_metric_key(metric) for metric in row_metrics}
+            row_keys = {_metric_key(metric) for metric in row_metrics}
+            if declared and row_keys - declared:
+                raise SnapshotWindowRefused("snapshot_comparison_row_metric_not_declared")
+            metrics |= row_keys
     comparison_currency = str(snapshot.get("comparisonCurrency") or "").strip().upper()
     if metrics & MONETARY_METRICS or comparison_currency:
         if (
