@@ -195,6 +195,9 @@ class SnapshotWindowProvenanceTests(unittest.TestCase):
     def test_primary_row_advertiser_ad_cost_hyphen_alias_absent_from_metrics_is_refused(self):
         self._hidden_primary("advertiser-ad-cost")
 
+    def test_primary_row_advertiser_ad_cost_spaced_alias_absent_from_metrics_is_refused(self):
+        self._hidden_primary("advertiser ad cost")
+
     def test_module_does_not_enable_route(self):
         source = Path(__file__).with_name("snapshot_window_provenance.py").read_text(encoding="utf-8")
         self.assertNotIn("urllib", source.lower())
