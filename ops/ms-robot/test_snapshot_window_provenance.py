@@ -210,6 +210,10 @@ class SnapshotWindowProvenanceTests(unittest.TestCase):
     def test_primary_row_advertiser_ad_cost_suffix_alias_absent_from_metrics_is_refused(self):
         self._hidden_primary("advertiserAdCost_")
 
+
+    def test_primary_row_advertiser_ad_cost_leading_alias_absent_from_metrics_is_refused(self):
+        self._hidden_primary("_advertiserAdCost")
+
     def test_module_does_not_enable_route(self):
         source = Path(__file__).with_name("snapshot_window_provenance.py").read_text(encoding="utf-8")
         self.assertNotIn("urllib", source.lower())
