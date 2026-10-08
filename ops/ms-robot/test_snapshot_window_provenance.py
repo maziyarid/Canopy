@@ -216,6 +216,22 @@ class SnapshotWindowProvenanceTests(unittest.TestCase):
     def test_comparison_row_advertiser_ad_cost_leading_alias_absent_from_comparison_metrics_is_refused(self):
         self._hidden_comparison("_advertiserAdCost")
 
+
+    def test_confusable_purchase_revenue_metric_is_refused(self):
+        confusable = "\u0440urchaseRevenue"
+        with self.assertRaises(SnapshotWindowRefused) as raised:
+            classify_snapshot_window(base(rows=[{"date": "2026-09-02", "metrics": ["sessions"], confusable: 12}]))
+        self.assertEqual(raised.exception.code, "snapshot_metric_confusable")
+        plan_source = Path(__file__).with_name("snapshot_window_provenance.py").read_text(encoding="utf-8")
+        self.assertIn("snapshot_metric_confusable", plan_source)
+        self.assertFalse(classify_snapshot_window(base())["clientReady"])
+        self.assertFalse(classify_snapshot_window(base())["reportingRouteEnabled"])
+
+    def test_primary_row_item_revenue_camel_alias_absent_from_metrics_is_refused(self):
+        self._hidden_primary("itemRevenue")
+
+    def test_comparison_row_item_revenue_camel_alias_absent_from_comparison_metrics_is_refused(self):
+        self._hidden_comparison("itemRevenue")
     def test_module_does_not_enable_route(self):
         source = Path(__file__).with_name("snapshot_window_provenance.py").read_text(encoding="utf-8")
         self.assertNotIn("urllib", source.lower())
