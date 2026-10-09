@@ -9,6 +9,35 @@ export type GatewayMetricRow = {
   provider: string; site: string; dataset: string; data_date: string;
   dimensions?: Record<string, unknown>; metrics: Record<string, unknown>; updated_at?: string;
 };
+
+const OBSERVED_KINDS = new Set(["observed", "complete", "unsampled"]);
+
+function stringKind(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** Copy explicit sampling metadata. Absent metadata stays unset so older canonical rows do not flip. */
+export function measurementKindFromGatewayRow(row: GatewayMetricRow): string | null {
+  const dims = row.dimensions ?? {};
+  const metrics = row.metrics ?? {};
+  const explicit = stringKind(dims.measurementKind) ?? stringKind(dims.measurement_kind) ?? stringKind(metrics.measurementKind) ?? stringKind(metrics.measurement_kind);
+  if (explicit) return explicit;
+  const sampling = dims.samplingMetadatas ?? metrics.samplingMetadatas;
+  if (Array.isArray(sampling) && sampling.length) return "sampled";
+  const flags = dims.qualityFlags ?? metrics.qualityFlags;
+  if (Array.isArray(flags)) {
+    const hit = flags.map(stringKind).find((flag) => flag && !OBSERVED_KINDS.has(flag.toLowerCase()));
+    if (hit) return hit;
+  }
+  if (dims.subjectToThresholding === true || metrics.subjectToThresholding === true) return "thresholded";
+  return null;
+}
+
+export function aggregateMeasurementKind(rows: GatewayMetricRow[]): string | null {
+  const kinds = rows.map(measurementKindFromGatewayRow).filter((kind): kind is string => Boolean(kind));
+  if (!kinds.length) return null;
+  return kinds.find((kind) => !OBSERVED_KINDS.has(kind.trim().toLowerCase())) ?? kinds[0]!;
+}
 export type GatewayMetricResponse = { rows: GatewayMetricRow[]; truncated?: boolean; coverage?: { ranges: Array<{ start: string; end: string }> } };
 export type ReportGateway = {
   states(projectId: string): Promise<{ providers: State[] }>;
@@ -66,6 +95,7 @@ export async function readGatewayLedger(projectId: string, site: string, period:
   }
   const updatedAt = daily.map(row => row.updated_at ?? "").sort().at(-1) || state.updatedAt;
   const aggregate = { clicks, impressions, ctr: impressions ? clicks / impressions : null, averagePosition: impressions ? weightedPosition / impressions : null };
-  rows.splice(rows.indexOf(state), 1, ...Object.entries(aggregate).map(([metricName, metricValue]) => ({ ...state, freshness: dataDate, dataDate, updatedAt, metricName, metricValue, coverage })));
+  const measurementKind = aggregateMeasurementKind(daily);
+  rows.splice(rows.indexOf(state), 1, ...Object.entries(aggregate).map(([metricName, metricValue]) => ({ ...state, freshness: dataDate, dataDate, updatedAt, metricName, metricValue, coverage, ...(measurementKind ? { measurementKind } : {}) })));
   return { rows, available: true };
 }
