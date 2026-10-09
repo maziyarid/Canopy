@@ -55,6 +55,8 @@ COMPACT_RE = re.compile(r"^\d{8}$")
 SPACED_RE = re.compile(r"^\d{4}\s+\d{1,2}\s+\d{1,2}$")
 # Unpadded ISO-like dates (2026-9-1, 2026-09-1) are not the requested window.
 UNPADDED_RE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}$")
+# Datetime suffixes (2026-09-01T00:00:00, 2026-09-01 00:00) are not the date-only window.
+DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]")
 
 
 def require_iso_date(value):
@@ -77,6 +79,10 @@ def require_iso_date(value):
     # Check the folded form so fullwidth digits cannot skip the refusal.
     if UNPADDED_RE.fullmatch(folded) and not DATE_RE.fullmatch(folded):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_unpadded")
+    # A datetime suffix is not the requested date-only window.
+    # Check the folded form so fullwidth digits or separators cannot skip it.
+    if DATETIME_RE.match(folded) or (folded != raw and DATETIME_RE.match(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_datetime")
     match = DATE_RE.fullmatch(raw)
     if not match:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_invalid")
