@@ -61,11 +61,13 @@ def require_iso_date(value):
 
 
 def require_date_range_complete(measurement):
-    """Refuse a response window that does not cover the requested range.
+    """Refuse a response window that is not exactly the requested range.
 
     Omitted date keys stay allowed so an already-observed row is not forced
-    into a provider call. A partial set, an impossible calendar date, or a
-    response that starts later or ends earlier fails closed.
+    into a provider call. A partial set or an impossible calendar date fails
+    closed. A response that starts later or ends earlier is incomplete. A
+    response that starts earlier or ends later is wider and is not the
+    requested window.
     """
     keys = ("requestedStartDate", "requestedEndDate", "responseStartDate", "responseEndDate")
     present = [key in measurement for key in keys]
@@ -81,6 +83,8 @@ def require_date_range_complete(measurement):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_invalid")
     if response_start > requested_start or response_end < requested_end:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_incomplete")
+    if response_start < requested_start or response_end > requested_end:
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_wider")
 
 
 def classify_ga4_measurement(measurement, mode="inspect"):
