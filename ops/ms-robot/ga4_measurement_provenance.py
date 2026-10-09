@@ -45,12 +45,14 @@ def require_currency(value, present):
 
 
 
-DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+DATE_RE = re.compile(r"^([0-9]{4})-([0-9]{2})-([0-9]{2})$")
 # Slash, dot, or compatibility-folded separators are not the ISO window.
 # Fullwidth slash U+FF0F folds to "/" and must not become a hyphen date.
 SEPARATOR_RE = re.compile(r"^\d{4}[./]\d{1,2}[./]\d{1,2}$")
 # Compact YYYYMMDD is not the ISO window. NFKC folds fullwidth digits first.
 COMPACT_RE = re.compile(r"^\d{8}$")
+# Space-separated numeric dates are not the ISO window.
+SPACED_RE = re.compile(r"^\d{4}\s+\d{1,2}\s+\d{1,2}$")
 
 
 def require_iso_date(value):
@@ -60,8 +62,15 @@ def require_iso_date(value):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_separator")
     if "/" in folded or (folded != raw and "/" in folded):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_separator")
+    if SPACED_RE.fullmatch(folded):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_separator")
     if COMPACT_RE.fullmatch(folded):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_compact")
+    # A value that becomes ISO only after compatibility folding is not the
+    # requested window. Matching the raw string keeps fullwidth digits and
+    # fullwidth hyphens from being accepted as 2026-09-01.
+    if DATE_RE.fullmatch(folded) and not DATE_RE.fullmatch(raw):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_folded")
     match = DATE_RE.fullmatch(raw)
     if not match:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_invalid")
