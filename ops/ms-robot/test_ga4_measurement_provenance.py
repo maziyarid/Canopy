@@ -72,6 +72,20 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
             classify_ga4_measurement(currency)
         self.assertEqual(caught.exception.code, "ga4_measurement_currency_mismatch")
 
+    def test_blank_or_non_iso_currency_is_refused(self):
+        blank = observed()
+        blank["currencyCode"] = "  "
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(blank)
+        self.assertEqual(caught.exception.code, "ga4_measurement_currency_invalid")
+        non_iso = observed()
+        non_iso["currencyCode"] = "US"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(non_iso)
+        self.assertEqual(caught.exception.code, "ga4_measurement_currency_invalid")
+        self.assertFalse(classify_ga4_measurement(observed())["clientReady"])
+        self.assertFalse(classify_ga4_measurement(observed())["clientReportingEnabled"])
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")

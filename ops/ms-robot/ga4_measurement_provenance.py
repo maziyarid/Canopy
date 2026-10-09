@@ -43,8 +43,15 @@ def classify_ga4_measurement(measurement, mode="inspect"):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_not_observed")
     if measurement.get("dataLossFromOtherRow") is True:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_not_observed")
+    currency_re = re.compile(r"^[A-Z]{3}$")
+    requested_present = "requestedCurrency" in measurement
+    response_present = "currencyCode" in measurement
     requested_currency = str(measurement.get("requestedCurrency") or "").strip().upper()
     response_currency = str(measurement.get("currencyCode") or "").strip().upper()
+    if response_present and not currency_re.fullmatch(response_currency):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_invalid")
+    if requested_present and not currency_re.fullmatch(requested_currency):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_invalid")
     if requested_currency and requested_currency != response_currency:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_mismatch")
     source_ref = str(measurement.get("sourceRef") or "").strip()
