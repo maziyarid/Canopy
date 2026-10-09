@@ -80,16 +80,24 @@ export async function readGatewayLedger(projectId: string, site: string, period:
   if (!state || state.status === "not_configured" || state.status === "disabled") return { rows, available: true };
   let metrics: GatewayMetricRow[];
   let ranges: Array<{ start: string; end: string }> = [];
+  let truncated = false;
   try {
     const response = await gateway.metrics(projectId, "gsc", site, "site_daily", period.start, period.end);
     metrics = response.rows;
     ranges = response.coverage?.ranges ?? [];
+    truncated = response.truncated === true;
   } catch {
     state.status = "error";
     state.lastError = "Search metrics could not be read. Try again later.";
     return { rows, available: true };
   }
-  const daily = metrics.filter(row => row.provider === "gsc" && row.site === site && row.dataset === "site_daily" && row.data_date >= period.start && row.data_date <= period.end);
+  const scoped = metrics.filter(row => row.provider === "gsc" && row.site === site && row.dataset === "site_daily");
+  if (scoped.some(row => !/^\d{4}-\d{2}-\d{2}$/.test(row.data_date))) {
+    state.status = "error";
+    state.lastError = "Search metrics could not be validated.";
+    return { rows, available: true };
+  }
+  const daily = scoped.filter(row => row.data_date >= period.start && row.data_date <= period.end);
   if (!daily.length) return { rows, available: true };
   // Refuse partial/invalid rows instead of turning missing measurements into zero.
   const valid = daily.every(row => ["clicks", "impressions", "position"].every(key => typeof row.metrics[key] === "number" && Number.isFinite(row.metrics[key]) && (row.metrics[key] as number) >= 0));
@@ -108,12 +116,14 @@ export async function readGatewayLedger(projectId: string, site: string, period:
   const dataDate = observedDates.at(-1)!;
   const expectedDays = Math.round((Date.parse(period.end) - Date.parse(period.start)) / 86_400_000) + 1;
   const validRanges = ranges.filter(range => /^\d{4}-\d{2}-\d{2}$/.test(range.start) && /^\d{4}-\d{2}-\d{2}$/.test(range.end) && Number.isFinite(Date.parse(range.start)) && Number.isFinite(Date.parse(range.end)) && range.start <= range.end);
-  const complete = expectedDays > 0 && expectedDays <= 366 && Array.from({ length: expectedDays }, (_, day) => new Date(Date.parse(period.start) + day * 86_400_000).toISOString().slice(0, 10)).every(date => validRanges.some(range => range.start <= date && range.end >= date));
-  // Receipt ranges establish coverage; sparse rows alone never establish zero days.
+  const complete = !truncated && expectedDays > 0 && expectedDays <= 366 && Array.from({ length: expectedDays }, (_, day) => new Date(Date.parse(period.start) + day * 86_400_000).toISOString().slice(0, 10)).every(date => validRanges.some(range => range.start <= date && range.end >= date));
+  // Receipt ranges establish coverage; sparse rows alone never establish zero days. Truncation is never complete.
   const coverage = { start: complete ? period.start : observedDates[0]!, end: complete ? period.end : dataDate, complete, observedDates };
   if (!complete) {
     if (state.status === "ok") state.status = "partial";
-    state.coverageWarning = `Partial Search data: ${observedDates.length} stored dates from ${coverage.start} to ${coverage.end}. Unverified dates are excluded from totals.`;
+    state.coverageWarning = truncated
+      ? "Search metrics were truncated. Unverified dates are excluded from totals."
+      : `Partial Search data: ${observedDates.length} stored dates from ${coverage.start} to ${coverage.end}. Unverified dates are excluded from totals.`;
   }
   const updatedAt = daily.map(row => row.updated_at ?? "").sort().at(-1) || state.updatedAt;
   const aggregate = { clicks, impressions, ctr: impressions ? clicks / impressions : null, averagePosition: impressions ? weightedPosition / impressions : null };

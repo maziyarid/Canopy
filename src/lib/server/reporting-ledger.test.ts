@@ -41,3 +41,22 @@ test("ledger rows carry sampled kind and omit absent kind", async () => {
   });
   assert.equal(plain.rows.find((row) => row.metricName === "clicks")?.measurementKind, undefined);
 });
+
+test("truncated or unpadded search rows are not complete first-party coverage", async () => {
+  const period = { start: "2026-10-01", end: "2026-10-01", label: "last_1d" };
+  const states = async () => ({ providers: [{ provider: "gsc", status: "ok", last_success: "2026-10-01", last_attempt: "2026-10-01", last_error: null, freshness: "2026-10-01" }] });
+  const truncated = await readGatewayLedger("p1", "example.com", period, {
+    states,
+    metrics: async () => ({ rows: [day()], truncated: true, coverage: { ranges: [{ start: "2026-10-01", end: "2026-10-01" }] } }),
+  });
+  const clicks = truncated.rows.find((row) => row.metricName === "clicks");
+  assert.equal(clicks?.status, "partial");
+  assert.equal(clicks?.coverage?.complete, false);
+  assert.match(clicks?.coverageWarning ?? "", /truncated/);
+  const unpadded = await readGatewayLedger("p1", "example.com", period, {
+    states,
+    metrics: async () => ({ rows: [day({ data_date: "2026-10-1" })], coverage: { ranges: [{ start: "2026-10-01", end: "2026-10-01" }] } }),
+  });
+  assert.equal(unpadded.rows[0]?.status, "error");
+  assert.equal(unpadded.rows.some((row) => row.metricName === "clicks"), false);
+});
