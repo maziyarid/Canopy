@@ -102,6 +102,42 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(classify_ga4_measurement(observed())["scheduledSyncEnabled"])
         self.assertFalse(classify_ga4_measurement(observed())["clientReportingEnabled"])
 
+    def test_narrower_response_date_range_is_refused(self):
+        narrower = observed()
+        narrower["requestedStartDate"] = "2026-09-01"
+        narrower["requestedEndDate"] = "2026-09-30"
+        narrower["responseStartDate"] = "2026-09-02"
+        narrower["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(narrower)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_incomplete")
+        early_end = observed()
+        early_end["requestedStartDate"] = "2026-09-01"
+        early_end["requestedEndDate"] = "2026-09-30"
+        early_end["responseStartDate"] = "2026-09-01"
+        early_end["responseEndDate"] = "2026-09-29"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(early_end)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_incomplete")
+        invalid = observed()
+        invalid["requestedStartDate"] = "2026-02-31"
+        invalid["requestedEndDate"] = "2026-09-30"
+        invalid["responseStartDate"] = "2026-02-31"
+        invalid["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(invalid)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_invalid")
+        covered = observed()
+        covered["requestedStartDate"] = "2026-09-01"
+        covered["requestedEndDate"] = "2026-09-30"
+        covered["responseStartDate"] = "2026-09-01"
+        covered["responseEndDate"] = "2026-09-30"
+        plan = classify_ga4_measurement(covered)
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["providerReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")
