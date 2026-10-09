@@ -189,6 +189,36 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(plan["scheduledSyncEnabled"])
         self.assertFalse(plan["clientReportingEnabled"])
 
+    def test_compact_response_date_is_refused(self):
+        compact = observed()
+        compact["requestedStartDate"] = "20260901"
+        compact["requestedEndDate"] = "2026-09-30"
+        compact["responseStartDate"] = "2026-09-01"
+        compact["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(compact)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_compact")
+        response_compact = observed()
+        response_compact["requestedStartDate"] = "2026-09-01"
+        response_compact["requestedEndDate"] = "2026-09-30"
+        response_compact["responseStartDate"] = "2026-09-01"
+        response_compact["responseEndDate"] = "20260930"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(response_compact)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_compact")
+        fullwidth = observed()
+        fullwidth["requestedStartDate"] = "\uff12\uff10\uff12\uff16\uff10\uff19\uff10\uff11"
+        fullwidth["requestedEndDate"] = "2026-09-30"
+        fullwidth["responseStartDate"] = "2026-09-01"
+        fullwidth["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(fullwidth)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_compact")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")
