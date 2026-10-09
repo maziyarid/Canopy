@@ -23,11 +23,13 @@ export function measurementKindFromGatewayRow(row: GatewayMetricRow): string | n
   const explicit = stringKind(dims.measurementKind) ?? stringKind(dims.measurement_kind) ?? stringKind(metrics.measurementKind) ?? stringKind(metrics.measurement_kind);
   if (explicit) return explicit;
   const sampling = dims.samplingMetadatas ?? metrics.samplingMetadatas;
-  if (Array.isArray(sampling) && sampling.length) return "sampled";
+  if (sampling != null && !(Array.isArray(sampling) && sampling.length === 0)) return "sampled";
   const flags = dims.qualityFlags ?? metrics.qualityFlags;
-  if (Array.isArray(flags)) {
-    const hit = flags.map(stringKind).find((flag) => flag && !OBSERVED_KINDS.has(flag.toLowerCase()));
+  if (flags != null) {
+    const list = Array.isArray(flags) ? flags : [flags];
+    const hit = list.map(stringKind).find((flag) => flag && !OBSERVED_KINDS.has(flag.toLowerCase()));
     if (hit) return hit;
+    if (list.some((flag) => stringKind(flag) == null)) return "unknown";
   }
   if (dims.subjectToThresholding === true || metrics.subjectToThresholding === true) return "thresholded";
   return null;
