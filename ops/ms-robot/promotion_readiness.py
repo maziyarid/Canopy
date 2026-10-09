@@ -559,6 +559,7 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
         "ga4_measurement_quality_unspecified",
         "ga4_measurement_currency_mismatch",
         "ga4_measurement_currency_invalid",
+        "ga4_measurement_currency_confusable",
         '"clientReady": False',
         '"clientReportingEnabled": False',
         '"scheduledSyncEnabled": False',
@@ -569,7 +570,7 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
     if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper or "REQUESTS." in upper:
         raise PromotionReadinessError("ga4_measurement_provenance_mutates_or_calls_provider")
     proof = (root / "ops/ms-robot/test_ga4_measurement_provenance.py").read_text(encoding="utf-8")
-    if "test_sampling_metadata_is_refused" not in proof or "test_enable_mode_is_refused" not in proof or "test_omitted_quality_is_refused" not in proof or "test_blank_or_non_iso_currency_is_refused" not in proof:
+    if "test_sampling_metadata_is_refused" not in proof or "test_enable_mode_is_refused" not in proof or "test_omitted_quality_is_refused" not in proof or "test_blank_or_non_iso_currency_is_refused" not in proof or "test_nfkc_confusable_currency_is_refused" not in proof:
         raise PromotionReadinessError("ga4_measurement_provenance_proof_missing")
     import importlib.util
     spec = importlib.util.spec_from_file_location("ga4_measurement_provenance_check", source_path)
@@ -624,6 +625,24 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
             raise PromotionReadinessError("ga4_measurement_currency_format_not_refused")
     else:
         raise PromotionReadinessError("ga4_measurement_currency_format_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "currencyCode": "\uff35\uff33\uff24",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_currency_confusable":
+            raise PromotionReadinessError("ga4_measurement_currency_confusable_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_currency_confusable_not_refused")
     return ["ga4_measurement_provenance_fail_closed"]
 
 
