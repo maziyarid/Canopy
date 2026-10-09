@@ -98,7 +98,15 @@ export async function readGatewayLedger(projectId: string, site: string, period:
     return { rows, available: true };
   }
   const daily = scoped.filter(row => row.data_date >= period.start && row.data_date <= period.end);
-  if (!daily.length) return { rows, available: true };
+  if (!daily.length) {
+    // An empty truncated page is not "no data". Fail closed so omitted dates cannot look complete.
+    if (truncated) {
+      state.status = "partial";
+      state.coverageWarning = "Search metrics were truncated. Unverified dates are excluded from totals.";
+      state.coverage = { start: period.start, end: period.end, complete: false, observedDates: [] };
+    }
+    return { rows, available: true };
+  }
   // Refuse partial/invalid rows instead of turning missing measurements into zero.
   const valid = daily.every(row => ["clicks", "impressions", "position"].every(key => typeof row.metrics[key] === "number" && Number.isFinite(row.metrics[key]) && (row.metrics[key] as number) >= 0));
   if (!valid || daily.length > 366 || new Set(daily.map(row => row.data_date)).size !== daily.length) {
