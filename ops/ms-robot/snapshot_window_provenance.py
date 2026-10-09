@@ -64,13 +64,27 @@ def _declared_metrics(raw_metrics, duplicate_code, blank_code):
     return set(keys)
 
 
+MONETARY_STEMS = (
+    "purchaserevenue",
+    "totalrevenue",
+    "itemrevenue",
+    "advertiseradcost",
+    "adcost",
+    "revenue",
+)
+
+
+def _is_monetary_key(key):
+    return any(stem in key for stem in MONETARY_STEMS)
+
+
 def _hidden_monetary_fields(row, blank_code):
     hidden = []
     for key, value in row.items():
         if key in {"date", "metrics"} or value in (None, "", [], {}):
             continue
         hidden.append(_metric_key(key, blank_code))
-    return [key for key in hidden if key in MONETARY_METRICS]
+    return [key for key in hidden if _is_monetary_key(key)]
 
 
 def classify_snapshot_window(snapshot, mode="inspect"):

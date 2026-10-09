@@ -232,6 +232,13 @@ class SnapshotWindowProvenanceTests(unittest.TestCase):
 
     def test_comparison_row_item_revenue_camel_alias_absent_from_comparison_metrics_is_refused(self):
         self._hidden_comparison("itemRevenue")
+
+    def test_comparison_row_purchase_revenue_micros_alias_absent_from_comparison_metrics_is_refused(self):
+        self._hidden_comparison("purchaseRevenueMicros")
+        plan = classify_snapshot_window(base())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["reportingRouteEnabled"])
+
     def test_module_does_not_enable_route(self):
         source = Path(__file__).with_name("snapshot_window_provenance.py").read_text(encoding="utf-8")
         self.assertNotIn("urllib", source.lower())
