@@ -46,10 +46,18 @@ def require_currency(value, present):
 
 
 DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+# Slash, dot, or compatibility-folded separators are not the ISO window.
+# Fullwidth slash U+FF0F folds to "/" and must not become a hyphen date.
+SEPARATOR_RE = re.compile(r"^\d{4}[./]\d{1,2}[./]\d{1,2}$")
 
 
 def require_iso_date(value):
     raw = str(value if value is not None else "").strip()
+    folded = unicodedata.normalize("NFKC", raw)
+    if SEPARATOR_RE.fullmatch(folded) or (folded != raw and SEPARATOR_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_separator")
+    if "/" in folded or (folded != raw and "/" in folded):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_separator")
     match = DATE_RE.fullmatch(raw)
     if not match:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_invalid")

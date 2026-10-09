@@ -159,6 +159,36 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(classify_ga4_measurement(observed())["scheduledSyncEnabled"])
         self.assertFalse(classify_ga4_measurement(observed())["clientReportingEnabled"])
 
+    def test_slash_response_date_is_refused(self):
+        slash = observed()
+        slash["requestedStartDate"] = "2026/09/01"
+        slash["requestedEndDate"] = "2026-09-30"
+        slash["responseStartDate"] = "2026-09-01"
+        slash["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(slash)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_separator")
+        dotted = observed()
+        dotted["requestedStartDate"] = "2026-09-01"
+        dotted["requestedEndDate"] = "2026.09.30"
+        dotted["responseStartDate"] = "2026-09-01"
+        dotted["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(dotted)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_separator")
+        fullwidth = observed()
+        fullwidth["requestedStartDate"] = "2026\uff0f09\uff0f01"
+        fullwidth["requestedEndDate"] = "2026-09-30"
+        fullwidth["responseStartDate"] = "2026-09-01"
+        fullwidth["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(fullwidth)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_separator")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")
