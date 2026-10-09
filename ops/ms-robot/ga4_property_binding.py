@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 
 PROPERTY_RE = re.compile(r"^properties/[1-9][0-9]{0,18}$")
+# Bare hostname only. Scheme, port, path, trailing dot, and uppercase are not a site binding.
+SITE_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$")
 
 
 class Ga4BindingRefused(RuntimeError):
@@ -33,7 +35,7 @@ def classify_ga4_binding(binding, mode="inspect"):
         raise Ga4BindingRefused("ga4_project_unbound")
     site = str(binding.get("site") or "").strip()
     bound_site = str(binding.get("boundSite") or "").strip()
-    if not site or site != bound_site:
+    if not site or site != bound_site or not SITE_RE.fullmatch(site):
         raise Ga4BindingRefused("ga4_site_unbound")
     property_ref = str(binding.get("property") or "").strip()
     bound_property = str(binding.get("boundProperty") or "").strip()

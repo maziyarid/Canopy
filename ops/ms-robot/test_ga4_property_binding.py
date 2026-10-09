@@ -49,5 +49,18 @@ class Ga4PropertyBindingTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, "ga4_authorised_read_missing")
 
 
+
+    def test_scheme_site_is_refused(self):
+        binding = dict(BOUND, site="https://example.com", boundSite="https://example.com")
+        with self.assertRaises(Ga4BindingRefused) as raised:
+            classify_ga4_binding(binding)
+        self.assertEqual(raised.exception.code, "ga4_site_unbound")
+
+    def test_trailing_dot_site_is_refused(self):
+        binding = dict(BOUND, site="example.com.", boundSite="example.com.")
+        with self.assertRaises(Ga4BindingRefused) as raised:
+            classify_ga4_binding(binding)
+        self.assertEqual(raised.exception.code, "ga4_site_unbound")
+
 if __name__ == "__main__":
     unittest.main()

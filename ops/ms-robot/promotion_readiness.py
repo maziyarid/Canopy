@@ -1639,7 +1639,7 @@ def check_ga4_property_binding_gate(root: Path) -> list[str]:
     if "DELETE FROM" in upper or "DROP TABLE" in upper:
         raise PromotionReadinessError("ga4_property_binding_mutates_or_calls_provider")
     proof = (root / "ops/ms-robot/test_ga4_property_binding.py").read_text(encoding="utf-8")
-    if "test_numeric_property_is_refused" not in proof or "test_enable_mode_is_refused" not in proof:
+    if "test_numeric_property_is_refused" not in proof or "test_enable_mode_is_refused" not in proof or "test_scheme_site_is_refused" not in proof:
         raise PromotionReadinessError("ga4_property_binding_proof_missing")
     import importlib.util
     spec = importlib.util.spec_from_file_location("ga4_property_binding_check", source_path)
@@ -1678,7 +1678,28 @@ def check_ga4_property_binding_gate(root: Path) -> list[str]:
         pass
     else:
         raise PromotionReadinessError("ga4_numeric_property_not_refused")
+    try:
+        module.classify_ga4_binding(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "site": "https://example.com",
+                "boundSite": "https://example.com",
+                "property": "properties/123",
+                "boundProperty": "properties/123",
+                "authorisedRead": True,
+                "scheduledSyncEnabled": False,
+                "clientReportingEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.Ga4BindingRefused as refused:
+        if refused.code != "ga4_site_unbound":
+            raise PromotionReadinessError("ga4_scheme_site_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_scheme_site_not_refused")
     return ["ga4_property_binding_fail_closed"]
+
 
 
 def assess(root: Path | None = None) -> dict:
