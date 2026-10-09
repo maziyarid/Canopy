@@ -53,6 +53,8 @@ SEPARATOR_RE = re.compile(r"^\d{4}[./]\d{1,2}[./]\d{1,2}$")
 COMPACT_RE = re.compile(r"^\d{8}$")
 # Space-separated numeric dates are not the ISO window.
 SPACED_RE = re.compile(r"^\d{4}\s+\d{1,2}\s+\d{1,2}$")
+# Unpadded ISO-like dates (2026-9-1, 2026-09-1) are not the requested window.
+UNPADDED_RE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}$")
 
 
 def require_iso_date(value):
@@ -71,6 +73,10 @@ def require_iso_date(value):
     # fullwidth hyphens from being accepted as 2026-09-01.
     if DATE_RE.fullmatch(folded) and not DATE_RE.fullmatch(raw):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_folded")
+    # 2026-9-1 is calendar-shaped but not the zero-padded ISO window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if UNPADDED_RE.fullmatch(folded) and not DATE_RE.fullmatch(folded):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_unpadded")
     match = DATE_RE.fullmatch(raw)
     if not match:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_invalid")
