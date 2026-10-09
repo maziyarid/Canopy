@@ -219,6 +219,36 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(plan["scheduledSyncEnabled"])
         self.assertFalse(plan["clientReportingEnabled"])
 
+    def test_folded_iso_date_is_refused(self):
+        folded = observed()
+        folded["requestedStartDate"] = "2026\uff0d09\uff0d01"
+        folded["requestedEndDate"] = "2026-09-30"
+        folded["responseStartDate"] = "2026-09-01"
+        folded["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(folded)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_folded")
+        digits = observed()
+        digits["requestedStartDate"] = "2026-09-01"
+        digits["requestedEndDate"] = "2026-09-30"
+        digits["responseStartDate"] = "\uff12\uff10\uff12\uff16-\uff10\uff19-\uff10\uff11"
+        digits["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(digits)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_folded")
+        spaced = observed()
+        spaced["requestedStartDate"] = "2026 09 01"
+        spaced["requestedEndDate"] = "2026-09-30"
+        spaced["responseStartDate"] = "2026-09-01"
+        spaced["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(spaced)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_separator")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")
