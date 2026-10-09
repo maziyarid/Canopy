@@ -59,4 +59,12 @@ test("truncated or unpadded search rows are not complete first-party coverage", 
   });
   assert.equal(unpadded.rows[0]?.status, "error");
   assert.equal(unpadded.rows.some((row) => row.metricName === "clicks"), false);
+  const emptyTruncated = await readGatewayLedger("p1", "example.com", period, {
+    states,
+    metrics: async () => ({ rows: [], truncated: true, coverage: { ranges: [{ start: "2026-10-01", end: "2026-10-01" }] } }),
+  });
+  assert.equal(emptyTruncated.rows[0]?.status, "partial");
+  assert.equal(emptyTruncated.rows[0]?.coverage?.complete, false);
+  assert.equal(emptyTruncated.rows.some((row) => row.metricName === "clicks"), false);
+  assert.match(emptyTruncated.rows[0]?.coverageWarning ?? "", /truncated/);
 });
