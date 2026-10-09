@@ -16,22 +16,42 @@ function stringKind(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-/** Copy explicit sampling metadata. Absent metadata stays unset so older canonical rows do not flip. */
-export function measurementKindFromGatewayRow(row: GatewayMetricRow): string | null {
+function bags(row: GatewayMetricRow): Record<string, unknown>[] {
   const dims = row.dimensions ?? {};
   const metrics = row.metrics ?? {};
-  const explicit = stringKind(dims.measurementKind) ?? stringKind(dims.measurement_kind) ?? stringKind(metrics.measurementKind) ?? stringKind(metrics.measurement_kind);
+  const found = [dims, metrics];
+  for (const bag of [dims, metrics]) {
+    const metadata = bag.metadata;
+    if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) found.push(metadata as Record<string, unknown>);
+  }
+  return found;
+}
+
+/** Copy explicit sampling metadata. Absent metadata stays unset so older canonical rows do not flip. */
+export function measurementKindFromGatewayRow(row: GatewayMetricRow): string | null {
+  const sources = bags(row);
+  const explicit = sources.map((bag) => stringKind(bag.measurementKind) ?? stringKind(bag.measurement_kind)).find((kind): kind is string => Boolean(kind));
   if (explicit) return explicit;
-  const sampling = dims.samplingMetadatas ?? metrics.samplingMetadatas;
-  if (sampling != null && !(Array.isArray(sampling) && sampling.length === 0)) return "sampled";
-  const flags = dims.qualityFlags ?? metrics.qualityFlags;
-  if (flags != null) {
+  for (const bag of sources) {
+    const sampling = bag.samplingMetadatas;
+    if (sampling != null && !(Array.isArray(sampling) && sampling.length === 0)) return "sampled";
+  }
+  for (const bag of sources) {
+    if (bag.dataLossFromOtherRow === true || bag.dataLossFromOtherRow === "true") return "data_loss";
+  }
+  for (const bag of sources) {
+    const flags = bag.qualityFlags;
+    if (flags == null) continue;
     const list = Array.isArray(flags) ? flags : [flags];
     const hit = list.map(stringKind).find((flag) => flag && !OBSERVED_KINDS.has(flag.toLowerCase()));
     if (hit) return hit;
     if (list.some((flag) => stringKind(flag) == null)) return "unknown";
   }
-  if (dims.subjectToThresholding === true || metrics.subjectToThresholding === true) return "thresholded";
+  for (const bag of sources) {
+    const threshold = bag.subjectToThresholding;
+    if (threshold == null || threshold === false || threshold === "false") continue;
+    return threshold === true || threshold === "true" ? "thresholded" : "unknown";
+  }
   return null;
 }
 
