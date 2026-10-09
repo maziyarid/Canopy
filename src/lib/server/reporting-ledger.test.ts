@@ -16,6 +16,9 @@ test("gateway sampling metadata becomes a refused measurement kind", () => {
   assert.equal(measurementKindFromGatewayRow(day({ metrics: { clicks: 1, impressions: 1, position: 1, qualityFlags: ["thresholded"] } })), "thresholded");
   assert.equal(measurementKindFromGatewayRow(day({ dimensions: { measurement_kind: " modeled " } })), "modeled");
   assert.equal(measurementKindFromGatewayRow(day()), null);
+  assert.equal(measurementKindFromGatewayRow(day({ dimensions: { samplingMetadatas: { samplesReadCount: "1" } } })), "sampled");
+  assert.equal(measurementKindFromGatewayRow(day({ metrics: { clicks: 1, impressions: 1, position: 1, qualityFlags: { flag: "thresholded" } } })), "unknown");
+  assert.equal(measurementKindFromGatewayRow(day({ dimensions: { qualityFlags: ["observed"] } })), null);
   assert.equal(aggregateMeasurementKind([day({ dimensions: { measurementKind: "observed" } }), day({ dimensions: { measurementKind: "sampled" } })]), "sampled");
 });
 
