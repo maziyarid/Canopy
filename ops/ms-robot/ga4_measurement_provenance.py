@@ -8,8 +8,10 @@ does not hunk-merge draft PR #28 sync correctness.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 PROPERTY_RE = re.compile(r"^properties/[1-9][0-9]{0,18}$")
+ISO_CURRENCY = re.compile(r"^[A-Z]{3}$")
 REFUSED_FLAGS = frozenset({"sampled", "thresholded", "incomplete", "data_loss"})
 
 
@@ -17,6 +19,28 @@ class Ga4MeasurementProvenanceRefused(RuntimeError):
     def __init__(self, code):
         super().__init__(code)
         self.code = code
+
+
+def require_currency(value, present):
+    """Refuse a code whose NFKC fold is a three-letter ISO currency.
+
+    Fullwidth or compatibility letters must not become USD after normalisation.
+    A blank or non-ISO code stays ga4_measurement_currency_invalid.
+    """
+    if not present:
+        return ""
+    raw = str(value if value is not None else "")
+    stripped = raw.strip()
+    folded = unicodedata.normalize("NFKC", stripped).upper()
+    if ISO_CURRENCY.fullmatch(folded) and any(
+        ord(char) > 127 or unicodedata.normalize("NFKC", char) != char
+        for char in stripped
+    ):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_confusable")
+    literal = stripped.upper()
+    if not ISO_CURRENCY.fullmatch(literal):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_invalid")
+    return literal
 
 
 def classify_ga4_measurement(measurement, mode="inspect"):
@@ -43,15 +67,10 @@ def classify_ga4_measurement(measurement, mode="inspect"):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_not_observed")
     if measurement.get("dataLossFromOtherRow") is True:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_not_observed")
-    currency_re = re.compile(r"^[A-Z]{3}$")
     requested_present = "requestedCurrency" in measurement
     response_present = "currencyCode" in measurement
-    requested_currency = str(measurement.get("requestedCurrency") or "").strip().upper()
-    response_currency = str(measurement.get("currencyCode") or "").strip().upper()
-    if response_present and not currency_re.fullmatch(response_currency):
-        raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_invalid")
-    if requested_present and not currency_re.fullmatch(requested_currency):
-        raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_invalid")
+    requested_currency = require_currency(measurement.get("requestedCurrency"), requested_present)
+    response_currency = require_currency(measurement.get("currencyCode"), response_present)
     if requested_currency and requested_currency != response_currency:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_currency_mismatch")
     source_ref = str(measurement.get("sourceRef") or "").strip()

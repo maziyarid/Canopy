@@ -86,6 +86,22 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(classify_ga4_measurement(observed())["clientReady"])
         self.assertFalse(classify_ga4_measurement(observed())["clientReportingEnabled"])
 
+    def test_nfkc_confusable_currency_is_refused(self):
+        row = observed()
+        row["currencyCode"] = "\uff35\uff33\uff24"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_currency_confusable")
+        requested = observed()
+        requested["requestedCurrency"] = "\uff35\uff33\uff24"
+        requested["currencyCode"] = "USD"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(requested)
+        self.assertEqual(caught.exception.code, "ga4_measurement_currency_confusable")
+        self.assertFalse(classify_ga4_measurement(observed())["clientReady"])
+        self.assertFalse(classify_ga4_measurement(observed())["scheduledSyncEnabled"])
+        self.assertFalse(classify_ga4_measurement(observed())["clientReportingEnabled"])
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")
