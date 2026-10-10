@@ -3,6 +3,7 @@ import ipaddress
 import json
 import os
 import re
+import unicodedata
 from urllib.parse import unquote, urlparse
 
 from gateway import DB, create_or_run_sync, google_request, init_db, now
@@ -106,9 +107,17 @@ def canonical_ip(host):
     return ip.compressed
 
 
+def strip_default_ignorables(host):
+    # Zero-width and other format characters are not a second site identity.
+    return "".join(char for char in str(host or "") if unicodedata.category(char) != "Cf")
+
+
 def normalise_host(host):
-    host = strip_port(decode_host(host))
-    host = str(host or "").lower().rstrip(".").removeprefix("www.").rstrip(".")
+    # NFKC before port stripping so a fullwidth colon cannot hide a mapped port.
+    host = unicodedata.normalize("NFKC", str(host or ""))
+    host = strip_default_ignorables(strip_port(decode_host(host)))
+    # Fullwidth ASCII (U+FF0E dot, U+FF21 letters) is the same site key.
+    host = host.lower().rstrip(".").removeprefix("www.").rstrip(".")
     if not host:
         return ""
     host = assert_hostname(host)
@@ -128,9 +137,25 @@ def bare_host(value):
     return host.split("@")[-1]
 
 
+# NFKC does not fold these separators onto ASCII slash. They must not split a site key.
+_SLASH_CONFUSABLES = str.maketrans({
+    '\\': '/',
+    '∕': '/',
+    '∖': '/',
+    '⁄': '/',
+    '⧸': '/',
+    '╱': '/',
+    '⟋': '/',
+})
+
 def site_key(site_url):
-    raw = str(site_url or "").strip()
-    if raw.startswith("sc-domain:"):
+    # NFKC and format-character stripping before scheme detection. A fullwidth
+    # slash, division slash, or backslash must not make the same host a second key.
+    raw = unicodedata.normalize("NFKC", str(site_url or "").strip())
+    raw = "".join(char for char in raw if unicodedata.category(char) != "Cf")
+    raw = raw.translate(_SLASH_CONFUSABLES)
+    # Prefix case is not a second site identity. GSC may emit SC-DOMAIN.
+    if raw.lower().startswith("sc-domain:"):
         return normalise_host(bare_host(raw.split(":", 1)[1]))
     if "://" in raw:
         return normalise_host(urlparse(raw).hostname or raw)

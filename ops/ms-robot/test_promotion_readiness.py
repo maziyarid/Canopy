@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_portfolio_map_gate, check_sqlite_coordinator_skips_postgres_0008, check_upstream_tree_reconciliation, check_migrations
+from promotion_readiness import PromotionReadinessError, assess, check_client_note_order_gate, check_journal_warning_copy_gate, check_portfolio_map_gate, check_sqlite_coordinator_skips_postgres_0008, check_upstream_tree_reconciliation, check_migrations, check_main_privacy_reconciliation
 
 
 REQUIRED = {
@@ -43,6 +43,16 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertIn("ipv4_dword_conflict_fail_closed", report["checks"])
         self.assertIn("ambiguous_gsc_property_fail_closed", report["checks"])
         self.assertIn("gsc_discovery_payload_fail_closed", report["checks"])
+        self.assertIn("fullwidth_dot_conflict_fail_closed", report["checks"])
+        self.assertIn("zero_width_host_conflict_fail_closed", report["checks"])
+        self.assertIn("fullwidth_slash_conflict_fail_closed", report["checks"])
+        self.assertIn("sc_domain_prefix_case_fail_closed", report["checks"])
+        self.assertIn("operational_retention_fail_closed", report["checks"])
+        self.assertIn("recommendation_execution_fail_closed", report["checks"])
+        self.assertIn("snapshot_provenance_fail_closed", report["checks"])
+        self.assertIn("ga4_property_binding_fail_closed", report["checks"])
+        self.assertIn("ga4_measurement_provenance_fail_closed", report["checks"])
+        self.assertIn("snapshot_window_provenance_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
     def test_missing_migration_fails_closed(self):
@@ -269,5 +279,48 @@ class PromotionReadinessTest(unittest.TestCase):
             with self.assertRaises(PromotionReadinessError) as caught:
                 check_portfolio_map_gate(root)
             self.assertIn("writable_gsc_permission_process_proof_missing", str(caught.exception))
+    def test_main_privacy_markers_required(self):
+        root = Path(__file__).resolve().parents[2]
+        checks = check_main_privacy_reconciliation(root)
+        self.assertIn("main_privacy_isolation_markers_present:7138ac36f320dd230576b27bd26bbbc461cabe74", checks)
+        report = assess(root)
+        self.assertIn("main_privacy_isolation_markers_present:7138ac36f320dd230576b27bd26bbbc461cabe74", report["checks"])
+        self.assertFalse(report["promotionAuthorised"])
+
+    def test_unrelated_with_ambient_calls_do_not_satisfy_privacy_gate(self):
+        repo = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "src/components"
+            workspace.mkdir(parents=True)
+            (workspace / "workspace.tsx").write_text(
+                "function withAmbient(payload) { return payload; }\n"
+                "addSeeds({ data: withAmbient({ projectId }) });\n"
+                "scoreKeywords({ data: withAmbient({ projectId }) });\n",
+                encoding="utf-8",
+            )
+            gateway_dir = root / "src/lib/analytics"
+            gateway_dir.mkdir(parents=True)
+            (gateway_dir / "gateway.server.ts").write_text(
+                (repo / "src/lib/analytics/gateway.server.ts").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            (gateway_dir / "gateway.server.test.ts").write_text(
+                (repo / "src/lib/analytics/gateway.server.test.ts").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            with self.assertRaises(PromotionReadinessError) as caught:
+                check_main_privacy_reconciliation(root)
+            self.assertIn("aax55_workspace_ambient_forward_missing", str(caught.exception))
+            (workspace / "workspace.tsx").write_text(
+                (repo / "src/components/workspace.tsx").read_text(encoding="utf-8").replace(
+                    "pushMonday({", "pushMondayDropped({", 1
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(PromotionReadinessError) as monday:
+                check_main_privacy_reconciliation(root)
+            self.assertIn("aax55_monday_ambient_forward_missing", str(monday.exception))
+
 if __name__ == "__main__":
     unittest.main()

@@ -264,7 +264,25 @@ def check_portfolio_map_gate(root: Path) -> list[str]:
         "test_mapped_restricted_permission_exits_before_sync",
     )):
         raise PromotionReadinessError("writable_gsc_permission_process_proof_missing")
-    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed", "writable_gsc_permission_fail_closed"]
+    if 'unicodedata.normalize("NFKC"' not in source:
+        raise PromotionReadinessError("fullwidth_host_not_normalised")
+    if "def strip_default_ignorables(" not in source or 'unicodedata.category(char) != "Cf"' not in source:
+        raise PromotionReadinessError("zero_width_host_not_normalised")
+    fullwidth_proof = (root / "ops/ms-robot/test_portfolio_fullwidth_dot_conflict_process.py").read_text(encoding="utf-8")
+    if "test_fullwidth_dot_conflicts_with_ascii_before_discovery" not in fullwidth_proof:
+        raise PromotionReadinessError("fullwidth_dot_conflict_process_proof_missing")
+    zero_width_proof = (root / "ops/ms-robot/test_portfolio_zero_width_host_conflict_process.py").read_text(encoding="utf-8")
+    if "test_zero_width_host_conflicts_with_ascii_before_discovery" not in zero_width_proof:
+        raise PromotionReadinessError("zero_width_host_conflict_process_proof_missing")
+    slash_proof = (root / "ops/ms-robot/test_portfolio_fullwidth_slash_conflict_process.py").read_text(encoding="utf-8")
+    if "test_fullwidth_slash_conflicts_with_ascii_before_discovery" not in slash_proof:
+        raise PromotionReadinessError("fullwidth_slash_conflict_process_proof_missing")
+    if 'raw.lower().startswith("sc-domain:")' not in source:
+        raise PromotionReadinessError("sc_domain_prefix_case_not_folded")
+    sc_proof = (root / "ops/ms-robot/test_portfolio_sc_domain_case_conflict_process.py").read_text(encoding="utf-8")
+    if "test_sc_domain_prefix_case_conflicts_before_discovery" not in sc_proof:
+        raise PromotionReadinessError("sc_domain_prefix_case_process_proof_missing")
+    return ["scheduled_portfolio_map_fail_closed", "non_string_project_id_fail_closed", "reserved_project_scope_fail_closed", "whitespace_project_id_fail_closed", "padded_project_id_stripped_before_discovery", "www_apex_conflict_fail_closed", "trailing_dot_conflict_fail_closed", "scheme_less_path_conflict_fail_closed", "port_idna_conflict_fail_closed", "percent_host_conflict_fail_closed", "ipv6_port_conflict_fail_closed", "decoded_host_residue_fail_closed", "punycode_unicode_conflict_fail_closed", "empty_label_host_fail_closed", "control_host_fail_closed", "ipv4_mapped_conflict_fail_closed", "ipv4_dword_conflict_fail_closed", "ambiguous_gsc_property_fail_closed", "gsc_discovery_payload_fail_closed", "writable_gsc_permission_fail_closed", "fullwidth_dot_conflict_fail_closed", "zero_width_host_conflict_fail_closed", "fullwidth_slash_conflict_fail_closed", "sc_domain_prefix_case_fail_closed"]
 
 
 
@@ -316,6 +334,33 @@ def check_upstream_tree_reconciliation(root: Path) -> list[str]:
 
 
 
+def check_main_privacy_reconciliation(root: Path) -> list[str]:
+    """Fail closed if the unified tree drops main privacy/isolation markers.
+
+    This does not merge main. It requires the AAX-55 ambient-domain forwards
+    and the server-only analytics gateway boundary that landed on main in
+    7138ac36f320dd230576b27bd26bbbc461cabe74 to remain present.
+
+    Other withAmbient() call sites must not satisfy this gate. Only the
+    research-agent and Monday push forwards are the restored markers.
+    """
+    workspace = (root / "src/components/workspace.tsx").read_text(encoding="utf-8")
+    if not re.search(r"runResearchAgent\(\s*\{\s*data:\s*withAmbient\(", workspace):
+        raise PromotionReadinessError("aax55_workspace_ambient_forward_missing")
+    if not re.search(r"pushMonday\(\s*\{\s*data:\s*withAmbient\(", workspace):
+        raise PromotionReadinessError("aax55_monday_ambient_forward_missing")
+    gateway = (root / "src/lib/analytics/gateway.server.ts").read_text(encoding="utf-8")
+    if "assertAppDataServerOnly(\"analytics/gateway.server\")" not in gateway:
+        raise PromotionReadinessError("gateway_server_only_boundary_missing")
+    if "ANALYTICS_GATEWAY_URL?.trim()" not in gateway or "ANALYTICS_GATEWAY_TOKEN?.trim()" not in gateway:
+        raise PromotionReadinessError("gateway_config_trim_missing")
+    proof = root / "src/lib/analytics/gateway.server.test.ts"
+    proof_text = proof.read_text(encoding="utf-8") if proof.is_file() else ""
+    if "server-only" not in proof_text or "ANALYTICS_GATEWAY_TOKEN is not configured" not in proof_text:
+        raise PromotionReadinessError("gateway_server_only_proof_missing")
+    return ["main_privacy_isolation_markers_present:7138ac36f320dd230576b27bd26bbbc461cabe74"]
+
+
 def check_sqlite_coordinator_skips_postgres_0008(root: Path) -> list[str]:
     """SQLite startup must not apply PostgreSQL migration 0008.
 
@@ -333,6 +378,1589 @@ def check_sqlite_coordinator_skips_postgres_0008(root: Path) -> list[str]:
     return ["sqlite_coordinator_does_not_apply_postgres_0008"]
 
 
+
+def check_operational_retention_gate(root: Path) -> list[str]:
+    """AAX-55 operational retention must stay fail-closed.
+
+    Medical retention is not approved. Execute/apply/delete modes are refused.
+    The planner may dry-run thesis/other only, and must not delete rows.
+    """
+    source_path = root / "ops/ms-robot/operational_retention.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def plan_operational_retention",
+        "retention_refused_domain",
+        "retention_execution_disabled",
+        "medicalRetentionActivated",
+        '"action": "none"',
+        '"executed": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("operational_retention_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("operational_retention_deletes_rows")
+    proof = (root / "ops/ms-robot/test_operational_retention.py").read_text(encoding="utf-8")
+    if "test_medical_domain_is_refused" not in proof or "test_execute_mode_is_refused" not in proof:
+        raise PromotionReadinessError("operational_retention_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("operational_retention_gate", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("operational_retention_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=0)
+    if plan.get("executed") or plan.get("action") != "none" or plan.get("medicalRetentionActivated"):
+        raise PromotionReadinessError("operational_retention_dry_run_not_inert")
+    try:
+        module.plan_operational_retention(data_domain="medical", mode="dry-run", candidate_rows=0)
+    except module.RetentionRefused:
+        pass
+    else:
+        raise PromotionReadinessError("operational_retention_medical_not_refused")
+    try:
+        module.plan_operational_retention(data_domain="other", mode="execute", candidate_rows=0)
+    except module.RetentionRefused:
+        pass
+    else:
+        raise PromotionReadinessError("operational_retention_execute_not_refused")
+    return ["operational_retention_fail_closed"]
+
+
+
+
+def check_recommendation_execution_gate(root: Path) -> list[str]:
+    """AAX-82 recommendations stay proposal-only. No publisher is invoked."""
+    source_path = root / "ops/ms-robot/recommendation_execution_gate.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_recommendation",
+        "recommendation_execution_disabled",
+        "proposal_only",
+        '"executed": False',
+        '"publisherInvoked": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("recommendation_execution_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("recommendation_execution_mutates_storage")
+    proof = (root / "ops/ms-robot/test_recommendation_execution_gate.py").read_text(encoding="utf-8")
+    if "test_publish_mode_is_refused" not in proof or "test_missing_evidence_is_refused" not in proof:
+        raise PromotionReadinessError("recommendation_execution_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("recommendation_execution_gate_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("recommendation_execution_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_recommendation(
+        {
+            "recommendationDisposition": "proposal_only",
+            "recommendedAction": "Review the measured query drop before any change.",
+            "evidenceRefs": ["snapshot:ga4:1"],
+        },
+        mode="propose",
+    )
+    if plan.get("executed") or plan.get("publisherInvoked") or plan.get("action") != "none":
+        raise PromotionReadinessError("recommendation_execution_not_inert")
+    try:
+        module.classify_recommendation(
+            {
+                "recommendationDisposition": "proposal_only",
+                "recommendedAction": "Review the measured query drop before any change.",
+                "evidenceRefs": ["snapshot:ga4:1"],
+            },
+            mode="publish",
+        )
+    except module.RecommendationExecutionRefused:
+        pass
+    else:
+        raise PromotionReadinessError("recommendation_publish_not_refused")
+    return ["recommendation_execution_fail_closed"]
+
+
+def check_snapshot_provenance_gate(root: Path) -> list[str]:
+    """AAX-81 snapshot stays non-client-ready until provenance is complete.
+
+    Does not enable the reporting HTTP route and does not replace the
+    TypeScript sampled-metric fail-closed on the separate AAX-81 branch.
+    """
+    source_path = root / "ops/ms-robot/snapshot_provenance_gate.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_snapshot",
+        "snapshot_route_disabled",
+        "snapshot_sampled_not_client_ready",
+        '"clientReady": False',
+        '"reportingRouteEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("snapshot_provenance_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("snapshot_provenance_mutates_storage")
+    proof = (root / "ops/ms-robot/test_snapshot_provenance_gate.py").read_text(encoding="utf-8")
+    if "test_sampled_metric_is_refused" not in proof or "test_enable_mode_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_provenance_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("snapshot_provenance_gate_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("snapshot_provenance_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_snapshot(
+        {
+            "projectId": "proj-1",
+            "boundProjectId": "proj-1",
+            "provenance": "first_party",
+            "measurementKind": "observed",
+            "sourceRef": "ga4:property:1",
+            "reportingRouteEnabled": False,
+        },
+        mode="inspect",
+    )
+    if plan.get("clientReady") or plan.get("reportingRouteEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("snapshot_provenance_not_inert")
+    try:
+        module.classify_snapshot(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "provenance": "first_party",
+                "measurementKind": "sampled",
+                "sourceRef": "ga4:property:1",
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotProvenanceRefused:
+        pass
+    else:
+        raise PromotionReadinessError("snapshot_sampled_not_refused")
+    return ["snapshot_provenance_fail_closed"]
+
+
+
+
+def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
+    """GA4 response provenance stays non-client-ready when sampling or thresholding is present.
+
+    Does not call Google, does not enable client reporting, and does not
+    hunk-merge draft PR #28 sync correctness.
+    """
+    source_path = root / "ops/ms-robot/ga4_measurement_provenance.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_ga4_measurement",
+        "ga4_measurement_reporting_disabled",
+        "ga4_measurement_not_observed",
+        "ga4_measurement_property_mismatch",
+        "ga4_measurement_quality_unspecified",
+        "ga4_measurement_currency_mismatch",
+        "ga4_measurement_currency_invalid",
+        "ga4_measurement_currency_confusable",
+        "ga4_measurement_date_range_incomplete",
+        "ga4_measurement_date_range_wider",
+        "ga4_measurement_date_range_invalid",
+        "ga4_measurement_date_range_separator",
+        "ga4_measurement_date_range_compact",
+        "ga4_measurement_date_range_folded",
+        "ga4_measurement_date_range_unpadded",
+        "ga4_measurement_date_range_datetime",
+        "ga4_measurement_date_range_offset",
+        "ga4_measurement_date_range_week",
+        "ga4_measurement_date_range_ordinal",
+        '"clientReady": False',
+        '"clientReportingEnabled": False',
+        '"scheduledSyncEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("ga4_measurement_provenance_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper or "REQUESTS." in upper:
+        raise PromotionReadinessError("ga4_measurement_provenance_mutates_or_calls_provider")
+    proof = (root / "ops/ms-robot/test_ga4_measurement_provenance.py").read_text(encoding="utf-8")
+    if "test_sampling_metadata_is_refused" not in proof or "test_enable_mode_is_refused" not in proof or "test_omitted_quality_is_refused" not in proof or "test_blank_or_non_iso_currency_is_refused" not in proof or "test_nfkc_confusable_currency_is_refused" not in proof or "test_narrower_response_date_range_is_refused" not in proof or "test_wider_response_date_range_is_refused" not in proof or "test_slash_response_date_is_refused" not in proof or "test_compact_response_date_is_refused" not in proof or "test_folded_iso_date_is_refused" not in proof or "test_unpadded_iso_date_is_refused" not in proof or "test_datetime_suffix_date_is_refused" not in proof or "test_offset_suffix_date_is_refused" not in proof or "test_week_year_date_is_refused" not in proof or "test_ordinal_date_is_refused" not in proof:
+        raise PromotionReadinessError("ga4_measurement_provenance_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ga4_measurement_provenance_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("ga4_measurement_provenance_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_ga4_measurement(
+        {
+            "property": "properties/123",
+            "responseProperty": "properties/123",
+            "qualityFlags": ["observed"],
+            "samplingMetadatas": [],
+            "subjectToThresholding": False,
+            "sourceRef": "ga4:properties/123:run-1",
+        },
+        mode="inspect",
+    )
+    if plan.get("clientReady") or plan.get("scheduledSyncEnabled") or plan.get("clientReportingEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("ga4_measurement_provenance_not_inert")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["sampled"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused:
+        pass
+    else:
+        raise PromotionReadinessError("ga4_measurement_sampled_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "currencyCode": "US$",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_currency_invalid":
+            raise PromotionReadinessError("ga4_measurement_currency_format_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_currency_format_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "currencyCode": "\uff35\uff33\uff24",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_currency_confusable":
+            raise PromotionReadinessError("ga4_measurement_currency_confusable_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_currency_confusable_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-02",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_incomplete":
+            raise PromotionReadinessError("ga4_measurement_date_range_incomplete_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_incomplete_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-08-31",
+                "responseEndDate": "2026-10-01",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_wider":
+            raise PromotionReadinessError("ga4_measurement_date_range_wider_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_wider_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026/09/01",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_separator":
+            raise PromotionReadinessError("ga4_measurement_date_range_separator_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_separator_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "20260901",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_compact":
+            raise PromotionReadinessError("ga4_measurement_date_range_compact_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_compact_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026\uff0d09\uff0d01",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_folded":
+            raise PromotionReadinessError("ga4_measurement_date_range_folded_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_folded_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-9-1",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_unpadded":
+            raise PromotionReadinessError("ga4_measurement_date_range_unpadded_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_unpadded_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-09-01T00:00:00",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_datetime":
+            raise PromotionReadinessError("ga4_measurement_date_range_datetime_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_datetime_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-09-01+00:00",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_offset":
+            raise PromotionReadinessError("ga4_measurement_date_range_offset_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_offset_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-W36",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_week":
+            raise PromotionReadinessError("ga4_measurement_date_range_week_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_week_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-244",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_ordinal":
+            raise PromotionReadinessError("ga4_measurement_date_range_ordinal_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_ordinal_not_refused")
+    return ["ga4_measurement_provenance_fail_closed"]
+
+
+
+def check_snapshot_window_provenance_gate(root: Path) -> list[str]:
+    """AAX-81 snapshot window and currency stay non-client-ready.
+
+    Does not enable /api/v1/reporting/snapshot and does not replace the
+    sampled-metric classifier already on snapshot_provenance_gate.py.
+    """
+    source_path = root / "ops/ms-robot/snapshot_window_provenance.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_snapshot_window",
+        "snapshot_route_disabled",
+        "snapshot_window_mismatch",
+        "snapshot_currency_mismatch",
+        "snapshot_comparison_currency_mismatch",
+        "snapshot_comparison_row_outside_window",
+        "snapshot_comparison_row_metric_not_declared",
+        "snapshot_comparison_row_metric_duplicate",
+        "snapshot_row_metric_duplicate",
+        "snapshot_row_metric_not_declared",
+        "snapshot_metric_duplicate",
+        "snapshot_comparison_metric_duplicate",
+        "snapshot_metric_set_empty",
+        "snapshot_comparison_metric_set_empty",
+        "snapshot_metric_blank",
+        "snapshot_metric_confusable",
+        "snapshot_comparison_metric_blank",
+        "snapshot_comparison_window_not_distinct",
+        "snapshot_comparison_row_monetary_not_declared",
+        "snapshot_row_monetary_not_declared",
+        '"clientReady": False',
+        '"reportingRouteEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("snapshot_window_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper:
+        raise PromotionReadinessError("snapshot_window_mutates_or_calls_provider")
+    proof = (root / "ops/ms-robot/test_snapshot_window_provenance.py").read_text(encoding="utf-8")
+    if "test_requested_window_mismatch_is_refused" not in proof or "test_monetary_currency_omitted_is_refused" not in proof or "test_comparison_currency_mismatch_is_refused" not in proof or "test_comparison_row_outside_window_is_refused" not in proof or "test_comparison_row_metric_not_declared_is_refused" not in proof or "test_comparison_row_duplicate_metric_alias_is_refused" not in proof or "test_primary_row_duplicate_metric_alias_is_refused" not in proof or "test_primary_row_metric_not_declared_is_refused" not in proof or "test_primary_metric_duplicate_alias_is_refused" not in proof or "test_comparison_metric_duplicate_alias_is_refused" not in proof or "test_empty_declared_metric_list_with_row_metrics_is_refused" not in proof or "test_empty_comparison_metric_list_with_row_metrics_is_refused" not in proof or "test_blank_only_declared_metric_list_is_refused" not in proof or "test_blank_only_comparison_metric_list_is_refused" not in proof or "test_blank_declared_metric_mixed_with_real_metric_is_refused" not in proof or "test_blank_comparison_metric_mixed_with_real_metric_is_refused" not in proof or "test_padded_primary_window_does_not_hide_identical_comparison" not in proof or "test_primary_row_monetary_alias_absent_from_metrics_is_refused" not in proof or "test_comparison_row_monetary_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_total_revenue_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_total_revenue_hyphen_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_primary_row_total_revenue_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_total_revenue_camel_alias_absent_from_metrics_is_refused" not in proof or "test_comparison_row_total_revenue_camel_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_advertiser_ad_cost_camel_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_advertiser_ad_cost_snake_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_advertiser_ad_cost_hyphen_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_advertiser_ad_cost_spaced_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_primary_row_advertiser_ad_cost_camel_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_advertiser_ad_cost_snake_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_advertiser_ad_cost_hyphen_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_advertiser_ad_cost_spaced_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_advertiser_ad_cost_mixed_alias_absent_from_metrics_is_refused" not in proof or "test_comparison_row_advertiser_ad_cost_mixed_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_advertiser_ad_cost_suffix_alias_absent_from_comparison_metrics_is_refused" not in proof or "test_primary_row_advertiser_ad_cost_suffix_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_advertiser_ad_cost_leading_alias_absent_from_metrics_is_refused" not in proof or "test_comparison_row_advertiser_ad_cost_leading_alias_absent_from_comparison_metrics_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_window_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("snapshot_window_provenance_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("snapshot_window_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_snapshot_window(
+        {
+            "projectId": "proj-1",
+            "boundProjectId": "proj-1",
+            "startDate": "2026-09-01",
+            "endDate": "2026-09-07",
+            "requestedStartDate": "2026-09-01",
+            "requestedEndDate": "2026-09-07",
+            "metrics": ["sessions"],
+            "reportingRouteEnabled": False,
+        },
+        mode="inspect",
+    )
+    if plan.get("clientReady") or plan.get("reportingRouteEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("snapshot_window_not_inert")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-08",
+                "metrics": ["purchaseRevenue"],
+                "requestedCurrency": "USD",
+                "currencyCode": "USD",
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused:
+        pass
+    else:
+        raise PromotionReadinessError("snapshot_window_mismatch_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["purchaseRevenue"],
+                "requestedCurrency": "USD",
+                "currencyCode": "USD",
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["purchaseRevenue"],
+                "comparisonCurrency": "EUR",
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_currency_mismatch":
+            raise PromotionReadinessError("snapshot_comparison_currency_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_currency_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-09-03", "metrics": ["sessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_outside_window":
+            raise PromotionReadinessError("snapshot_comparison_row_outside_window_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_outside_window_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["engagedSessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_metric_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_metric_not_declared_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_metric_not_declared_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions", "Sessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_metric_duplicate":
+            raise PromotionReadinessError("snapshot_comparison_row_metric_duplicate_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_metric_duplicate_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions", "Sessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_metric_duplicate":
+            raise PromotionReadinessError("snapshot_row_metric_duplicate_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_metric_duplicate_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions", "engagedSessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_metric_not_declared":
+            raise PromotionReadinessError("snapshot_row_metric_not_declared_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_metric_not_declared_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions", "Sessions"],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_metric_duplicate":
+            raise PromotionReadinessError("snapshot_metric_duplicate_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_metric_duplicate_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions", "Sessions"],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_metric_duplicate":
+            raise PromotionReadinessError("snapshot_comparison_metric_duplicate_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_metric_duplicate_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": [],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_metric_set_empty":
+            raise PromotionReadinessError("snapshot_metric_set_empty_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_metric_set_empty_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": [],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"]}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_metric_set_empty":
+            raise PromotionReadinessError("snapshot_comparison_metric_set_empty_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_metric_set_empty_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["   ", "---"],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_metric_blank":
+            raise PromotionReadinessError("snapshot_metric_blank_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_metric_blank_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": [" ", "123"],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_metric_blank":
+            raise PromotionReadinessError("snapshot_comparison_metric_blank_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_metric_blank_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions", "   "],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_metric_blank":
+            raise PromotionReadinessError("snapshot_metric_blank_mixed_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_metric_blank_mixed_not_refused")
+    if "test_comparison_row_monetary_field_absent_from_comparison_metrics_is_refused" not in proof or "test_comparison_row_monetary_alias_absent_from_comparison_metrics_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_comparison_row_monetary_not_declared_proof_missing")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "purchaseRevenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_monetary_not_declared_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_monetary_not_declared_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "purchase_revenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_monetary_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_monetary_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "total_revenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_total_revenue_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_total_revenue_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "total-revenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_total_revenue_hyphen_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_total_revenue_hyphen_alias_not_refused")
+    if "test_primary_row_monetary_field_absent_from_metrics_is_refused" not in proof or "test_primary_row_monetary_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_total_revenue_hyphen_alias_absent_from_metrics_is_refused" not in proof or "test_primary_row_total_revenue_alias_absent_from_metrics_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_row_monetary_not_declared_proof_missing")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "purchaseRevenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_row_monetary_not_declared_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_monetary_not_declared_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "purchase_revenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_row_monetary_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_monetary_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "total-revenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_row_total_revenue_hyphen_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_total_revenue_hyphen_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "total_revenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_row_total_revenue_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_total_revenue_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "totalRevenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_row_total_revenue_camel_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_row_total_revenue_camel_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "totalRevenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_total_revenue_camel_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_total_revenue_camel_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "advertiserAdCost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_camel_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_camel_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "advertiser_ad_cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_snake_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_snake_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "advertiser-ad-cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_hyphen_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_hyphen_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "advertiser ad cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_spaced_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_spaced_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "advertiserAdCost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_camel_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_camel_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "advertiser_ad_cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_snake_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_snake_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "advertiser-ad-cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_hyphen_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_hyphen_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "advertiser ad cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_spaced_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_spaced_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "advertiserAd_cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_mixed_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_mixed_alias_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "advertiserAdCost_": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_suffix_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_suffix_alias_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], "_advertiserAdCost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_leading_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_primary_row_advertiser_ad_cost_leading_alias_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "advertiserAd_cost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_mixed_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_mixed_alias_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "advertiserAdCost_": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_suffix_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_suffix_alias_not_refused")
+
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "_advertiserAdCost": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_leading_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_advertiser_ad_cost_leading_alias_not_refused")
+    if "test_confusable_purchase_revenue_metric_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_metric_confusable_proof_missing")
+    if "test_primary_row_item_revenue_camel_alias_absent_from_metrics_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_primary_row_item_revenue_camel_alias_proof_missing")
+    if "test_comparison_row_item_revenue_camel_alias_absent_from_comparison_metrics_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_comparison_row_item_revenue_camel_alias_proof_missing")
+    if "test_comparison_row_purchase_revenue_micros_alias_absent_from_comparison_metrics_is_refused" not in proof:
+        raise PromotionReadinessError("snapshot_comparison_row_purchase_revenue_micros_alias_proof_missing")
+    confusable = "\u0440urchaseRevenue"
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "rows": [{"date": "2026-09-03", "metrics": ["sessions"], confusable: 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_metric_confusable":
+            raise PromotionReadinessError("snapshot_metric_confusable_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_metric_confusable_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "itemRevenue": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_item_revenue_camel_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_item_revenue_camel_alias_not_refused")
+    try:
+        module.classify_snapshot_window(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "startDate": "2026-09-01",
+                "endDate": "2026-09-07",
+                "requestedStartDate": "2026-09-01",
+                "requestedEndDate": "2026-09-07",
+                "metrics": ["sessions"],
+                "comparisonStartDate": "2026-08-01",
+                "comparisonEndDate": "2026-08-07",
+                "comparisonRequestedStartDate": "2026-08-01",
+                "comparisonRequestedEndDate": "2026-08-07",
+                "comparisonMetrics": ["sessions"],
+                "comparisonRows": [{"date": "2026-08-03", "metrics": ["sessions"], "purchaseRevenueMicros": 12}],
+                "reportingRouteEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.SnapshotWindowRefused as refused:
+        if refused.code != "snapshot_comparison_row_monetary_not_declared":
+            raise PromotionReadinessError("snapshot_comparison_row_purchase_revenue_micros_alias_not_refused")
+    else:
+        raise PromotionReadinessError("snapshot_comparison_row_purchase_revenue_micros_alias_not_refused")
+    return ["snapshot_window_provenance_fail_closed"]
+
+
+def check_ga4_property_binding_gate(root: Path) -> list[str]:
+    """GA4 property binding stays non-sync until an explicit authorised map exists.
+
+    Does not call Google, does not enable scheduled portfolio sync, and does
+    not replace the GA4 sync correctness owned by draft PR #28.
+    """
+    source_path = root / "ops/ms-robot/ga4_property_binding.py"
+    source = source_path.read_text(encoding="utf-8")
+    for marker in (
+        "def classify_ga4_binding",
+        "ga4_sync_disabled",
+        "ga4_property_unbound",
+        "ga4_authorised_read_missing",
+        '"providerReady": False',
+        '"scheduledSyncEnabled": False',
+        '"clientReportingEnabled": False',
+    ):
+        if marker not in source:
+            raise PromotionReadinessError("ga4_property_binding_gate_missing:" + marker)
+    upper = source.upper()
+    if "DELETE FROM" in upper or "DROP TABLE" in upper:
+        raise PromotionReadinessError("ga4_property_binding_mutates_or_calls_provider")
+    proof = (root / "ops/ms-robot/test_ga4_property_binding.py").read_text(encoding="utf-8")
+    if "test_numeric_property_is_refused" not in proof or "test_enable_mode_is_refused" not in proof or "test_scheme_site_is_refused" not in proof:
+        raise PromotionReadinessError("ga4_property_binding_proof_missing")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ga4_property_binding_check", source_path)
+    if spec is None or spec.loader is None:
+        raise PromotionReadinessError("ga4_property_binding_module_unloadable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plan = module.classify_ga4_binding(
+        {
+            "projectId": "proj-1",
+            "boundProjectId": "proj-1",
+            "site": "example.com",
+            "boundSite": "example.com",
+            "property": "properties/123",
+            "boundProperty": "properties/123",
+            "authorisedRead": True,
+        },
+        mode="inspect",
+    )
+    if plan.get("providerReady") or plan.get("scheduledSyncEnabled") or plan.get("clientReportingEnabled") or plan.get("action") != "none":
+        raise PromotionReadinessError("ga4_property_binding_not_inert")
+    try:
+        module.classify_ga4_binding(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "site": "example.com",
+                "boundSite": "example.com",
+                "property": "123",
+                "boundProperty": "123",
+                "authorisedRead": True,
+            },
+            mode="inspect",
+        )
+    except module.Ga4BindingRefused:
+        pass
+    else:
+        raise PromotionReadinessError("ga4_numeric_property_not_refused")
+    try:
+        module.classify_ga4_binding(
+            {
+                "projectId": "proj-1",
+                "boundProjectId": "proj-1",
+                "site": "https://example.com",
+                "boundSite": "https://example.com",
+                "property": "properties/123",
+                "boundProperty": "properties/123",
+                "authorisedRead": True,
+                "scheduledSyncEnabled": False,
+                "clientReportingEnabled": False,
+            },
+            mode="inspect",
+        )
+    except module.Ga4BindingRefused as refused:
+        if refused.code != "ga4_site_unbound":
+            raise PromotionReadinessError("ga4_scheme_site_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_scheme_site_not_refused")
+    return ["ga4_property_binding_fail_closed"]
+
+
+
 def assess(root: Path | None = None) -> dict:
     root = repo_root_from(root)
     checks = []
@@ -344,6 +1972,13 @@ def assess(root: Path | None = None) -> dict:
     checks.extend(check_journal_warning_copy_gate(root))
     checks.extend(check_upstream_tree_reconciliation(root))
     checks.extend(check_sqlite_coordinator_skips_postgres_0008(root))
+    checks.extend(check_main_privacy_reconciliation(root))
+    checks.extend(check_operational_retention_gate(root))
+    checks.extend(check_recommendation_execution_gate(root))
+    checks.extend(check_snapshot_provenance_gate(root))
+    checks.extend(check_snapshot_window_provenance_gate(root))
+    checks.extend(check_ga4_property_binding_gate(root))
+    checks.extend(check_ga4_measurement_provenance_gate(root))
     return {
         "status": "not_promotable",
         "promotionAuthorised": False,
