@@ -61,6 +61,8 @@ DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]")
 OFFSET_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[+-Zz]")
 # ISO week-year (2026-W36, 2026-W36-1) is not the date-only window.
 WEEK_RE = re.compile(r"^\d{4}-W\d{1,2}(-\d)?$")
+# ISO ordinal dates (2026-244) are not the date-only YYYY-MM-DD window.
+ORDINAL_RE = re.compile(r"^\d{4}-\d{3}$")
 
 
 
@@ -96,6 +98,10 @@ def require_iso_date(value):
     # Check the folded form so fullwidth digits cannot skip the refusal.
     if WEEK_RE.fullmatch(folded) or (folded != raw and WEEK_RE.fullmatch(folded)):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_week")
+    # An ISO ordinal date is not the requested date-only window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if ORDINAL_RE.fullmatch(folded) or (folded != raw and ORDINAL_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_ordinal")
 
     match = DATE_RE.fullmatch(raw)
     if not match:
