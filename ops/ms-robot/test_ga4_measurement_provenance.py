@@ -323,6 +323,28 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(plan["scheduledSyncEnabled"])
         self.assertFalse(plan["clientReportingEnabled"])
 
+
+    def test_week_year_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-W36"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_week")
+        day = observed()
+        day["requestedStartDate"] = "2026-09-01"
+        day["requestedEndDate"] = "2026-W36-1"
+        day["responseStartDate"] = "2026-09-01"
+        day["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(day)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_week")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")
