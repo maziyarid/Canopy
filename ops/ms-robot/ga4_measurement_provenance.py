@@ -57,6 +57,8 @@ SPACED_RE = re.compile(r"^\d{4}\s+\d{1,2}\s+\d{1,2}$")
 UNPADDED_RE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}$")
 # Datetime suffixes (2026-09-01T00:00:00, 2026-09-01 00:00) are not the date-only window.
 DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]")
+# Timezone offset suffixes (2026-09-01+00:00, 2026-09-01Z) are not the date-only window.
+OFFSET_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[+-Zz]")
 
 
 def require_iso_date(value):
@@ -83,6 +85,10 @@ def require_iso_date(value):
     # Check the folded form so fullwidth digits or separators cannot skip it.
     if DATETIME_RE.match(folded) or (folded != raw and DATETIME_RE.match(folded)):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_datetime")
+    # A timezone offset suffix is not the requested date-only window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if OFFSET_RE.match(folded) or (folded != raw and OFFSET_RE.match(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_offset")
     match = DATE_RE.fullmatch(raw)
     if not match:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_invalid")
