@@ -1,4 +1,5 @@
 import type { InsightJournalDay, InsightRecord } from "./evidence-insights.ts";
+import { redactClientText } from "./client-report-view.ts";
 
 export type InsightCardView = {
   id: string;
@@ -76,6 +77,23 @@ export function toInsightCardView(insight: InsightRecord): InsightCardView {
     recommendedAction: insight.recommendedAction,
     metricNames: metricNamesForInsight(insight),
     evidenceCount: insight.evidenceRefs.length,
+  };
+}
+
+/** Client cards keep the existing journal mount, but drop credential-shaped text. */
+export function toClientInsightCardView(insight: InsightRecord): InsightCardView | null {
+  const title = redactClientText(insight.title);
+  const body = redactClientText(insight.body);
+  if (!title && !body) return null;
+  return {
+    ...toInsightCardView(insight),
+    title: title ?? "",
+    body: body ?? "",
+    limitation: redactClientText(insight.limitation) ?? "",
+    recommendedAction: redactClientText(insight.recommendedAction),
+    metricNames: metricNamesForInsight(insight)
+      .map((name) => redactClientText(name))
+      .filter((name): name is string => Boolean(name)),
   };
 }
 

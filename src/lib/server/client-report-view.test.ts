@@ -1,16 +1,22 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   applySectionFreshness,
   buildClientReportView,
+  buildGatedClientDashboard,
+  bindResolvedDashboardAccess,
+  DISABLED_REPORTING_ROUTE,
   channelMeasuredTotal,
   classifyChannel,
   clientLabelForStatus,
   freshnessStatus,
   groupAcquisitionChannels,
+  isReportingConfiguredForRole,
   newestMeasurementStamp,
   normalizeClientStatus,
   parseTimestamp,
+  clientSafePeriod,
   redactClientText,
   staleAfterMs,
   toClientSectionView,
@@ -230,5 +236,273 @@ describe("AAX-80 client report view", () => {
 
   it("redacts credential-shaped strings", () => {
     assert.equal(redactClientText("api_key=sk_live_example"), "api_key=<redacted>");
+  });
+});
+
+describe("AAX-80 gated client dashboard", () => {
+  it("rejects a client-supplied project id that differs from the server binding", () => {
+    assert.throws(
+      () =>
+        buildGatedClientDashboard({
+          access: {
+            role: "client",
+            boundProjectId: "project-a",
+            requestedProjectId: "project-b",
+            reportingConfigured: true,
+          },
+          site: "example.com",
+          periodLabel: "2026-09-01..2026-09-28",
+          sections: [section({})],
+          now: NOW,
+        }),
+      /client_supplied_scope_rejected/,
+    );
+  });
+
+  it("keeps client reporting disabled while owner/editor internal reporting stays configured", () => {
+    assert.equal(isReportingConfiguredForRole("client"), false);
+    assert.equal(isReportingConfiguredForRole("owner"), true);
+    assert.equal(isReportingConfiguredForRole("editor"), true);
+  });
+
+  it("wires the client activation gate before reporting data reads in every client entrypoint", () => {
+    const source = readFileSync(new URL("./reporting-snapshot.ts", import.meta.url), "utf8");
+    const handlers = ["getReportingSnapshot", "getProjectReport", "exportProjectReport", "getProjectSearchTable"];
+    for (const name of handlers) {
+      const start = source.indexOf(`export const ${name}`);
+      const next = source.indexOf("export const ", start + 1);
+      const block = source.slice(start, next === -1 ? source.length : next);
+      assert.ok(start >= 0, `missing ${name}`);
+      for (const reader of ["loadReportingSnapshot", "loadSearchTable"]) {
+        const readAt = block.indexOf(reader);
+        if (readAt < 0) continue;
+        const wrapperAt = block.lastIndexOf("readIfReportingConfigured", readAt);
+        assert.ok(wrapperAt >= 0 && wrapperAt < readAt, `${name} must pass ${reader} through readIfReportingConfigured`);
+        const between = block.slice(wrapperAt, readAt);
+        assert.match(between, /=>\s*$/m, `${name} ${reader} must stay inside the unread callback`);
+      }
+    }
+    const reportStart = source.indexOf("export const getProjectReport");
+    const reportEnd = source.indexOf("export const exportProjectReport", reportStart + 1);
+    const report = source.slice(reportStart, reportEnd);
+    const emptyReturn = report.indexOf("if (!reportingConfigured)");
+    const reportRead = report.indexOf("readIfReportingConfigured");
+    assert.ok(emptyReturn >= 0 && reportRead > emptyReturn, "unconfigured getProjectReport must return before any reporting read");
+    const exportStart = source.indexOf("export const exportProjectReport");
+    const exportEnd = source.indexOf("export const getProjectSearchTable", exportStart + 1);
+    const exportBlock = source.slice(exportStart, exportEnd);
+    const exportReject = exportBlock.indexOf("Reporting unavailable");
+    const exportRead = exportBlock.indexOf("loadReportingSnapshot");
+    assert.ok(exportReject >= 0 && exportRead > exportReject, "unconfigured exportProjectReport must reject before snapshot load");
+    assert.match(exportBlock, /projectId: access\.project\.id/);
+  });
+
+  it("normalizes export/search access and reuses the already loaded admin snapshot", () => {
+    const source = readFileSync(new URL("./reporting-snapshot.ts", import.meta.url), "utf8");
+    const exportStart = source.indexOf("export const exportProjectReport");
+    const searchStart = source.indexOf("export const getProjectSearchTable", exportStart + 1);
+    assert.ok(exportStart >= 0 && searchStart > exportStart);
+    const exportBlock = source.slice(exportStart, searchStart);
+    const searchBlock = source.slice(searchStart);
+    const reportStart = source.indexOf("export const getProjectReport");
+    const reportBlock = source.slice(reportStart, exportStart);
+    assert.match(reportBlock, /resolveSnapshotAccess/);
+    assert.doesNotMatch(reportBlock, /await resolveAccess\(/);
+    assert.match(exportBlock, /resolveSnapshotAccess/);
+    assert.match(searchBlock, /resolveSnapshotAccess/);
+    assert.match(exportBlock, /exportLoadedReportRecord/);
+    assert.doesNotMatch(exportBlock, /exportReportRecord\s*\(/);
+  });
+
+  it("shows reporting unavailable before the no-grants state", () => {
+    const source = readFileSync(new URL("../../components/project-report.tsx", import.meta.url), "utf8");
+    const unavailableAt = source.indexOf(": !report.view.reportingConfigured");
+    const noGrantsAt = source.indexOf(": !report.view.sections.length", unavailableAt + 1);
+    assert.ok(unavailableAt >= 0 && noGrantsAt > unavailableAt);
+  });
+
+  it("fails closed and does not call the disabled reporting route when unconfigured", async () => {
+    const called = 0;
+    const view = buildGatedClientDashboard({
+      access: { role: "client", boundProjectId: "project-a", reportingConfigured: false },
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      sections: [section({ reasonCode: "provider_secret_ref" })],
+      now: NOW,
+      fetchImpl: undefined,
+    });
+    assert.equal(view.reportingConfigured, false);
+    assert.equal(view.remoteRoute, null);
+    assert.equal(view.transport, "local_view_model_only");
+    assert.equal(view.sections.length, 0);
+    assert.equal(view.acquisitionStatus, "unavailable");
+    assert.equal(called, 0);
+    assert.equal(DISABLED_REPORTING_ROUTE, "/api/v1/reporting/snapshot");
+  });
+
+  it("refuses a fetch implementation so the disabled route cannot be activated here", () => {
+    assert.throws(
+      () =>
+        buildGatedClientDashboard({
+          access: { role: "client", boundProjectId: "project-a", reportingConfigured: true },
+          site: "example.com",
+          periodLabel: "2026-09-01..2026-09-28",
+          sections: [section({})],
+          fetchImpl: async () => ({ ok: true }),
+        }),
+      /client_dashboard_remote_route_forbidden/,
+    );
+  });
+
+
+  it("rejects a missing or padded server project binding", () => {
+    assert.throws(
+      () =>
+        buildGatedClientDashboard({
+          access: { role: "client", boundProjectId: "  ", reportingConfigured: true },
+          site: "example.com",
+          periodLabel: "2026-09-01..2026-09-28",
+          sections: [section({})],
+        }),
+      /client_supplied_scope_rejected/,
+    );
+  });
+
+  it("does not widen a keyword-restricted grant into acquisition", () => {
+    const view = buildGatedClientDashboard({
+      access: { role: "client", boundProjectId: "project-a", reportingConfigured: true },
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      grants: ["search"],
+      sections: [
+        section({ key: "search" }),
+        section({ key: "acquisition", metrics: [{ name: "organic", value: 9, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" }] }),
+      ],
+      now: NOW,
+    });
+    assert.deepEqual(view.sections.map((item) => item.key), ["search"]);
+    assert.equal(view.acquisitionStatus, null);
+    assert.equal(view.channels.organic.length, 0);
+  });
+  it("strips reason codes and provider health from the client role", () => {
+    const view = buildGatedClientDashboard({
+      access: { role: "client", boundProjectId: "project-a", requestedProjectId: "project-a", reportingConfigured: true },
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      grants: ["search", "providerHealth"],
+      sections: [
+        section({ reasonCode: "quota_state_internal", warning: "bearer secret-token" }),
+        section({ key: "providerHealth", status: "degraded", reasonCode: "sync_ledger" }),
+      ],
+      now: NOW,
+    });
+    assert.equal(view.projectId, "project-a");
+    assert.equal(view.sections.some((item) => item.key === "providerHealth"), false);
+    assert.equal(view.sections.every((item) => item.reasonCode === null), true);
+    assert.equal(view.sections[0]?.warning?.includes("secret-token"), false);
+  });
+
+  it("fails closed when the snapshot project differs from the resolved binding", () => {
+    assert.throws(
+      () =>
+        bindResolvedDashboardAccess({
+          role: "client",
+          resolvedProjectId: "project-a",
+          requestedProjectId: "project-a",
+          snapshotProjectId: "project-b",
+          reportingConfigured: true,
+        }),
+      /client_supplied_scope_rejected/,
+    );
+  });
+
+  it("redacts credential-shaped metric names before a client dashboard is returned", () => {
+    const access = bindResolvedDashboardAccess({
+      role: "client",
+      resolvedProjectId: "project-a",
+      requestedProjectId: "project-a",
+      snapshotProjectId: "project-a",
+      reportingConfigured: true,
+    });
+    const view = buildGatedClientDashboard({
+      access,
+      site: "https://example.com api_key=sk_live_example",
+      periodLabel: "2026-09-01..2026-09-28",
+      sections: [
+        section({
+          metrics: [
+            {
+              name: "clicks access_token=secret-token",
+              value: 3,
+              provenance: "first_party",
+              provider: "gsc",
+              dataDate: "2026-09-27",
+            },
+          ],
+        }),
+      ],
+      now: NOW,
+    });
+    assert.equal(view.projectId, "project-a");
+    assert.equal(view.site.includes("sk_live_example"), false);
+    assert.equal(view.sections[0]?.metrics[0]?.name.includes("secret-token"), false);
+    assert.equal(view.remoteRoute, null);
+  });
+
+  it("rebuilds client channels from redacted metric names and strips period labels", () => {
+    const access = bindResolvedDashboardAccess({
+      role: "client",
+      resolvedProjectId: "project-a",
+      requestedProjectId: "project-a",
+      snapshotProjectId: "project-a",
+      reportingConfigured: true,
+    });
+    const view = buildGatedClientDashboard({
+      access,
+      site: "example.com",
+      periodLabel: "2026-09-01..2026-09-28",
+      sections: [
+        section({
+          key: "acquisition",
+          metrics: [
+            { name: "organic access_token=secret-token", value: 4, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" },
+            { name: "organic", value: 2, provenance: "first_party", provider: "ga4", dataDate: "2026-09-27" },
+          ],
+        }),
+      ],
+      now: NOW,
+    });
+    const channelNames = Object.values(view.channels).flat().map((metric) => metric.name);
+    assert.equal(channelNames.some((name) => name.includes("secret-token")), false);
+    assert.equal(channelNames.includes("organic"), true);
+    const period = clientSafePeriod({ start: "2026-09-01", end: "2026-09-28", label: "range api_key=sk_live_example" });
+    assert.equal(period?.label.includes("sk_live_example"), false);
+    assert.equal(period?.start, "2026-09-01");
+    const poisoned = clientSafePeriod({ start: "2026-09-01 api_key=sk_live_example", end: "2026-09-28", label: "range" });
+    assert.equal(poisoned?.start.includes("sk_live_example"), false);
+    assert.equal(poisoned?.start.includes("<redacted>"), true);
+    assert.equal(poisoned?.end, "2026-09-28");
+  });
+
+  it("redacts site and period labels on the unconfigured fail-closed dashboard", () => {
+    const access = bindResolvedDashboardAccess({
+      role: "client",
+      resolvedProjectId: "project-a",
+      requestedProjectId: "project-a",
+      snapshotProjectId: "project-a",
+      reportingConfigured: false,
+    });
+    const view = buildGatedClientDashboard({
+      access,
+      site: "https://example.com api_key=sk_live_example",
+      periodLabel: "range access_token=secret-token",
+      sections: [],
+    });
+    assert.equal(view.reportingConfigured, false);
+    assert.equal(view.remoteRoute, null);
+    assert.equal(view.sections.length, 0);
+    assert.equal(view.site.includes("sk_live_example"), false);
+    assert.equal(view.periodLabel.includes("secret-token"), false);
+    assert.equal(view.periodLabel.includes("<redacted>"), true);
   });
 });

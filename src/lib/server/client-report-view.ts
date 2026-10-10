@@ -347,3 +347,164 @@ export function buildClientReportView(input: {
     acquisitionStatus: acquisitionView?.status ?? null,
   };
 }
+
+export const CLIENT_DASHBOARD_TRANSPORT = "local_view_model_only" as const;
+export const DISABLED_REPORTING_ROUTE = "/api/v1/reporting/snapshot";
+
+/**
+ * AAX-80 activation gate. Client reporting remains fail-closed until the
+ * separate AAX-81 transport/authentication gate is explicitly promoted.
+ * Internal owner/editor reporting continues to use the local snapshot model.
+ */
+export function isReportingConfiguredForRole(role: ReportRole): boolean {
+  return role !== "client";
+}
+
+export type DashboardAccess = {
+  role: ReportRole;
+  boundProjectId: string;
+  requestedProjectId?: string | null;
+  reportingConfigured: boolean;
+};
+
+export class ClientDashboardScopeError extends Error {
+  readonly code = "client_supplied_scope_rejected";
+  constructor() {
+    super("client_supplied_scope_rejected");
+    this.name = "ClientDashboardScopeError";
+  }
+}
+
+export function bindResolvedDashboardAccess(input: {
+  role: ReportRole;
+  resolvedProjectId: string;
+  requestedProjectId: string;
+  snapshotProjectId: string;
+  reportingConfigured: boolean;
+}): DashboardAccess {
+  const resolved = input.resolvedProjectId?.trim();
+  if (!resolved || resolved !== input.resolvedProjectId) {
+    throw new ClientDashboardScopeError();
+  }
+  if (input.requestedProjectId !== resolved || input.snapshotProjectId !== resolved) {
+    throw new ClientDashboardScopeError();
+  }
+  return {
+    role: input.role,
+    boundProjectId: resolved,
+    requestedProjectId: input.requestedProjectId,
+    reportingConfigured: input.reportingConfigured,
+  };
+}
+
+export function assertDashboardScope(access: DashboardAccess): void {
+  const bound = access.boundProjectId?.trim();
+  if (!bound || bound !== access.boundProjectId) {
+    throw new ClientDashboardScopeError();
+  }
+  const requested = access.requestedProjectId?.trim();
+  if (requested && requested !== bound) {
+    throw new ClientDashboardScopeError();
+  }
+}
+
+export type GatedClientDashboard = ClientReportView & {
+  transport: typeof CLIENT_DASHBOARD_TRANSPORT;
+  remoteRoute: null;
+  reportingConfigured: boolean;
+};
+
+function emptyClientDashboard(access: DashboardAccess, site: string, periodLabel: string): GatedClientDashboard {
+  return {
+    projectId: access.boundProjectId,
+    site: redactClientText(site) ?? "",
+    periodLabel: redactClientText(periodLabel) ?? "",
+    comparisonLabel: null,
+    sections: [],
+    channels: groupAcquisitionChannels([]),
+    acquisitionStatus: "unavailable",
+    transport: CLIENT_DASHBOARD_TRANSPORT,
+    remoteRoute: null,
+    reportingConfigured: false,
+  };
+}
+
+/**
+ * AAX-80 adapter. Uses the local view-model only.
+ * The public reporting route stays disabled (PR #17); this function must not fetch it.
+ */
+
+export function clientSafePeriod<T extends { label: string; start?: string; end?: string }>(period: T | null | undefined): T | null {
+  if (!period) return null;
+  return {
+    ...period,
+    label: redactClientText(period.label) ?? "",
+    ...(period.start !== undefined ? { start: redactClientText(period.start) ?? "" } : {}),
+    ...(period.end !== undefined ? { end: redactClientText(period.end) ?? "" } : {}),
+  };
+}
+
+export function buildGatedClientDashboard(input: {
+  access: DashboardAccess;
+  site: string;
+  periodLabel: string;
+  comparisonLabel?: string | null;
+  grants?: string[];
+  sections: SnapshotSection[];
+  now?: number;
+  fetchImpl?: (input: string) => Promise<unknown>;
+}): GatedClientDashboard {
+  assertDashboardScope(input.access);
+  if (input.fetchImpl) {
+    throw new Error("client_dashboard_remote_route_forbidden");
+  }
+  if (!input.access.reportingConfigured) {
+    return emptyClientDashboard(input.access, input.site, input.periodLabel);
+  }
+  const view = buildClientReportView({
+    projectId: input.access.boundProjectId,
+    site: input.site,
+    periodLabel: input.periodLabel,
+    comparisonLabel: input.comparisonLabel,
+    role: input.access.role,
+    grants: input.grants,
+    sections: input.sections,
+    now: input.now,
+  });
+  const sections = view.sections
+    .filter((section) => input.access.role !== "client" || section.key !== "providerHealth")
+    .map((section) =>
+      input.access.role === "client"
+        ? {
+            ...section,
+            reasonCode: null,
+            status: normalizeClientStatus(section.status),
+            warning: redactClientText(section.warning),
+            freshness: redactClientText(section.freshness),
+            metrics: section.metrics
+              .map((metric) => ({
+                ...metric,
+                name: redactClientText(metric.name) ?? "",
+                provider: redactClientText(metric.provider) ?? "unknown",
+                provenance: metric.provenance,
+              }))
+              .filter((metric) => metric.name.length > 0),
+          }
+        : section,
+    );
+  const acquisition = sections.find((section) => section.key === "acquisition");
+  return {
+    ...view,
+    site: redactClientText(view.site) ?? "",
+    periodLabel: redactClientText(view.periodLabel) ?? view.periodLabel,
+    comparisonLabel: redactClientText(view.comparisonLabel),
+    projectId: input.access.boundProjectId,
+    sections,
+    channels: input.access.role === "client"
+      ? groupAcquisitionChannels(acquisition?.metrics ?? [])
+      : view.channels,
+    transport: CLIENT_DASHBOARD_TRANSPORT,
+    remoteRoute: null,
+    reportingConfigured: true,
+  };
+}
