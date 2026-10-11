@@ -391,6 +391,29 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(plan["scheduledSyncEnabled"])
         self.assertFalse(plan["clientReportingEnabled"])
 
+    def test_month_name_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-Sep-01"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_month_name")
+        named = observed()
+        named["requestedStartDate"] = "2026-09-01"
+        named["requestedEndDate"] = "Sep 30, 2026"
+        named["responseStartDate"] = "2026-09-01"
+        named["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(named)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_month_name")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
+
     def test_enable_mode_is_refused(self):
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
             classify_ga4_measurement(observed(), mode="enable")
