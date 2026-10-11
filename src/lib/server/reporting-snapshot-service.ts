@@ -12,7 +12,7 @@ import {
   computeStableEtag,
   periodFromLabel,
   deriveOverview,
-  firstPartyProvider,
+  metricProvenance,
   ledgerFingerprint,
   mapProviderStatus,
   redactWarning,
@@ -123,7 +123,7 @@ function sectionFromRows(
       .map((row) => ({
         name: row.metricName as string,
         value: row.metricValue ?? null,
-        provenance: firstPartyProvider(row.provider) ? "first_party" : "third_party_estimate",
+        provenance: metricProvenance(row),
         provider: row.provider,
         dataDate: row.dataDate ?? null,
         ...(row.coverage ? { coverage: row.coverage } : {}),
