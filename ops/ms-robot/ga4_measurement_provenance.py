@@ -67,6 +67,8 @@ ORDINAL_RE = re.compile(r"^\d{4}-\d{3}$")
 BASIC_WEEK_RE = re.compile(r"^\d{4}W\d{1,2}$")
 # Month-name forms (2026-Sep-01, Sep 1, 2026) are not the date-only window.
 MONTH_NAME_RE = re.compile(r"^(\d{4}-[A-Za-z]{3}-\d{1,2}|[A-Za-z]{3}\s+\d{1,2},\s+\d{4})$")
+# Year-month forms (2026-09) are not the date-only window.
+YEAR_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
 
 
@@ -113,6 +115,9 @@ def require_iso_date(value):
     # A month-name form is not the requested date-only window.
     if MONTH_NAME_RE.fullmatch(folded) or (folded != raw and MONTH_NAME_RE.fullmatch(folded)):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_month_name")
+    # A year-month form is not the requested date-only window.
+    if YEAR_MONTH_RE.fullmatch(folded) or (folded != raw and YEAR_MONTH_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_year_month")
 
     match = DATE_RE.fullmatch(raw)
     if not match:
