@@ -1,1 +1,1 @@
-$(cat /tmp/test_ga4.py)
+$(cat /tmp/canopy/ops/ms-robot/test_ga4_measurement_provenance.py)
