@@ -43,8 +43,6 @@ class OperationalRetentionTest(unittest.TestCase):
                 plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=rows)
             self.assertIn("retention_row_count_invalid", str(caught.exception))
 
-
-
     def test_mixed_case_medical_and_operational_domains(self):
         with self.assertRaises(RetentionRefused) as caught:
             plan_operational_retention(data_domain="Medical", mode="dry-run", candidate_rows=1)
@@ -55,6 +53,15 @@ class OperationalRetentionTest(unittest.TestCase):
         plan = plan_operational_retention(data_domain="THESIS", mode="dry-run", candidate_rows=4)
         self.assertEqual(plan["dataDomain"], "thesis")
         self.assertFalse(plan["executed"])
+
+    def test_whitespace_padded_mode_is_normalised_then_refused_or_accepted(self):
+        # Padded dry-run is accepted after strip; padded execute is refused.
+        plan = plan_operational_retention(data_domain="other", mode="  dry-run  ", candidate_rows=2)
+        self.assertEqual(plan["mode"], "dry-run")
+        self.assertFalse(plan["executed"])
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="other", mode="  execute  ", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_execution_disabled")
 
 if __name__ == "__main__":
     unittest.main()
