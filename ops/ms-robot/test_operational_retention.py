@@ -31,6 +31,18 @@ class OperationalRetentionTest(unittest.TestCase):
         with self.assertRaises(RetentionRefused):
             plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=True)
 
+    def test_none_empty_and_whitespace_only_domain_fail_closed(self):
+        for domain in (None, "", "   ", "\t", "medical "):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+
+    def test_non_integer_and_negative_counts_fail_closed(self):
+        for rows in (None, 1.5, "3", -5, False):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=rows)
+            self.assertIn("retention_row_count_invalid", str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
