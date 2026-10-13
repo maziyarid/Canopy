@@ -44,5 +44,17 @@ class OperationalRetentionTest(unittest.TestCase):
             self.assertIn("retention_row_count_invalid", str(caught.exception))
 
 
+
+    def test_mixed_case_medical_and_operational_domains(self):
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="Medical", mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="MEDICAL", mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        plan = plan_operational_retention(data_domain="THESIS", mode="dry-run", candidate_rows=4)
+        self.assertEqual(plan["dataDomain"], "thesis")
+        self.assertFalse(plan["executed"])
+
 if __name__ == "__main__":
     unittest.main()
