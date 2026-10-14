@@ -1,4 +1,5 @@
 import type { ReportingSnapshot, SnapshotMetric } from "./reporting-snapshot-core.ts";
+import { redactClientText } from "./client-report-view.ts";
 
 export type ComparisonRow = {
   section: string; provider: string; metric: string;
@@ -25,6 +26,22 @@ export function comparisonRows(snapshot: ReportingSnapshot): ComparisonRow[] {
   });
 }
 
+/** Client comparisons stay inside granted sections and drop credential-shaped metric names. */
+export function clientComparisonRows(
+  snapshot: ReportingSnapshot,
+  visibleSectionKeys: readonly string[],
+): ComparisonRow[] {
+  const allow = new Set(visibleSectionKeys.filter((key) => key !== "overview" && key !== "providerHealth"));
+  return comparisonRows(snapshot)
+    .filter((row) => allow.has(row.section))
+    .map((row) => ({
+      ...row,
+      metric: redactClientText(row.metric) ?? "",
+      provider: redactClientText(row.provider) ?? "unknown",
+    }))
+    .filter((row) => row.metric.length > 0);
+}
+
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -45,4 +62,38 @@ export function reportCsv(snapshot: ReportingSnapshot): string {
     return [snapshot.site, snapshot.period.start, snapshot.period.end, section.key, metric.provider, metric.name, finite(metric.value), metric.provenance, metric.dataDate, metric.coverage?.complete ?? false, section.status, snapshot.comparison?.start, snapshot.comparison?.end, comparison?.previous, comparison?.difference, comparison?.relativeChange, comparison?.reason];
   }));
   return [header, ...rows].map(row => row.map(cell).join(",")).join("\r\n") + "\r\n";
+}
+
+export type ClientExportSection = {
+  key: string;
+  status: string;
+  metrics: Array<{ name: string; provider: string; value: number | null; provenance?: string | null; dataDate?: string | null }>;
+};
+
+/** Client export uses the already redacted dashboard view and visible journal titles only. */
+export function clientEvidenceExportCsv(input: {
+  site: string;
+  periodStart: string;
+  periodEnd: string;
+  sections: readonly ClientExportSection[];
+  evidenceTitles: readonly string[];
+}): string {
+  const site = redactClientText(input.site) ?? "";
+  const periodStart = redactClientText(input.periodStart) ?? "";
+  const periodEnd = redactClientText(input.periodEnd) ?? "";
+  const header = ["site", "period_start", "period_end", "section", "provider", "metric", "value", "provenance", "data_date", "status", "evidence_title"];
+  const metricRows = input.sections
+    .filter((section) => section.key !== "overview" && section.key !== "providerHealth")
+    .flatMap((section) => section.metrics.map((metric) => [
+      site, periodStart, periodEnd, section.key, metric.provider, metric.name,
+      finite(metric.value), metric.provenance ?? "", metric.dataDate ?? "", section.status, "",
+    ]));
+  const evidenceRows = input.evidenceTitles.flatMap((title) => {
+    const visible = redactClientText(title);
+    if (!visible) return [];
+    return [[
+      site, periodStart, periodEnd, "evidence_note", "", "", "", "", "", "visible", visible,
+    ]];
+  });
+  return [header, ...metricRows, ...evidenceRows].map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
