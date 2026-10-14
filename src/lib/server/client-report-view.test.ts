@@ -506,3 +506,31 @@ describe("AAX-80 gated client dashboard", () => {
     assert.equal(view.periodLabel.includes("<redacted>"), true);
   });
 });
+
+
+describe("AAX-80 reporting read gate behavioural proof", () => {
+  it("does not invoke the reader callback for unconfigured client role", async () => {
+    const { readIfReportingConfigured, loadProjectReport } = await import("./reporting-read-gate.ts");
+    let called = 0;
+    const reader = async () => {
+      called += 1;
+      return { secret: "should-not-read" };
+    };
+    await assert.rejects(
+      () => readIfReportingConfigured("client", reader),
+      /Reporting unavailable/,
+    );
+    assert.equal(called, 0);
+
+    called = 0;
+    const unavailable = { empty: true };
+    const result = await loadProjectReport("client", unavailable, reader);
+    assert.equal(result, unavailable);
+    assert.equal(called, 0);
+
+    called = 0;
+    const ownerResult = await readIfReportingConfigured("owner", reader);
+    assert.equal(ownerResult.secret, "should-not-read");
+    assert.equal(called, 1);
+  });
+});
