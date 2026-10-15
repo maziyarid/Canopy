@@ -1,87 +1,104 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   planOperationalRetention,
   RetentionRefused,
-  OPERATIONAL_DOMAINS,
-} from "./operational-retention";
+} from "./operational-retention.ts";
 
-describe("planOperationalRetention", () => {
-  it("returns a dry-run plan for operational domains and never executes", () => {
-    for (const domain of OPERATIONAL_DOMAINS) {
+describe("AAX-55 operational retention planner", () => {
+  it("dry-run does not execute for operational domains", () => {
+    for (const domain of ["thesis", "other"] as const) {
       const plan = planOperationalRetention({
         dataDomain: domain,
         mode: "dry-run",
-        candidateRows: 7,
+        candidateRows: 3,
       });
-      expect(plan).toEqual({
-        action: "none",
-        executed: false,
-        dataDomain: domain,
-        mode: "dry-run",
-        candidateRows: 7,
-        medicalRetentionActivated: false,
-      });
+      assert.equal(plan.executed, false);
+      assert.equal(plan.action, "none");
+      assert.equal(plan.medicalRetentionActivated, false);
+      assert.equal(plan.candidateRows, 3);
+      assert.equal(plan.dataDomain, domain);
+      assert.equal(plan.mode, "dry-run");
     }
   });
 
-  it("refuses execute/apply modes", () => {
-    expect(() =>
-      planOperationalRetention({
-        dataDomain: "thesis",
-        mode: "execute",
-        candidateRows: 1,
-      }),
-    ).toThrow(RetentionRefused);
-    expect(() =>
-      planOperationalRetention({
-        dataDomain: "other",
-        mode: "apply",
-        candidateRows: 1,
-      }),
-    ).toThrow(/retention_execution_disabled/);
+  it("medical domain is refused", () => {
+    assert.throws(
+      () =>
+        planOperationalRetention({
+          dataDomain: "medical",
+          mode: "dry-run",
+          candidateRows: 1,
+        }),
+      (err: unknown) =>
+        err instanceof RetentionRefused &&
+        err.message === "retention_refused_domain",
+    );
   });
 
-  it("refuses medical and unknown domains", () => {
-    expect(() =>
-      planOperationalRetention({
-        dataDomain: "medical",
-        mode: "dry-run",
-        candidateRows: 1,
-      }),
-    ).toThrow(/retention_refused_domain/);
-    expect(() =>
-      planOperationalRetention({
-        dataDomain: "unknown",
-        mode: "dry-run",
-        candidateRows: 1,
-      }),
-    ).toThrow(RetentionRefused);
+  it("execute mode is refused", () => {
+    for (const mode of ["execute", "apply", "delete", ""]) {
+      assert.throws(
+        () =>
+          planOperationalRetention({
+            dataDomain: "other",
+            mode,
+            candidateRows: 1,
+          }),
+        (err: unknown) =>
+          err instanceof RetentionRefused &&
+          err.message === "retention_execution_disabled",
+      );
+    }
   });
 
-  it("normalises case and whitespace then refuses non-operational", () => {
-    expect(() =>
-      planOperationalRetention({
-        dataDomain: "  MEDICAL  ",
-        mode: "dry-run",
-        candidateRows: 0,
-      }),
-    ).toThrow(/retention_refused_domain/);
+  it("unknown domain and bad count fail closed", () => {
+    assert.throws(
+      () =>
+        planOperationalRetention({
+          dataDomain: "unknown",
+          mode: "dry-run",
+          candidateRows: 1,
+        }),
+      (err: unknown) =>
+        err instanceof RetentionRefused &&
+        err.message === "retention_refused_domain",
+    );
+    assert.throws(
+      () =>
+        planOperationalRetention({
+          dataDomain: "thesis",
+          mode: "dry-run",
+          candidateRows: -1,
+        }),
+      (err: unknown) =>
+        err instanceof RetentionRefused &&
+        err.message === "retention_row_count_invalid",
+    );
+    assert.throws(
+      () =>
+        planOperationalRetention({
+          dataDomain: "thesis",
+          mode: "dry-run",
+          candidateRows: 1.5,
+        }),
+      (err: unknown) =>
+        err instanceof RetentionRefused &&
+        err.message === "retention_row_count_invalid",
+    );
   });
 
-  it("fails closed on invalid row counts", () => {
-    expect(() =>
-      planOperationalRetention({
-        dataDomain: "thesis",
-        mode: "dry-run",
-        candidateRows: -1,
-      }),
-    ).toThrow(/retention_row_count_invalid/);
-    expect(() =>
-      planOperationalRetention({
-        dataDomain: "other",
-        mode: "dry-run",
-        candidateRows: 1.5,
-      }),
-    ).toThrow(RetentionRefused);
+  it("whitespace and mixed-case medical is refused", () => {
+    assert.throws(
+      () =>
+        planOperationalRetention({
+          dataDomain: "  MEDICAL  ",
+          mode: "dry-run",
+          candidateRows: 0,
+        }),
+      (err: unknown) =>
+        err instanceof RetentionRefused &&
+        err.message === "retention_refused_domain",
+    );
   });
 });
