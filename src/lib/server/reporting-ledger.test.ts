@@ -68,3 +68,23 @@ test("truncated or unpadded search rows are not complete first-party coverage", 
   assert.equal(emptyTruncated.rows.some((row) => row.metricName === "clicks"), false);
   assert.match(emptyTruncated.rows[0]?.coverageWarning ?? "", /truncated/);
 });
+
+test("fail closed on data_loss, unknown flags, and nested unknown kinds", () => {
+  assert.equal(measurementKindFromGatewayRow(day({ dimensions: { metadata: { dataLossFromOtherRow: "true" } } })), "data_loss");
+  assert.equal(measurementKindFromGatewayRow(day({ metrics: { qualityFlags: [null, "observed"] } })), "unknown");
+  assert.equal(measurementKindFromGatewayRow(day({ dimensions: { measurementKind: "UNKNOWN" } })), "UNKNOWN");
+  assert.equal(aggregateMeasurementKind([
+    day({ dimensions: { measurementKind: "observed" } }),
+    day({ dimensions: { measurementKind: "data_loss" } }),
+  ]), "data_loss");
+  assert.equal(aggregateMeasurementKind([
+    day({ dimensions: { measurementKind: "observed" } }),
+    day({ dimensions: { measurementKind: "complete" } }),
+  ]), "observed");
+});
+
+test("empty or whitespace measurement kinds stay absent", () => {
+  assert.equal(measurementKindFromGatewayRow(day({ dimensions: { measurementKind: "" } })), null);
+  assert.equal(measurementKindFromGatewayRow(day({ dimensions: { measurementKind: "   " } })), null);
+  assert.equal(measurementKindFromGatewayRow(day({ dimensions: { samplingMetadatas: [] } })), null);
+});
