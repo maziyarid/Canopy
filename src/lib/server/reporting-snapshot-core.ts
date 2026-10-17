@@ -174,10 +174,11 @@ export function firstPartyProvider(provider: string): boolean {
 
 const OBSERVED_MEASUREMENT_KINDS = new Set(["observed", "complete", "unsampled", ""]);
 
-/** Fail closed: a non-empty unknown measurement kind is not first-party. Absent kind stays first-party for canonical providers so older ledger rows do not flip. */
-export function metricProvenance(row: { provider?: string | null; measurementKind?: string | null }): ProvenanceKind {
-  const kind = (row.measurementKind ?? "").trim().toLowerCase();
-  const provider = row.provider ?? "";
+/** Fail closed: a non-empty unknown measurement kind is not first-party. Absent/null/empty/whitespace kind stays first-party for canonical providers so older ledger rows do not flip. Non-string kinds are treated as unknown. */
+export function metricProvenance(row: { provider?: string | null; measurementKind?: unknown }): ProvenanceKind {
+  const rawKind = row.measurementKind;
+  const kind = (typeof rawKind === "string" ? rawKind : "").trim().toLowerCase();
+  const provider = typeof row.provider === "string" ? row.provider : "";
   if (provider !== provider.trim() || !firstPartyProvider(provider)) return "third_party_estimate";
   if (!OBSERVED_MEASUREMENT_KINDS.has(kind)) return "third_party_estimate";
   return "first_party";
@@ -264,7 +265,7 @@ export function ledgerFingerprint(rows: LedgerRow[]): string {
         row.finishedAt ?? "",
         JSON.stringify(row.coverage ?? null),
         row.coverageWarning ?? "",
-        row.measurementKind ?? "",
+        typeof row.measurementKind === "string" ? row.measurementKind : "",
       ].join(":"),
     )
     .sort();
