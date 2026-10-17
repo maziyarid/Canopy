@@ -82,6 +82,7 @@ export type LedgerRow = {
   finishedAt?: string | null;
   coverage?: MetricCoverage;
   coverageWarning?: string;
+  measurementKind?: string | null;
 };
 
 const SECRET_RE =
@@ -171,6 +172,18 @@ export function firstPartyProvider(provider: string): boolean {
   return provider === "gsc" || provider === "ga4" || provider === "clarity" || provider === "bing_webmaster";
 }
 
+const OBSERVED_MEASUREMENT_KINDS = new Set(["observed", "complete", "unsampled", ""]);
+
+/** Fail closed: a non-empty unknown measurement kind is not first-party. Absent/null/empty/whitespace kind stays first-party for canonical providers so older ledger rows do not flip. Non-string kinds are treated as unknown. */
+export function metricProvenance(row: { provider?: string | null; measurementKind?: unknown }): ProvenanceKind {
+  const rawKind = row.measurementKind;
+  const kind = (typeof rawKind === "string" ? rawKind : "").trim().toLowerCase();
+  const provider = typeof row.provider === "string" ? row.provider : "";
+  if (provider !== provider.trim() || !firstPartyProvider(provider)) return "third_party_estimate";
+  if (!OBSERVED_MEASUREMENT_KINDS.has(kind)) return "third_party_estimate";
+  return "first_party";
+}
+
 /** Deterministic multi-provider aggregate. Pure ok wins over no_data; mixed non-empty is partial. */
 export function aggregateSectionStatus(statuses: SectionStatus[]): SectionStatus {
   if (!statuses.length) return "no_data";
@@ -252,6 +265,7 @@ export function ledgerFingerprint(rows: LedgerRow[]): string {
         row.finishedAt ?? "",
         JSON.stringify(row.coverage ?? null),
         row.coverageWarning ?? "",
+        typeof row.measurementKind === "string" ? row.measurementKind : "",
       ].join(":"),
     )
     .sort();
