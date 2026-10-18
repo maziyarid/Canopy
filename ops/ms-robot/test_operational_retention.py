@@ -63,5 +63,13 @@ class OperationalRetentionTest(unittest.TestCase):
             plan_operational_retention(data_domain="other", mode="  execute  ", candidate_rows=1)
         self.assertEqual(str(caught.exception), "retention_execution_disabled")
 
+
+    def test_fullwidth_and_confusable_domains_fail_closed(self):
+        # Fullwidth ASCII and Cyrillic lookalikes must not be accepted as operational domains.
+        for domain in ("ＴＨＥＳＩＳ", "ｔｈｅｓｉｓ", "tеsis", "ОТHER"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+
 if __name__ == "__main__":
     unittest.main()
