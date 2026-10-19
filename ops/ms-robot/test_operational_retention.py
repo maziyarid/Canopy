@@ -71,5 +71,11 @@ class OperationalRetentionTest(unittest.TestCase):
                 plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
             self.assertEqual(str(caught.exception), "retention_refused_domain")
 
+    def test_zero_width_and_control_characters_fail_closed(self):
+        for domain in ("thesis\u200b", "other\u200c", "thesis\ufeff", "other\u0001"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+
 if __name__ == "__main__":
     unittest.main()
