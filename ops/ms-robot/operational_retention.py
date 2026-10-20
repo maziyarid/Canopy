@@ -7,6 +7,7 @@ Any execute/apply mode, unknown domain, or medical domain fails closed.
 from __future__ import annotations
 
 OPERATIONAL_DOMAINS = frozenset({"thesis", "other"})
+ZERO_WIDTH = frozenset({"\u200b", "\u200c", "\u200d", "\ufeff"})
 
 
 class RetentionRefused(RuntimeError):
@@ -14,7 +15,10 @@ class RetentionRefused(RuntimeError):
 
 
 def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: int) -> dict:
-    domain = str(data_domain or "").strip().lower()
+    raw = str(data_domain or "")
+    if any(ch in ZERO_WIDTH for ch in raw) or any(ord(ch) < 32 for ch in raw if ch not in "\t\n\r "):
+        raise RetentionRefused("retention_refused_domain")
+    domain = raw.strip().lower()
     requested = str(mode or "").strip().lower()
     if domain == "medical" or domain not in OPERATIONAL_DOMAINS:
         raise RetentionRefused("retention_refused_domain")

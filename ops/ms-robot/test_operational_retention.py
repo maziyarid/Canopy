@@ -85,5 +85,12 @@ class OperationalRetentionTest(unittest.TestCase):
         self.assertEqual(plan["candidateRows"], 0)
         self.assertFalse(plan["medicalRetentionActivated"])
 
+
+    def test_zero_width_domain_refused(self):
+        with self.assertRaises(RetentionRefused):
+            plan_operational_retention(data_domain="thesis\u200b", mode="dry-run", candidate_rows=1)
+        with self.assertRaises(RetentionRefused):
+            plan_operational_retention(data_domain="\u200cother", mode="dry-run", candidate_rows=0)
+
 if __name__ == "__main__":
     unittest.main()
