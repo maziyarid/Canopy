@@ -85,5 +85,12 @@ class OperationalRetentionTest(unittest.TestCase):
         self.assertEqual(plan["candidateRows"], 0)
         self.assertFalse(plan["medicalRetentionActivated"])
 
+    def test_non_ascii_domains_fail_closed(self):
+        for domain in ("thesis\u200b", "\u200bother", "thesis\u0000", "other\ufeff", "ｔｈｅｓｉｓ", "tеsis"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+
+
 if __name__ == "__main__":
     unittest.main()

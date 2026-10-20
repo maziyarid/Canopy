@@ -14,7 +14,12 @@ class RetentionRefused(RuntimeError):
 
 
 def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: int) -> dict:
-    domain = str(data_domain or "").strip().lower()
+    raw_domain = str(data_domain or "")
+    domain = raw_domain.strip().lower()
+    # Fail closed on any non-ASCII after normalisation so confusables and format characters
+    # cannot be accepted even if a future set membership check is loosened.
+    if any(ord(char) > 127 for char in domain):
+        raise RetentionRefused("retention_refused_domain")
     requested = str(mode or "").strip().lower()
     if domain == "medical" or domain not in OPERATIONAL_DOMAINS:
         raise RetentionRefused("retention_refused_domain")
