@@ -71,5 +71,19 @@ class OperationalRetentionTest(unittest.TestCase):
                 plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
             self.assertEqual(str(caught.exception), "retention_refused_domain")
 
+
+    def test_confusable_mode_and_zero_count_are_handled(self):
+        # Fullwidth, lookalike and spaced modes must not be accepted as dry-run.
+        for mode in ("ｄｒｙ－ｒｕｎ", "dry—run", "dry run", "DRY-RUN\u200b"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain="other", mode=mode, candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_execution_disabled")
+        # Zero rows is a valid inert dry-run.
+        plan = plan_operational_retention(data_domain="thesis", mode="dry-run", candidate_rows=0)
+        self.assertFalse(plan["executed"])
+        self.assertEqual(plan["action"], "none")
+        self.assertEqual(plan["candidateRows"], 0)
+        self.assertFalse(plan["medicalRetentionActivated"])
+
 if __name__ == "__main__":
     unittest.main()
