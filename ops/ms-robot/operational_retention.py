@@ -21,6 +21,9 @@ def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: i
     if any(ord(char) > 127 for char in domain):
         raise RetentionRefused("retention_refused_domain")
     requested = str(mode or "").strip().lower()
+    # Same non-ASCII guard for mode so fullwidth/confusable modes cannot bypass the exact dry-run match.
+    if any(ord(char) > 127 for char in requested):
+        raise RetentionRefused("retention_execution_disabled")
     if domain == "medical" or domain not in OPERATIONAL_DOMAINS:
         raise RetentionRefused("retention_refused_domain")
     if requested != "dry-run":
