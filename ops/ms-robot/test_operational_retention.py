@@ -91,6 +91,13 @@ class OperationalRetentionTest(unittest.TestCase):
                 plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
             self.assertEqual(str(caught.exception), "retention_refused_domain")
 
+    def test_non_ascii_modes_fail_closed(self):
+        # Fullwidth and zero-width modes are refused by the dedicated non-ASCII guard.
+        for mode in ("ｄｒｙ-ｒｕｎ", "dry-run\u200b", "\u200bdry-run", "dry\u2013run"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain="other", mode=mode, candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_execution_disabled")
+
 
 if __name__ == "__main__":
     unittest.main()
