@@ -39,6 +39,13 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
             classify_snapshot(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_provenance_missing")
 
+    def test_non_ascii_modes_fail_closed(self):
+        snapshot = dict(VALID)
+        for mode in ("inspect\u200b", "ｉｎｓｐｅｃｔ", "inspect\ufeff", "enable\u200b"):
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snapshot, mode=mode)
+            self.assertEqual(caught.exception.code, "snapshot_mode_unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

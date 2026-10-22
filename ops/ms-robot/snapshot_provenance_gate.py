@@ -20,6 +20,10 @@ def classify_snapshot(snapshot, mode="inspect"):
     if not isinstance(snapshot, dict):
         raise SnapshotProvenanceRefused("snapshot_invalid")
     requested = str(mode or "").strip().lower()
+    # Fail closed on any non-ASCII after normalisation so confusables and format characters
+    # cannot be accepted even if a future exact-match check is loosened.
+    if any(ord(char) > 127 for char in requested):
+        raise SnapshotProvenanceRefused("snapshot_mode_unknown")
     if requested in {"enable", "publish", "serve"}:
         raise SnapshotProvenanceRefused("snapshot_route_disabled")
     if requested != "inspect":

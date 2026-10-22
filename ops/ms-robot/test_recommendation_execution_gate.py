@@ -36,6 +36,13 @@ class RecommendationExecutionGateTest(unittest.TestCase):
             classify_recommendation(insight, mode="propose")
         self.assertEqual(caught.exception.code, "recommendation_not_proposal_only")
 
+    def test_non_ascii_modes_fail_closed(self):
+        insight = dict(VALID)
+        for mode in ("propose\u200b", "ｐｒｏｐｏｓｅ", "propose\ufeff", "execute\u200b"):
+            with self.assertRaises(RecommendationExecutionRefused) as caught:
+                classify_recommendation(insight, mode=mode)
+            self.assertEqual(caught.exception.code, "recommendation_mode_unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

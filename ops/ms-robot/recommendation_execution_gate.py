@@ -20,6 +20,10 @@ def classify_recommendation(insight, mode="propose"):
     if not isinstance(insight, dict):
         raise RecommendationExecutionRefused("recommendation_insight_invalid")
     requested = str(mode or "").strip().lower()
+    # Fail closed on any non-ASCII after normalisation so confusables and format characters
+    # cannot be accepted even if a future exact-match check is loosened.
+    if any(ord(char) > 127 for char in requested):
+        raise RecommendationExecutionRefused("recommendation_mode_unknown")
     if requested in REFUSED_MODES:
         raise RecommendationExecutionRefused("recommendation_execution_disabled")
     if requested != "propose":
