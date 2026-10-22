@@ -32,6 +32,11 @@ def classify_snapshot(snapshot, mode="inspect"):
         raise SnapshotProvenanceRefused("snapshot_route_disabled")
     project_id = str(snapshot.get("projectId") or "").strip()
     bound_project_id = str(snapshot.get("boundProjectId") or "").strip()
+    # Fail closed on control characters or non-ASCII in identity fields so confusables and
+    # injection residues cannot be treated as bound.
+    for field in (project_id, bound_project_id):
+        if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in field):
+            raise SnapshotProvenanceRefused("snapshot_project_unbound")
     if not project_id or project_id != bound_project_id:
         raise SnapshotProvenanceRefused("snapshot_project_unbound")
     provenance = str(snapshot.get("provenance") or "").strip()
@@ -40,7 +45,10 @@ def classify_snapshot(snapshot, mode="inspect"):
     measurement = str(snapshot.get("measurementKind") or "").strip().lower()
     if measurement in SAMPLED_KINDS:
         raise SnapshotProvenanceRefused("snapshot_sampled_not_client_ready")
-    if not str(snapshot.get("sourceRef") or "").strip():
+    source_ref = str(snapshot.get("sourceRef") or "").strip()
+    if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in source_ref):
+        raise SnapshotProvenanceRefused("snapshot_source_missing")
+    if not source_ref:
         raise SnapshotProvenanceRefused("snapshot_source_missing")
     return {
         "clientReady": False,

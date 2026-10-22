@@ -46,6 +46,20 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
                 classify_snapshot(snapshot, mode=mode)
             self.assertEqual(caught.exception.code, "snapshot_mode_unknown")
 
+    def test_control_and_nonascii_project_and_source_fail_closed(self):
+        base = dict(VALID)
+        for bad in ("proj\x001", "proj\u200b1", "proj-1\u0000"):
+            snap = dict(base)
+            snap["projectId"] = bad
+            snap["boundProjectId"] = bad
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snap, mode="inspect")
+            self.assertEqual(caught.exception.code, "snapshot_project_unbound")
+        snap = dict(base)
+        snap["sourceRef"] = "ga4:\x001"
+        with self.assertRaises(SnapshotProvenanceRefused) as caught:
+            classify_snapshot(snap, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_source_missing")
 
 if __name__ == "__main__":
     unittest.main()
