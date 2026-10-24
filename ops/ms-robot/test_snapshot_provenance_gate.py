@@ -61,5 +61,20 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
             classify_snapshot(snap, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_source_missing")
 
+    def test_unknown_measurement_kind_is_refused(self):
+        for kind in ("modeled", "unknown", "synthetic", "estimated_custom", "foo"):
+            snapshot = dict(VALID)
+            snapshot["measurementKind"] = kind
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snapshot, mode="inspect")
+            self.assertEqual(caught.exception.code, "snapshot_measurement_kind_unknown")
+
+    def test_empty_and_allowed_kinds_pass(self):
+        for kind in ("", "observed", "complete", "unsampled"):
+            snapshot = dict(VALID)
+            snapshot["measurementKind"] = kind
+            result = classify_snapshot(snapshot, mode="inspect")
+            self.assertFalse(result["clientReady"])
+
 if __name__ == "__main__":
     unittest.main()
