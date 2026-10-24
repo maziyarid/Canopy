@@ -3,6 +3,7 @@
 This module never deletes rows and never activates medical retention.
 A caller may request a dry-run count for thesis/other domains only.
 Any execute/apply mode, unknown domain, or medical domain fails closed.
+Non-string inputs for domain or mode are refused before normalisation.
 """
 from __future__ import annotations
 
@@ -15,13 +16,17 @@ class RetentionRefused(RuntimeError):
 
 
 def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: int) -> dict:
-    raw_domain = str(data_domain or "")
+    if not isinstance(data_domain, str):
+        raise RetentionRefused("retention_refused_domain")
+    if not isinstance(mode, str):
+        raise RetentionRefused("retention_execution_disabled")
+    raw_domain = data_domain
     domain = raw_domain.strip().lower()
     # Fail closed on any non-ASCII after normalisation so confusables and format characters
     # cannot be accepted even if a future set membership check is loosened.
     if any(ord(char) > 127 for char in domain):
         raise RetentionRefused("retention_refused_domain")
-    requested = str(mode or "").strip().lower()
+    requested = mode.strip().lower()
     # Fail closed on any non-ASCII after normalisation so confusables and format characters
     # cannot be accepted even if a future exact-match check is loosened.
     if any(ord(char) > 127 for char in requested):
@@ -32,7 +37,7 @@ def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: i
         raise RetentionRefused("retention_execution_disabled")
     if isinstance(candidate_rows, bool) or not isinstance(candidate_rows, int) or candidate_rows < 0 or candidate_rows > MAX_CANDIDATE_ROWS:
         raise RetentionRefused("retention_row_count_invalid")
-    return {
+    plan = {
         "action": "none",
         "executed": False,
         "dataDomain": domain,
@@ -40,3 +45,8 @@ def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: i
         "candidateRows": candidate_rows,
         "medicalRetentionActivated": False,
     }
+    # Exact shape proof: no extra keys that could be misread as execution authority.
+    expected = {"action", "executed", "dataDomain", "mode", "candidateRows", "medicalRetentionActivated"}
+    if set(plan) != expected or plan["executed"] or plan["action"] != "none" or plan["medicalRetentionActivated"]:
+        raise RetentionRefused("retention_result_shape_invalid")
+    return plan
