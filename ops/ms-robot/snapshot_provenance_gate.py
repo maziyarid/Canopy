@@ -8,6 +8,7 @@ snapshot may be treated as client-ready.
 from __future__ import annotations
 
 SAMPLED_KINDS = frozenset({"sampled", "incomplete", "estimated", "partial"})
+ALLOWED_KINDS = frozenset({"", "observed", "complete", "unsampled"})
 
 
 class SnapshotProvenanceRefused(RuntimeError):
@@ -45,6 +46,8 @@ def classify_snapshot(snapshot, mode="inspect"):
     measurement = str(snapshot.get("measurementKind") or "").strip().lower()
     if measurement in SAMPLED_KINDS:
         raise SnapshotProvenanceRefused("snapshot_sampled_not_client_ready")
+    if measurement not in ALLOWED_KINDS:
+        raise SnapshotProvenanceRefused("snapshot_measurement_kind_unknown")
     source_ref = str(snapshot.get("sourceRef") or "").strip()
     if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in source_ref):
         raise SnapshotProvenanceRefused("snapshot_source_missing")
