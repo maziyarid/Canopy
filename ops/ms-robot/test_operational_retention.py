@@ -11,6 +11,7 @@ class OperationalRetentionTest(unittest.TestCase):
             self.assertEqual(plan["action"], "none")
             self.assertFalse(plan["medicalRetentionActivated"])
             self.assertEqual(plan["candidateRows"], 3)
+            self.assertEqual(set(plan), {"action", "executed", "dataDomain", "mode", "candidateRows", "medicalRetentionActivated"})
 
     def test_medical_domain_is_refused(self):
         with self.assertRaises(RetentionRefused) as caught:
@@ -32,10 +33,24 @@ class OperationalRetentionTest(unittest.TestCase):
             plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=True)
 
     def test_none_empty_and_whitespace_only_domain_fail_closed(self):
-        for domain in (None, "", "   ", "\t", "medical "):
+        for domain in ("", "   ", "\t", "medical "):
             with self.assertRaises(RetentionRefused) as caught:
                 plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
             self.assertEqual(str(caught.exception), "retention_refused_domain")
+
+    def test_non_string_domain_and_mode_fail_closed(self):
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain=None, mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain=1, mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="other", mode=None, candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_execution_disabled")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="other", mode=True, candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_execution_disabled")
 
     def test_non_integer_and_negative_counts_fail_closed(self):
         for rows in (None, 1.5, "3", -5, False):
