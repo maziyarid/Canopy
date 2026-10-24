@@ -7,6 +7,7 @@ Any execute/apply mode, unknown domain, or medical domain fails closed.
 from __future__ import annotations
 
 OPERATIONAL_DOMAINS = frozenset({"thesis", "other"})
+MAX_CANDIDATE_ROWS = 1_000_000
 
 
 class RetentionRefused(RuntimeError):
@@ -29,7 +30,7 @@ def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: i
         raise RetentionRefused("retention_refused_domain")
     if requested != "dry-run":
         raise RetentionRefused("retention_execution_disabled")
-    if isinstance(candidate_rows, bool) or not isinstance(candidate_rows, int) or candidate_rows < 0:
+    if isinstance(candidate_rows, bool) or not isinstance(candidate_rows, int) or candidate_rows < 0 or candidate_rows > MAX_CANDIDATE_ROWS:
         raise RetentionRefused("retention_row_count_invalid")
     return {
         "action": "none",

@@ -92,5 +92,15 @@ class OperationalRetentionTest(unittest.TestCase):
             self.assertEqual(str(caught.exception), "retention_refused_domain")
 
 
+    def test_excessive_candidate_rows_fail_closed(self):
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="thesis", mode="dry-run", candidate_rows=1_000_001)
+        self.assertEqual(str(caught.exception), "retention_row_count_invalid")
+        # Boundary is accepted.
+        plan = plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=1_000_000)
+        self.assertEqual(plan["candidateRows"], 1_000_000)
+        self.assertFalse(plan["executed"])
+
+
 if __name__ == "__main__":
     unittest.main()
