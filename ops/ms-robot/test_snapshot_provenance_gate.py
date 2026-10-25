@@ -76,5 +76,12 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
             result = classify_snapshot(snapshot, mode="inspect")
             self.assertFalse(result["clientReady"])
 
+    def test_non_ascii_provenance_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["provenance"] = "first_party\u200b"  # zero-width space
+        with self.assertRaises(SnapshotProvenanceRefused) as caught:
+            classify_snapshot(snapshot)
+        self.assertEqual(caught.exception.code, "snapshot_provenance_missing")
+
 if __name__ == "__main__":
     unittest.main()
