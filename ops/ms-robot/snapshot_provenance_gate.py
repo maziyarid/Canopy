@@ -41,6 +41,9 @@ def classify_snapshot(snapshot, mode="inspect"):
     if not project_id or project_id != bound_project_id:
         raise SnapshotProvenanceRefused("snapshot_project_unbound")
     provenance = str(snapshot.get("provenance") or "").strip()
+    # Fail closed on non-ASCII so confusables cannot bypass the allow-list.
+    if any(ord(char) > 127 for char in provenance):
+        raise SnapshotProvenanceRefused("snapshot_provenance_missing")
     if provenance not in {"first_party", "third_party_estimate"}:
         raise SnapshotProvenanceRefused("snapshot_provenance_missing")
     measurement = str(snapshot.get("measurementKind") or "").strip().lower()
