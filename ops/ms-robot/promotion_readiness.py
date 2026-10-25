@@ -18,6 +18,7 @@ REQUIRED_MIGRATIONS = (
     "0009_privacy_data_domain.sql",
     "0010_report_section_grants.sql",
     "0011_report_insights.sql",
+    "0012_platform_launch.sql",
 )
 
 HUMAN_GATES = (
