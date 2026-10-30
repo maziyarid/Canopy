@@ -18,6 +18,7 @@ REQUIRED_MIGRATIONS = (
     "0009_privacy_data_domain.sql",
     "0010_report_section_grants.sql",
     "0011_report_insights.sql",
+    "0012_platform_launch.sql",
 )
 
 HUMAN_GATES = (
@@ -567,6 +568,13 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
         "ga4_measurement_date_range_compact",
         "ga4_measurement_date_range_folded",
         "ga4_measurement_date_range_unpadded",
+        "ga4_measurement_date_range_datetime",
+        "ga4_measurement_date_range_offset",
+        "ga4_measurement_date_range_week",
+        "ga4_measurement_date_range_ordinal",
+        "ga4_measurement_date_range_basic_week",
+        "ga4_measurement_date_range_month_name",
+        "ga4_measurement_date_range_quarter",
         '"clientReady": False',
         '"clientReportingEnabled": False',
         '"scheduledSyncEnabled": False',
@@ -577,7 +585,7 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
     if "DELETE FROM" in upper or "DROP TABLE" in upper or "URLLIB" in upper or "REQUESTS." in upper:
         raise PromotionReadinessError("ga4_measurement_provenance_mutates_or_calls_provider")
     proof = (root / "ops/ms-robot/test_ga4_measurement_provenance.py").read_text(encoding="utf-8")
-    if "test_sampling_metadata_is_refused" not in proof or "test_enable_mode_is_refused" not in proof or "test_omitted_quality_is_refused" not in proof or "test_blank_or_non_iso_currency_is_refused" not in proof or "test_nfkc_confusable_currency_is_refused" not in proof or "test_narrower_response_date_range_is_refused" not in proof or "test_wider_response_date_range_is_refused" not in proof or "test_slash_response_date_is_refused" not in proof or "test_compact_response_date_is_refused" not in proof or "test_folded_iso_date_is_refused" not in proof or "test_unpadded_iso_date_is_refused" not in proof:
+    if "test_sampling_metadata_is_refused" not in proof or "test_omitted_quality_is_refused" not in proof or "test_blank_or_non_iso_currency_is_refused" not in proof or "test_nfkc_confusable_currency_is_refused" not in proof or "test_narrower_response_date_range_is_refused" not in proof or "test_wider_response_date_range_is_refused" not in proof or "test_slash_response_date_is_refused" not in proof or "test_compact_response_date_is_refused" not in proof or "test_folded_iso_date_is_refused" not in proof or "test_unpadded_iso_date_is_refused" not in proof or "test_datetime_suffix_date_is_refused" not in proof or "test_offset_suffix_date_is_refused" not in proof or "test_week_year_date_is_refused" not in proof or "test_ordinal_date_is_refused" not in proof or "test_basic_week_date_is_refused" not in proof or "test_month_name_date_is_refused" not in proof or "test_quarter_date_is_refused" not in proof:
         raise PromotionReadinessError("ga4_measurement_provenance_proof_missing")
     import importlib.util
     spec = importlib.util.spec_from_file_location("ga4_measurement_provenance_check", source_path)
@@ -776,6 +784,150 @@ def check_ga4_measurement_provenance_gate(root: Path) -> list[str]:
             raise PromotionReadinessError("ga4_measurement_date_range_unpadded_not_refused")
     else:
         raise PromotionReadinessError("ga4_measurement_date_range_unpadded_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-09-01T00:00:00",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_datetime":
+            raise PromotionReadinessError("ga4_measurement_date_range_datetime_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_datetime_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-09-01+00:00",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_offset":
+            raise PromotionReadinessError("ga4_measurement_date_range_offset_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_offset_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-W36",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_week":
+            raise PromotionReadinessError("ga4_measurement_date_range_week_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_week_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-244",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_ordinal":
+            raise PromotionReadinessError("ga4_measurement_date_range_ordinal_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_ordinal_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026W36",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_basic_week":
+            raise PromotionReadinessError("ga4_measurement_date_range_basic_week_not_refused")
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_basic_week_not_refused")
+    try:
+        module.classify_ga4_measurement(
+            {
+                "property": "properties/123",
+                "responseProperty": "properties/123",
+                "qualityFlags": ["observed"],
+                "samplingMetadatas": [],
+                "subjectToThresholding": False,
+                "sourceRef": "ga4:properties/123:run-1",
+                "requestedStartDate": "2026-Sep-01",
+                "requestedEndDate": "2026-09-30",
+                "responseStartDate": "2026-09-01",
+                "responseEndDate": "2026-09-30",
+            },
+            mode="inspect",
+        )
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_month_name":
+            raise PromotionReadinessError("ga4_measurement_date_range_month_name_not_refused")
+    try:
+        module.classify_ga4_measurement({
+            "property": "properties/123",
+            "responseProperty": "properties/123",
+            "requestedStartDate": "2026-Q3",
+            "requestedEndDate": "2026-09-30",
+            "responseStartDate": "2026-09-01",
+            "responseEndDate": "2026-09-30",
+            "samplingMetadatas": [],
+            "subjectToThresholding": False,
+            "qualityFlags": [],
+            "sourceRef": "ga4:test",
+        })
+        raise PromotionReadinessError("ga4_measurement_date_range_quarter_not_refused")
+    except module.Ga4MeasurementProvenanceRefused as refused:
+        if refused.code != "ga4_measurement_date_range_quarter":
+            raise PromotionReadinessError("ga4_measurement_date_range_quarter_not_refused")
+
+    else:
+        raise PromotionReadinessError("ga4_measurement_date_range_month_name_not_refused")
     return ["ga4_measurement_provenance_fail_closed"]
 
 

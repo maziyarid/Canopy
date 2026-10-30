@@ -55,6 +55,21 @@ COMPACT_RE = re.compile(r"^\d{8}$")
 SPACED_RE = re.compile(r"^\d{4}\s+\d{1,2}\s+\d{1,2}$")
 # Unpadded ISO-like dates (2026-9-1, 2026-09-1) are not the requested window.
 UNPADDED_RE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}$")
+# Datetime suffixes (2026-09-01T00:00:00, 2026-09-01 00:00) are not the date-only window.
+DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]")
+# Timezone offset suffixes (2026-09-01+00:00, 2026-09-01Z) are not the date-only window.
+OFFSET_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[+-Zz]")
+# ISO week-year (2026-W36, 2026-W36-1) is not the date-only window.
+WEEK_RE = re.compile(r"^\d{4}-W\d{1,2}(-\d)?$")
+# ISO ordinal dates (2026-244) are not the date-only YYYY-MM-DD window.
+ORDINAL_RE = re.compile(r"^\d{4}-\d{3}$")
+# Basic year-week without hyphen (2026W36) is not the date-only window.
+BASIC_WEEK_RE = re.compile(r"^\d{4}W\d{1,2}$")
+# Month-name forms (2026-Sep-01, Sep 1, 2026) are not the date-only window.
+MONTH_NAME_RE = re.compile(r"^(\d{4}-[A-Za-z]{3}-\d{1,2}|[A-Za-z]{3}\s+\d{1,2},\s+\d{4})$")
+# ISO quarter forms (2026-Q3, 2026Q3) are not the date-only window.
+QUARTER_RE = re.compile(r"^\d{4}-?Q\d$")
+
 
 
 def require_iso_date(value):
@@ -77,6 +92,34 @@ def require_iso_date(value):
     # Check the folded form so fullwidth digits cannot skip the refusal.
     if UNPADDED_RE.fullmatch(folded) and not DATE_RE.fullmatch(folded):
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_unpadded")
+    # A datetime suffix is not the requested date-only window.
+    # Check the folded form so fullwidth digits or separators cannot skip it.
+    if DATETIME_RE.match(folded) or (folded != raw and DATETIME_RE.match(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_datetime")
+    # A timezone offset suffix is not the requested date-only window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if OFFSET_RE.match(folded) or (folded != raw and OFFSET_RE.match(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_offset")
+    # An ISO week-year is not the requested date-only window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if WEEK_RE.fullmatch(folded) or (folded != raw and WEEK_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_week")
+    # An ISO ordinal date is not the requested date-only window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if ORDINAL_RE.fullmatch(folded) or (folded != raw and ORDINAL_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_ordinal")
+    # A basic year-week form is not the requested date-only window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if BASIC_WEEK_RE.fullmatch(folded) or (folded != raw and BASIC_WEEK_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_basic_week")
+    # A month-name form is not the requested date-only window.
+    if MONTH_NAME_RE.fullmatch(folded) or (folded != raw and MONTH_NAME_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_month_name")
+    # An ISO quarter form is not the requested date-only window.
+    # Check the folded form so fullwidth digits cannot skip the refusal.
+    if QUARTER_RE.fullmatch(folded) or (folded != raw and QUARTER_RE.fullmatch(folded)):
+        raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_quarter")
+
     match = DATE_RE.fullmatch(raw)
     if not match:
         raise Ga4MeasurementProvenanceRefused("ga4_measurement_date_range_invalid")

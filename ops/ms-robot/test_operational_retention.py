@@ -11,6 +11,7 @@ class OperationalRetentionTest(unittest.TestCase):
             self.assertEqual(plan["action"], "none")
             self.assertFalse(plan["medicalRetentionActivated"])
             self.assertEqual(plan["candidateRows"], 3)
+            self.assertEqual(set(plan), {"action", "executed", "dataDomain", "mode", "candidateRows", "medicalRetentionActivated"})
 
     def test_medical_domain_is_refused(self):
         with self.assertRaises(RetentionRefused) as caught:
@@ -30,6 +31,90 @@ class OperationalRetentionTest(unittest.TestCase):
             plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=-1)
         with self.assertRaises(RetentionRefused):
             plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=True)
+
+    def test_none_empty_and_whitespace_only_domain_fail_closed(self):
+        for domain in ("", "   ", "\t", "medical "):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+
+    def test_non_string_domain_and_mode_fail_closed(self):
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain=None, mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain=1, mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="other", mode=None, candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_execution_disabled")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="other", mode=True, candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_execution_disabled")
+
+    def test_non_integer_and_negative_counts_fail_closed(self):
+        for rows in (None, 1.5, "3", -5, False):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=rows)
+            self.assertIn("retention_row_count_invalid", str(caught.exception))
+
+    def test_mixed_case_medical_and_operational_domains(self):
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="Medical", mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="MEDICAL", mode="dry-run", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_refused_domain")
+        plan = plan_operational_retention(data_domain="THESIS", mode="dry-run", candidate_rows=4)
+        self.assertEqual(plan["dataDomain"], "thesis")
+        self.assertFalse(plan["executed"])
+
+    def test_whitespace_padded_mode_is_normalised_then_refused_or_accepted(self):
+        # Padded dry-run is accepted after strip; padded execute is refused.
+        plan = plan_operational_retention(data_domain="other", mode="  dry-run  ", candidate_rows=2)
+        self.assertEqual(plan["mode"], "dry-run")
+        self.assertFalse(plan["executed"])
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="other", mode="  execute  ", candidate_rows=1)
+        self.assertEqual(str(caught.exception), "retention_execution_disabled")
+
+
+    def test_fullwidth_and_confusable_domains_fail_closed(self):
+        # Fullwidth ASCII and Cyrillic lookalikes must not be accepted as operational domains.
+        for domain in ("ＴＨＥＳＩＳ", "ｔｈｅｓｉｓ", "tеsis", "ОТHER"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+
+
+    def test_confusable_mode_and_zero_count_are_handled(self):
+        # Fullwidth, lookalike and spaced modes must not be accepted as dry-run.
+        for mode in ("ｄｒｙ－ｒｕｎ", "dry—run", "dry run", "DRY-RUN\u200b"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain="other", mode=mode, candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_execution_disabled")
+        # Zero rows is a valid inert dry-run.
+        plan = plan_operational_retention(data_domain="thesis", mode="dry-run", candidate_rows=0)
+        self.assertFalse(plan["executed"])
+        self.assertEqual(plan["action"], "none")
+        self.assertEqual(plan["candidateRows"], 0)
+        self.assertFalse(plan["medicalRetentionActivated"])
+
+    def test_non_ascii_domains_fail_closed(self):
+        for domain in ("thesis\u200b", "\u200bother", "thesis\u0000", "other\ufeff", "ｔｈｅｓｉｓ", "tеsis"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=domain, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+
+
+    def test_excessive_candidate_rows_fail_closed(self):
+        with self.assertRaises(RetentionRefused) as caught:
+            plan_operational_retention(data_domain="thesis", mode="dry-run", candidate_rows=1_000_001)
+        self.assertEqual(str(caught.exception), "retention_row_count_invalid")
+        # Boundary is accepted.
+        plan = plan_operational_retention(data_domain="other", mode="dry-run", candidate_rows=1_000_000)
+        self.assertEqual(plan["candidateRows"], 1_000_000)
+        self.assertFalse(plan["executed"])
 
 
 if __name__ == "__main__":

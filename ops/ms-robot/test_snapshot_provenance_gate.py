@@ -39,6 +39,49 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
             classify_snapshot(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_provenance_missing")
 
+    def test_non_ascii_modes_fail_closed(self):
+        snapshot = dict(VALID)
+        for mode in ("inspect\u200b", "ｉｎｓｐｅｃｔ", "inspect\ufeff", "enable\u200b"):
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snapshot, mode=mode)
+            self.assertEqual(caught.exception.code, "snapshot_mode_unknown")
+
+    def test_control_and_nonascii_project_and_source_fail_closed(self):
+        base = dict(VALID)
+        for bad in ("proj\x001", "proj\u200b1", "proj-1\u0000"):
+            snap = dict(base)
+            snap["projectId"] = bad
+            snap["boundProjectId"] = bad
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snap, mode="inspect")
+            self.assertEqual(caught.exception.code, "snapshot_project_unbound")
+        snap = dict(base)
+        snap["sourceRef"] = "ga4:\x001"
+        with self.assertRaises(SnapshotProvenanceRefused) as caught:
+            classify_snapshot(snap, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_source_missing")
+
+    def test_unknown_measurement_kind_is_refused(self):
+        for kind in ("modeled", "unknown", "synthetic", "estimated_custom", "foo"):
+            snapshot = dict(VALID)
+            snapshot["measurementKind"] = kind
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snapshot, mode="inspect")
+            self.assertEqual(caught.exception.code, "snapshot_measurement_kind_unknown")
+
+    def test_empty_and_allowed_kinds_pass(self):
+        for kind in ("", "observed", "complete", "unsampled"):
+            snapshot = dict(VALID)
+            snapshot["measurementKind"] = kind
+            result = classify_snapshot(snapshot, mode="inspect")
+            self.assertFalse(result["clientReady"])
+
+    def test_non_ascii_provenance_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["provenance"] = "first_party\u200b"  # zero-width space
+        with self.assertRaises(SnapshotProvenanceRefused) as caught:
+            classify_snapshot(snapshot)
+        self.assertEqual(caught.exception.code, "snapshot_provenance_missing")
 
 if __name__ == "__main__":
     unittest.main()

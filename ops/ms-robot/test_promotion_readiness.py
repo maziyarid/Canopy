@@ -13,6 +13,7 @@ REQUIRED = {
     "0009_privacy_data_domain.sql": "select 1;\n",
     "0010_report_section_grants.sql": "select 1;\n",
     "0011_report_insights.sql": "select 1;\n",
+    "0012_platform_launch.sql": "select 1;\n",
 }
 
 

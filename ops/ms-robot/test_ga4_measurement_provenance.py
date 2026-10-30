@@ -279,11 +279,152 @@ class Ga4MeasurementProvenanceTests(unittest.TestCase):
         self.assertFalse(plan["scheduledSyncEnabled"])
         self.assertFalse(plan["clientReportingEnabled"])
 
-    def test_enable_mode_is_refused(self):
+    def test_datetime_suffix_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-09-01T00:00:00"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
         with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
-            classify_ga4_measurement(observed(), mode="enable")
-        self.assertEqual(caught.exception.code, "ga4_measurement_reporting_disabled")
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_datetime")
+        space = observed()
+        space["requestedStartDate"] = "2026-09-01"
+        space["requestedEndDate"] = "2026-09-30 00:00"
+        space["responseStartDate"] = "2026-09-01"
+        space["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(space)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_datetime")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
 
+    def test_offset_suffix_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-09-01+00:00"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_offset")
+        zulu = observed()
+        zulu["requestedStartDate"] = "2026-09-01"
+        zulu["requestedEndDate"] = "2026-09-30Z"
+        zulu["responseStartDate"] = "2026-09-01"
+        zulu["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(zulu)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_offset")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
+
+    def test_week_year_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-W36"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_week")
+        day = observed()
+        day["requestedStartDate"] = "2026-09-01"
+        day["requestedEndDate"] = "2026-W36-1"
+        day["responseStartDate"] = "2026-09-01"
+        day["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(day)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_week")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
+    def test_ordinal_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-244"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_ordinal")
+        day = observed()
+        day["requestedStartDate"] = "2026-09-01"
+        day["requestedEndDate"] = "2026-274"
+        day["responseStartDate"] = "2026-09-01"
+        day["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(day)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_ordinal")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
+    def test_basic_week_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026W36"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_basic_week")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
+    def test_month_name_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-Sep-01"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_month_name")
+        named = observed()
+        named["requestedStartDate"] = "2026-09-01"
+        named["requestedEndDate"] = "Sep 30, 2026"
+        named["responseStartDate"] = "2026-09-01"
+        named["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(named)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_month_name")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
+
+    def test_quarter_date_is_refused(self):
+        row = observed()
+        row["requestedStartDate"] = "2026-Q3"
+        row["requestedEndDate"] = "2026-09-30"
+        row["responseStartDate"] = "2026-09-01"
+        row["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(row)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_quarter")
+        basic = observed()
+        basic["requestedStartDate"] = "2026-09-01"
+        basic["requestedEndDate"] = "2026Q3"
+        basic["responseStartDate"] = "2026-09-01"
+        basic["responseEndDate"] = "2026-09-30"
+        with self.assertRaises(Ga4MeasurementProvenanceRefused) as caught:
+            classify_ga4_measurement(basic)
+        self.assertEqual(caught.exception.code, "ga4_measurement_date_range_quarter")
+        plan = classify_ga4_measurement(observed())
+        self.assertFalse(plan["clientReady"])
+        self.assertFalse(plan["scheduledSyncEnabled"])
+        self.assertFalse(plan["clientReportingEnabled"])
 
 if __name__ == "__main__":
     unittest.main()
