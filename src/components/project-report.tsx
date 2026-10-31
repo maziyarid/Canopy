@@ -52,7 +52,7 @@ export function ProjectReport({ projectId }: { projectId: string }) {
           } catch { setError(true); } finally { setExporting(false); }
         }}>{exporting ? t("exporting") : t("export")}</button>
       </div>
-      {error ? <p role="alert" className="text-sm text-muted">{t("unavailable")}</p> : !report ? <div role="status" className="flex items-center gap-2 text-sm text-muted"><LoaderCircle className="size-5 animate-spin" />{t("loading")}</div> : !report.view.sections.length ? <p className="rounded-xl bg-surface p-4 text-sm text-muted">{t("noGrants")}</p> : <>
+      {error ? <p role="alert" className="text-sm text-muted">{t("unavailable")}</p> : !report ? <div role="status" className="flex items-center gap-2 text-sm text-muted"><LoaderCircle className="size-5 animate-spin" />{t("loading")}</div> : !report.view.reportingConfigured ? <p className="rounded-xl bg-surface p-4 text-sm text-muted">{t("unavailable")}</p> : !report.view.sections.length ? <p className="rounded-xl bg-surface p-4 text-sm text-muted">{t("noGrants")}</p> : <>
         <p className="text-xs text-muted">{report.period.start} – {report.period.end} · {t("delay")}</p>
         <ClientReportDashboard view={report.view} />
         {report.comparison ? <section className="min-w-0 rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]" aria-label={t("comparison")}>
