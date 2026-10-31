@@ -2,7 +2,7 @@
 
 - task: AAX-128 (AAX-132 and AAX-111 complete and merged; PR #4/#5 closed)
 - branch: fix/unified-privacy-reconcile-20261005
-- full SHA: 47e3935a4b1f95e39e01734d04d7d0ea11f96b2d
+- full SHA: 97dd3f6dd042eb3ddcbd90025e88ffc5412583a0
 - files changed: ops/ms-robot/SUPERGROK_CHECKPOINT.md
 - issue fixed: none (no new valid unresolved P1/Major on open heads)
 - tests/checks actually run:
