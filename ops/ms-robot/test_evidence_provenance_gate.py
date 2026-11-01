@@ -62,5 +62,22 @@ class EvidenceProvenanceGateTest(unittest.TestCase):
         self.assertEqual(str(caught.exception), "evidence_project_unbound")
 
 
+
+    def test_non_ascii_kind_and_provenance_fail_closed(self):
+        base = {
+            "projectId": "proj_a",
+            "evidenceRefs": [{"provider": "gsc"}],
+        }
+        for kind in ("observation​", "ｏｂｓｅｒｖａｔｉｏｎ", "observatiоn"):
+            draft = {**base, "type": kind, "provenance": "first_party"}
+            with self.assertRaises(EvidenceProvenanceRefused) as caught:
+                classify_evidence_insight(draft)
+            self.assertEqual(str(caught.exception), "evidence_kind_unknown")
+        for provenance in ("first_party​", "ｆｉｒｓｔ＿ｐａｒｔｙ", "first_рarty"):
+            draft = {**base, "type": "observation", "provenance": provenance}
+            with self.assertRaises(EvidenceProvenanceRefused) as caught:
+                classify_evidence_insight(draft)
+            self.assertEqual(str(caught.exception), "evidence_provenance_missing")
+
 if __name__ == "__main__":
     unittest.main()

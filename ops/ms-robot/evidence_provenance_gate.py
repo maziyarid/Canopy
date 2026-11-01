@@ -30,9 +30,15 @@ def classify_evidence_insight(draft, mode="inspect"):
     if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in project_id) or not project_id:
         raise EvidenceProvenanceRefused("evidence_project_unbound")
     kind = str(draft.get("type") or "").strip().lower()
+    # Fail closed on any non-ASCII so confusables cannot bypass the allow-list.
+    if any(ord(char) > 127 for char in kind):
+        raise EvidenceProvenanceRefused("evidence_kind_unknown")
     if kind not in ALLOWED_KINDS:
         raise EvidenceProvenanceRefused("evidence_kind_unknown")
     provenance = str(draft.get("provenance") or "").strip().lower()
+    # Fail closed on any non-ASCII so confusables cannot bypass the allow-list.
+    if any(ord(char) > 127 for char in provenance):
+        raise EvidenceProvenanceRefused("evidence_provenance_missing")
     if provenance not in ALLOWED_PROVENANCE:
         raise EvidenceProvenanceRefused("evidence_provenance_missing")
     refs = draft.get("evidenceRefs")
