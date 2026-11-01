@@ -83,5 +83,14 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
             classify_snapshot(snapshot)
         self.assertEqual(caught.exception.code, "snapshot_provenance_missing")
 
+
+    def test_non_ascii_measurement_kind_is_refused(self):
+        for kind in ("ｏｂｓｅｒｖｅｄ", "observed\u200b", "ｃｏｍｐｌｅｔｅ", "unsampled\ufeff"):
+            snapshot = dict(VALID)
+            snapshot["measurementKind"] = kind
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snapshot, mode="inspect")
+            self.assertEqual(caught.exception.code, "snapshot_measurement_kind_unknown")
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,9 @@ def classify_snapshot(snapshot, mode="inspect"):
     if provenance not in {"first_party", "third_party_estimate"}:
         raise SnapshotProvenanceRefused("snapshot_provenance_missing")
     measurement = str(snapshot.get("measurementKind") or "").strip().lower()
+    # Fail closed on any non-ASCII so confusables cannot bypass the allow-list.
+    if any(ord(char) > 127 for char in measurement):
+        raise SnapshotProvenanceRefused("snapshot_measurement_kind_unknown")
     if measurement in SAMPLED_KINDS:
         raise SnapshotProvenanceRefused("snapshot_sampled_not_client_ready")
     if measurement not in ALLOWED_KINDS:
