@@ -29,7 +29,13 @@ def classify_recommendation(insight, mode="propose"):
     if requested != "propose":
         raise RecommendationExecutionRefused("recommendation_mode_unknown")
     disposition = str(insight.get("recommendationDisposition") or "").strip()
+    # Fail closed on any non-ASCII so confusables cannot bypass the exact-match.
+    if any(ord(char) > 127 for char in disposition):
+        raise RecommendationExecutionRefused("recommendation_not_proposal_only")
     action = str(insight.get("recommendedAction") or "").strip()
+    # Fail closed on any non-ASCII so confusables cannot bypass presence check.
+    if any(ord(char) > 127 for char in action):
+        raise RecommendationExecutionRefused("recommendation_action_missing")
     evidence = insight.get("evidenceRefs")
     if disposition != "proposal_only":
         raise RecommendationExecutionRefused("recommendation_not_proposal_only")

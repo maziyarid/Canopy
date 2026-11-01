@@ -42,6 +42,24 @@ class RecommendationExecutionGateTest(unittest.TestCase):
             with self.assertRaises(RecommendationExecutionRefused) as caught:
                 classify_recommendation(insight, mode=mode)
             self.assertEqual(caught.exception.code, "recommendation_mode_unknown")
+    def test_non_ascii_disposition_and_action_fail_closed(self):
+        insight = dict(VALID)
+        insight["recommendationDisposition"] = "proposal_only\u200b"
+        with self.assertRaises(RecommendationExecutionRefused) as caught:
+            classify_recommendation(insight, mode="propose")
+        self.assertEqual(caught.exception.code, "recommendation_not_proposal_only")
+        insight = dict(VALID)
+        insight["recommendedAction"] = "review SEO title\u200b"
+        with self.assertRaises(RecommendationExecutionRefused) as caught:
+            classify_recommendation(insight, mode="propose")
+        self.assertEqual(caught.exception.code, "recommendation_action_missing")
+        insight = dict(VALID)
+        insight["recommendationDisposition"] = "ｐｒｏｐｏｓａｌ＿ｏｎｌｙ"
+        with self.assertRaises(RecommendationExecutionRefused) as caught:
+            classify_recommendation(insight, mode="propose")
+        self.assertEqual(caught.exception.code, "recommendation_not_proposal_only")
+
+
 
 
 if __name__ == "__main__":
