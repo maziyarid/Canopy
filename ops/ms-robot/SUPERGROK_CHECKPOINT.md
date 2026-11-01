@@ -2,7 +2,7 @@
 
 - task: AAX-128 (AAX-132 and AAX-111 complete and merged; PR #4/#5 closed)
 - branch: fix/unified-privacy-reconcile-20261005
-- full SHA: 778b571a0bad5c85257f91559fb0f377f22aa492
+- full SHA: 4a44e74092ad89c1a3e23ad5e87584d0d693bede
 - files changed: ops/ms-robot/provider_job_recovery.py, ops/ms-robot/test_provider_job_recovery.py, ops/ms-robot/SUPERGROK_CHECKPOINT.md
 - issue fixed: explicit non-ASCII / control-character fail-closed on project_id and job_id in provider job recovery (fullwidth / zero-width characters cannot create a second tenant or job identity)
 - tests/checks actually run this hour:
