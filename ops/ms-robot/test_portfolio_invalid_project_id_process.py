@@ -99,6 +99,14 @@ class PortfolioInvalidProjectIdProcessTest(unittest.TestCase):
         self.assertFalse(checkpoint["retryCheckpoint"]["retryable"])
         self.assertIn("empty site", checkpoint["detail"])
 
+    def test_non_ascii_project_id_exits_1_without_discovery(self):
+        payload, checkpoint = self._run({"https://example.com/": "project-ä"})
+        self.assertEqual(payload["code"], 1)
+        self.assertEqual(payload["called"], {"sync": 0, "google": 0})
+        self.assertEqual(checkpoint["error"], "site_map_invalid")
+        self.assertFalse(checkpoint["retryCheckpoint"]["retryable"])
+        self.assertIn("invalid project id", checkpoint["detail"])
+
     def test_whitespace_only_project_id_exits_1_without_discovery(self):
         payload, checkpoint = self._run({"https://example.com/": "   \t  "})
         self.assertEqual(payload["code"], 1)

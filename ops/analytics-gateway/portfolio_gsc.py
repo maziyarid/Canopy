@@ -180,6 +180,10 @@ def project_site_map(env=os.environ):
         if not isinstance(raw_project, str):
             raise SystemExit("invalid project id for mapped site")
         project_id=raw_project.strip()
+        # Explicit non-ASCII and control refusal before the ASCII pattern so
+        # confusable or injected identity fails closed without pattern bypass.
+        if any(ord(char) > 127 or ord(char) < 32 or ord(char) == 127 for char in project_id):
+            raise SystemExit("invalid project id for mapped site")
         if not site:
             raise SystemExit("MS_ROBOT_PROJECT_SITE_MAP_JSON contains an empty site")
         if project_id.lower() in RESERVED_PROJECT_IDS:
