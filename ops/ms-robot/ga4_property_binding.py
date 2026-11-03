@@ -31,10 +31,17 @@ def classify_ga4_binding(binding, mode="inspect"):
         raise Ga4BindingRefused("ga4_sync_disabled")
     project_id = str(binding.get("projectId") or "").strip()
     bound_project_id = str(binding.get("boundProjectId") or "").strip()
+    # Fail closed on control characters or non-ASCII in identity fields so confusables cannot create a second tenant.
+    for field in (project_id, bound_project_id):
+        if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in field):
+            raise Ga4BindingRefused("ga4_project_unbound")
     if not project_id or project_id != bound_project_id or project_id == "legacy":
         raise Ga4BindingRefused("ga4_project_unbound")
     site = str(binding.get("site") or "").strip()
     bound_site = str(binding.get("boundSite") or "").strip()
+    for field in (site, bound_site):
+        if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in field):
+            raise Ga4BindingRefused("ga4_site_unbound")
     if not site or site != bound_site or not SITE_RE.fullmatch(site):
         raise Ga4BindingRefused("ga4_site_unbound")
     property_ref = str(binding.get("property") or "").strip()

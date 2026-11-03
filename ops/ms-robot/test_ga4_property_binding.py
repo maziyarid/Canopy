@@ -62,5 +62,20 @@ class Ga4PropertyBindingTest(unittest.TestCase):
             classify_ga4_binding(binding)
         self.assertEqual(raised.exception.code, "ga4_site_unbound")
 
+
+    def test_non_ascii_project_and_site_fail_closed(self):
+        for bad in ("proj-ａ", "proj\u200b", "proj\x00"):
+            binding = dict(BOUND, projectId=bad, boundProjectId=bad)
+            with self.assertRaises(Ga4BindingRefused) as raised:
+                classify_ga4_binding(binding)
+            self.assertEqual(raised.exception.code, "ga4_project_unbound")
+        for bad_site in ("exａmple.com", "example\u200b.com", "example\x00.com"):
+            binding = dict(BOUND, site=bad_site, boundSite=bad_site)
+            with self.assertRaises(Ga4BindingRefused) as raised:
+                classify_ga4_binding(binding)
+            self.assertEqual(raised.exception.code, "ga4_site_unbound")
+        plan = classify_ga4_binding(BOUND)
+        self.assertEqual(plan["action"], "none")
+
 if __name__ == "__main__":
     unittest.main()
