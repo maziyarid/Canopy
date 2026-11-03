@@ -46,6 +46,10 @@ def classify_ga4_binding(binding, mode="inspect"):
         raise Ga4BindingRefused("ga4_site_unbound")
     property_ref = str(binding.get("property") or "").strip()
     bound_property = str(binding.get("boundProperty") or "").strip()
+    # Fail closed on control characters or non-ASCII in the property reference so confusables cannot bypass the strict ASCII pattern.
+    for field in (property_ref, bound_property):
+        if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in field):
+            raise Ga4BindingRefused("ga4_property_unbound")
     if not PROPERTY_RE.fullmatch(property_ref) or property_ref != bound_property:
         raise Ga4BindingRefused("ga4_property_unbound")
     if binding.get("authorisedRead") is not True:

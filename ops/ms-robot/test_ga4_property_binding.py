@@ -77,5 +77,13 @@ class Ga4PropertyBindingTest(unittest.TestCase):
         plan = classify_ga4_binding(BOUND)
         self.assertEqual(plan["action"], "none")
 
+
+    def test_non_ascii_property_fails_closed(self):
+        for bad in ("properties/１２３", "properties/123​"):
+            binding = dict(BOUND, property=bad, boundProperty=bad)
+            with self.assertRaises(Ga4BindingRefused) as raised:
+                classify_ga4_binding(binding)
+            self.assertEqual(raised.exception.code, "ga4_property_unbound")
+
 if __name__ == "__main__":
     unittest.main()
