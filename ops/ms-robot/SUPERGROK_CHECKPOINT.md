@@ -2,7 +2,7 @@
 
 - task: AAX-55 (tenant identity hardening on GA4 property binding); AAX-128 / PR #18 remains the promotion branch; AAX-132 / PR #4 and AAX-111 / PR #5 remain merged and clean
 - branch: fix/unified-privacy-reconcile-20261005
-- full SHA: (to be recorded after commit)
+- full SHA: 7b188cff1bc9d86ab503bb1434cdfddb46fa6ef3
 - files changed: ops/ms-robot/ga4_property_binding.py, ops/ms-robot/test_ga4_property_binding.py, ops/ms-robot/SUPERGROK_CHECKPOINT.md
 - issue fixed: GA4 property binding previously accepted non-ASCII / control characters in projectId and site after strip; confusable or injected identity could pass the bound-project check. Now fails closed on ord < 32, ==127, or >127 for project and site fields (matching other AAX-55/AAX-81 gates).
 - tests/checks actually run this hour:
