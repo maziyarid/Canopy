@@ -13,6 +13,7 @@ REQUIRED = {
     "0009_privacy_data_domain.sql": "select 1;\n",
     "0010_report_section_grants.sql": "select 1;\n",
     "0011_report_insights.sql": "select 1;\n",
+    "0012_platform_launch.sql": "select 1;\n",
 }
 
 
@@ -43,6 +44,16 @@ class PromotionReadinessTest(unittest.TestCase):
         self.assertIn("ipv4_dword_conflict_fail_closed", report["checks"])
         self.assertIn("ambiguous_gsc_property_fail_closed", report["checks"])
         self.assertIn("gsc_discovery_payload_fail_closed", report["checks"])
+        self.assertIn("fullwidth_dot_conflict_fail_closed", report["checks"])
+        self.assertIn("zero_width_host_conflict_fail_closed", report["checks"])
+        self.assertIn("fullwidth_slash_conflict_fail_closed", report["checks"])
+        self.assertIn("sc_domain_prefix_case_fail_closed", report["checks"])
+        self.assertIn("operational_retention_fail_closed", report["checks"])
+        self.assertIn("recommendation_execution_fail_closed", report["checks"])
+        self.assertIn("snapshot_provenance_fail_closed", report["checks"])
+        self.assertIn("ga4_property_binding_fail_closed", report["checks"])
+        self.assertIn("ga4_measurement_provenance_fail_closed", report["checks"])
+        self.assertIn("snapshot_window_provenance_fail_closed", report["checks"])
         self.assertTrue(any("site-to-project" in gate for gate in report["humanGates"]))
 
     def test_missing_migration_fails_closed(self):
