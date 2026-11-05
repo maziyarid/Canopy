@@ -534,3 +534,32 @@ describe("AAX-80 reporting read gate behavioural proof", () => {
     assert.equal(called, 1);
   });
 });
+
+import { readIfReportingConfigured, loadProjectReport } from "./reporting-read-gate.ts";
+
+describe("client reporting gate behavioural zero-read proof", () => {
+  it("never invokes the reader for the unconfigured client role", async () => {
+    let calls = 0;
+    const reader = async () => {
+      calls += 1;
+      return { loaded: true };
+    };
+
+    await assert.rejects(
+      () => readIfReportingConfigured("client", reader),
+      /Reporting unavailable/,
+    );
+    assert.equal(calls, 0, "readIfReportingConfigured must not call the reader for client");
+
+    const unavailable = { empty: true };
+    const result = await loadProjectReport("client", unavailable, reader);
+    assert.deepEqual(result, unavailable);
+    assert.equal(calls, 0, "loadProjectReport must not call the reader for client");
+
+    // configured role does invoke
+    calls = 0;
+    const loaded = await readIfReportingConfigured("owner", reader);
+    assert.deepEqual(loaded, { loaded: true });
+    assert.equal(calls, 1);
+  });
+});
