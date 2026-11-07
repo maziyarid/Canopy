@@ -73,6 +73,12 @@ def record_running(
         raise ProviderJobRecoveryError("job_identity_required")
     if project_id.strip() != project_id or not project_id.strip():
         raise ProviderJobRecoveryError("invalid_project_id")
+    # Fail closed on non-ASCII / confusables in identity so fullwidth or zero-width
+    # characters cannot create a second tenant or job identity.
+    if any(ord(char) > 127 for char in project_id) or any(ord(char) > 127 for char in job_id):
+        raise ProviderJobRecoveryError("invalid_project_id")
+    if any(ord(char) < 32 or ord(char) == 127 for char in project_id + job_id):
+        raise ProviderJobRecoveryError("invalid_project_id")
     stamp = _stamp(now)
     connection = _connect(path)
     try:
