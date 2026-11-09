@@ -4,6 +4,8 @@ For the current Ms Robot implementation, unfinished work and verification, see
 [STATUS.md](STATUS.md), [NEXT.md](NEXT.md) and [VERIFICATION.md](VERIFICATION.md).
 The feature and endpoint descriptions below predate the merged reporting stack;
 provider availability depends on the implemented adapter and verified access.
+For legacy credential encryption and key requirements, see the
+[encrypted settings migration](docs/ms-robot/encrypted-settings-migration.md).
 
 A comprehensive SEO management platform that consolidates data from multiple sources (Google Search Console, Bing Webmaster, Ubersuggest, Ahrefs, etc.) into a single, user-friendly dashboard. Designed for agencies to provide clients with easy-to-understand SEO insights without requiring technical knowledge.
 

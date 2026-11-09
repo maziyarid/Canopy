@@ -1,13 +1,30 @@
 # Ms Robot resumption status
 
-Assessment: 9 November 2026. Repository: **maziyarid/Canopy only**. Baseline:
-`main` / `7138ac36f320dd230576b27bd26bbbc461cabe74`. This PR builds on that
-baseline; unmerged branches are evidence of ongoing work, not released features.
+Original assessment: 9 November 2026. Repository: **maziyarid/Canopy only**. Baseline:
+`main` / `7138ac36f320dd230576b27bd26bbbc461cabe74`. PR #32 built on that
+baseline. The continuation starts from `920ccd7`; unmerged branches are evidence
+of ongoing work, not released features.
 
 **FACT** means directly observed in source, Git or a local check. **INFERENCE**
 means a conclusion from that evidence. **UNKNOWN** means not verified in this
 session. Historical operational reports are identified by date and are not fresh
 production checks.
+
+## Encrypted settings continuation
+
+**FACT:** PR #32 was squash-merged as main `920ccd7`. The next source change
+moves legacy Mangools, Monday webhook and ClickUp secrets into owner-scoped
+AES-GCM records in the existing vault. Migration 0013 encrypts and verifies
+persisted values before clearing the old columns, validates constraints against
+new plaintext writes and records completion atomically on PostgreSQL/PGLite.
+Provider callers read the vault; public settings contain configured flags/masks.
+No legacy plaintext fallback remains. Ordinary preferences remain in SQL.
+
+**UNKNOWN:** production migration/key provisioning and live provider acceptance.
+No live database or service was changed. The migration, tests and key/backup
+limits are documented in
+[the encrypted settings runbook](docs/ms-robot/encrypted-settings-migration.md).
+The branch inventory below is the original PR #32 snapshot.
 
 **FACT — assessment inputs:** README, ROADMAP, the Ms Robot integration plan,
 ledger, runbook, completion/promotion evidence, launch and operations docs,
@@ -38,7 +55,7 @@ social/Qalam work does not establish that those wider products are complete.
 | FACT | Normalised provider ingestion on main supports GSC; other provider sync paths return `not_configured` or `adapter_not_implemented`. GA4/GTM account discovery exists separately. | `sync_provider` and `connection_test_google_discovery` in `ops/analytics-gateway/gateway.py`. GA4 implementation is proposed in PR #20 and correctness follow-up #28. |
 | FACT | Durable retry/recovery primitives exist, but there is no complete provider retry runner wired into gateway refresh. | `ops/ms-robot/provider_job_recovery.py`, `provider_retry_checkpoint.py`; gateway `create_or_run_sync` still runs synchronously. A retry checkpoint alone does not schedule another attempt. |
 | FACT | Provider Admin exposes read and sync operations; resource selection, separate connection-test action, reconnect and enable/disable controls are unfinished. | `src/lib/server/provider-admin.ts`; field/action ledger in `docs/ms-robot/completion-assessment-20261003.md`. |
-| FACT | Social vault encryption does not cover legacy application settings. Mangools keys are still written directly to SQL. | `src/lib/server/settings.ts` (`saveSettings`) versus `src/lib/social/vault-store.server.ts`. Encryption migration remains outstanding; no credential values were copied into this assessment. |
+| FACT | Legacy integration settings now use owner-scoped encryption; production migration acceptance remains outstanding. | Migration `0013_encrypted_settings.sql`, `settings-vault.server.ts`, `integration-settings-service.ts` and the shared `application-migrations.ts` data hook. No credential values were copied into this assessment. |
 | FACT | Inquiry intake/routing, lead lifecycle, delivery/escalation, complete operations console, social account/calendar UI and cross-product Qalam feedback remain documented unfinished work. | `ROADMAP.md` P2–P5; completion assessment's operations and cross-stack tables. These are not acceptance-tested capabilities of this PR. |
 | FACT | Additional privacy retention/provenance work exists on remote branches and is absent from main. | Branch inventory below; e.g. `feat/aax-55-ts-retention-planner-reconcile-20261018` adds a planner and tests. A planner is not proof that operational retention runs. |
 | UNKNOWN | Current provider credentials/permissions, Google account eligibility, production database scope, timer state, queue health and deployed commit. | No production services, provider accounts or live databases were contacted. The 3 October assessment's GA4 zero accounts, GTM 403 and legacy/unscoped data observations are dated evidence only. |
@@ -46,7 +63,7 @@ social/Qalam work does not establish that those wider products are complete.
 
 ## Broken or misleading behaviour
 
-- **FACT — fixed here:** GSC query/page ingestion requested one 5,000-row page
+- **FACT — fixed in PR #32:** GSC query/page ingestion requested one 5,000-row page
   and the Google adapter ignored `startRow`. A synthetic 5,001-row dataset stored
   only 5,000 rows while returning success-compatible counters. Both ends now
   paginate with a fixed request budget, reject malformed/repeated pages and fail
@@ -77,7 +94,7 @@ social/Qalam work does not establish that those wider products are complete.
   that boundary is a priority before exposing more provider controls. Existing
   connection-test discovery also needs project filtering before UI exposure.
 
-## Item completed in this PR
+## Item completed in PR #32
 
 **INFERENCE — prioritisation:** correcting silent GSC truncation has the highest
 immediate value among bounded, independently verifiable changes: GSC is the
@@ -121,7 +138,7 @@ migration, publication or service activation was performed.
 
 ## Open PRs and remote branches reviewed
 
-**FACT:** GitHub returned 12 existing open PRs before this PR was created:
+**FACT:** GitHub returned 12 existing open PRs before PR #32 was created:
 
 | PR | Work still under review |
 | --- | --- |

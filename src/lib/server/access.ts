@@ -2,6 +2,7 @@ import { assertLaunchProject, getLaunchScope } from "./platform-launch-scope.ser
 import type { Sql } from "@/lib/db";
 import type { Project, Role } from "@/lib/types";
 import { parseReportSections } from "./report-sections.ts";
+import { readSettingsSecret } from "./settings-vault.server.ts";
 
 export function nid() {
   return crypto.randomUUID();
@@ -157,15 +158,9 @@ export function toProject(
 }
 
 export async function ownerMangoolsKey(sql: Sql, ownerId: string) {
-  const rows = await sql<{ mangools_key: string }>`
-    select mangools_key from studio_settings where user_id = ${ownerId}
-  `;
-  return rows[0]?.mangools_key?.trim() ?? "";
+  return (await readSettingsSecret(sql, ownerId, "mangools")).trim();
 }
 
 export async function ownerMondayHook(sql: Sql, ownerId: string) {
-  const rows = await sql<{ monday_webhook: string }>`
-    select monday_webhook from studio_settings where user_id = ${ownerId}
-  `;
-  return rows[0]?.monday_webhook?.trim() ?? "";
+  return (await readSettingsSecret(sql, ownerId, "monday_webhook")).trim();
 }

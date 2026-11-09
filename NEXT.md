@@ -15,7 +15,8 @@ Provider access and any later rollout require their own acceptance evidence.
 4. **Add a project-scoped Provider Admin connection-test operation.** Filter
    discovery to the authorised project's resource and return a safe status and
    timestamp. Test that other sites/accounts and credentials never reach the UI.
-5. **Add a dry-run migration plan for legacy Mangools credentials.** Inventory
-   counts/references only, target the existing encrypted vault and test missing-key,
-   wrong-project and rollback behaviour. Do not migrate real credentials or print
-   their values as part of that source change.
+5. **Rehearse migration 0013's key custody and recovery procedure.** The encrypted
+   settings implementation now exists. Use a protected disposable copy with the
+   intended operator-managed key, compare counts and masked metadata, and verify
+   restart/recovery. Record evidence without credential values; any live migration
+   or rollout remains a separate reviewed action.

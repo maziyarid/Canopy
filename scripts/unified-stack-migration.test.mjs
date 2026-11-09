@@ -4,6 +4,8 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pendingMigrations } from "./migration-plan.mjs";
+import { createSqlClient } from "../src/lib/sql-client.ts";
+import { applyApplicationMigration } from "../src/lib/application-migrations.ts";
 
 const root = new URL("../migrations/", import.meta.url);
 
@@ -26,11 +28,23 @@ test("unified stack migrations apply in order on PGLite", async () => {
       "0010_report_section_grants.sql",
       "0011_report_insights.sql",
       "0012_platform_launch.sql",
+      "0013_encrypted_settings.sql",
     ],
   );
   const db = new PGlite();
   try {
-    for (const { name } of plan) await db.exec(await readFile(join(dir, name), "utf8"));
+    await db.exec("create table _migrations(name text primary key)");
+    for (const { name } of plan) {
+      await db.transaction(async (tx) => {
+        const sql = createSqlClient(async (text, params) => (await tx.query(text, params)).rows);
+        await applyApplicationMigration(
+          name,
+          await readFile(join(dir, name), "utf8"),
+          sql,
+          (source) => tx.exec(source),
+        );
+      });
+    }
     const social = await db.query(
       "select tablename from pg_tables where schemaname='public' and tablename like 'social_%' order by tablename",
     );

@@ -2,6 +2,19 @@
 
 Last updated: 2026-10-03
 
+## Encrypted settings continuation — 9 November 2026
+
+Based on main `920ccd7`, legacy Mangools keys, Monday capability URLs and ClickUp
+keys now use the existing encrypted vault with explicit owner/field scope.
+Migration 0013's shared data hook encrypts and verifies existing values, clears
+the old columns, validates guards against plaintext writes and records completion
+inside one transaction. Runtime settings/provider callers use the vault without
+a plaintext fallback. Public reads expose only configured/masked metadata.
+
+See [the migration and key runbook](docs/ms-robot/encrypted-settings-migration.md)
+for verification and limitations. This is source/test evidence: no live data was
+migrated, no service was deployed and no programme task is marked complete.
+
 ## Resumption checkpoint — 9 November 2026
 
 The fresh source assessment is [STATUS.md](STATUS.md), based on main `7138ac3`,
