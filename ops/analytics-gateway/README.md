@@ -17,6 +17,44 @@ The systemd unit reads /etc/ms-robot-analytics.env.
 
 Provider adapters are activated only after real credentials and live read-back verification.
 
+## Bounded GSC retrieval
+
+GSC sync fetches `site_daily` and `query_page_daily` in 5,000-row pages using
+`startRow`. A short or empty page ends each dataset. Each dataset permits at
+most 20 full pages (100,000 rows), followed by one empty termination probe.
+A non-empty probe fails with `gsc_pagination_limit_exceeded`; malformed or
+oversized pages fail with `gsc_invalid_page`; repeated/overlapping dimension
+identities fail with `gsc_pagination_no_progress`. These fixed codes contain no
+provider query/page content.
+
+All pages and the sitemap response are fetched before the metric/snapshot
+transaction. A later-page error does not write partial data, advance freshness
+or add completed coverage; the existing sync receipt records failure and prior
+successful evidence remains available. Replays retain the existing project-scoped
+idempotency semantics. Refresh remains synchronous, so a large refresh may
+outlast an application request timeout; inspect its scoped sync ledger before
+requesting another refresh. This change does not add an automatic retry worker.
+
+Completed receipts store versioned JSON cursor offsets, for example:
+`cursor_before={"version":1,"site_daily":0,"query_page_daily":0}` and
+`cursor_after={"version":1,"site_daily":7,"query_page_daily":5001}`.
+Offsets count provider row positions, including rows later skipped by metric
+validation. They describe a completed retrieval, not a resumable partial commit.
+Google's own top-row and privacy limits still apply; page exhaustion does not
+establish complete raw search traffic. Dashboard search tables retain their
+separate bounded/sampled reads.
+
+The gateway and Google adapter must both support offsets. A later release must
+keep `ops/google-provider/search-analytics.mjs` beside `provider.mjs`; the adapter
+forwards the validated offset to Google. No service is activated by this PR.
+
+Hermetic pagination checks (no credentials or external bridge source):
+
+```sh
+node --test scripts/google-provider-pagination.test.mjs
+python3 -m unittest discover -s ops/analytics-gateway -p 'test_gsc_pagination.py' -v
+```
+
 
 ## Project isolation
 
