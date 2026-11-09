@@ -30,6 +30,10 @@ GOOGLE_PROVIDER_URL=os.getenv('GOOGLE_PROVIDER_URL','').rstrip('/')
 GOOGLE_PROVIDER_TOKEN=os.getenv('GOOGLE_PROVIDER_TOKEN','')
 CODE_VERSION=os.getenv('MS_ROBOT_CODE_VERSION') or os.getenv('GIT_SHA') or 'unknown'
 PROVIDERS=['gsc','ga4','gtm','clarity','bing_webmaster','semrush','ubersuggest','mangools']
+GSC_PAGE_SIZE=5000
+# At most 100,000 rows per dataset, plus one empty end-of-data probe.
+# A non-empty probe fails closed; a receipt must not claim truncated coverage.
+GSC_MAX_PAGES=20
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def db():
@@ -230,16 +234,51 @@ def gsc_metrics(row):
     values['ctr']=values['clicks']/values['impressions'] if values['impressions'] else None
     return values
 
+def gsc_search_rows(property_url,start_date,end_date,dimensions):
+    """Collect bounded pages before the sync opens its metric transaction.
+
+    Offsets are provider row positions, including rows subsequently skipped by
+    metric validation. Repeated identities indicate a stalled or inconsistent
+    provider page; do not silently double-count them or claim full coverage.
+    Errors contain fixed codes only, never provider payloads or query strings.
+    """
+    rows=[]
+    seen=set()
+    for page_index in range(GSC_MAX_PAGES+1):
+        payload=google_request('/v1/gsc/search-analytics','POST',{
+            'siteUrl':property_url,'startDate':start_date,'endDate':end_date,
+            'dimensions':dimensions,'rowLimit':GSC_PAGE_SIZE,
+            'startRow':len(rows),'type':'web'})
+        if not isinstance(payload,dict) or not isinstance(payload.get('rows'),list):
+            raise RuntimeError('gsc_invalid_page')
+        page=payload['rows']
+        if len(page)>GSC_PAGE_SIZE:
+            raise RuntimeError('gsc_invalid_page')
+        if not page:
+            return rows
+        if page_index>=GSC_MAX_PAGES:
+            raise RuntimeError('gsc_pagination_limit_exceeded')
+        for row in page:
+            if not isinstance(row,dict):
+                raise RuntimeError('gsc_invalid_page')
+            keys=row.get('keys')
+            if not isinstance(keys,list) or len(keys)!=len(dimensions) or not all(isinstance(key,str) for key in keys):
+                raise RuntimeError('gsc_invalid_page')
+            identity=tuple(keys)
+            if identity in seen:
+                raise RuntimeError('gsc_pagination_no_progress')
+            seen.add(identity)
+        rows.extend(page)
+        if len(page)<GSC_PAGE_SIZE:
+            return rows
+    raise RuntimeError('gsc_pagination_limit_exceeded')
+
 def run_gsc_sync(project_id,site,window,run_id):
     start_date,end_date=window_dates(window)
     sites_payload=google_request('/v1/sites')
     property_url=resolve_gsc_property(site,sites_payload.get('sites',[]))
-    daily=google_request('/v1/gsc/search-analytics','POST',{
-        'siteUrl':property_url,'startDate':start_date,'endDate':end_date,
-        'dimensions':['date'],'rowLimit':5000,'type':'web'})
-    query_page=google_request('/v1/gsc/search-analytics','POST',{
-        'siteUrl':property_url,'startDate':start_date,'endDate':end_date,
-        'dimensions':['date','query','page'],'rowLimit':5000,'type':'web'})
+    daily={'rows':gsc_search_rows(property_url,start_date,end_date,['date'])}
+    query_page={'rows':gsc_search_rows(property_url,start_date,end_date,['date','query','page'])}
     sitemaps=google_request('/v1/gsc/sitemaps?siteUrl='+quote(property_url,safe=''))
     stamp=now(); received=len(daily.get('rows',[]))+len(query_page.get('rows',[])); inserted=0; updated=0; skipped=0
     with db() as c:
@@ -281,7 +320,11 @@ def run_gsc_sync(project_id,site,window,run_id):
         'rows_received':received,'rows_inserted':inserted,'rows_updated':updated,
         'rows_skipped':skipped,'rows_written':inserted+updated,
         'data_freshness':max((str(row.get('keys',[''])[0]) for row in daily.get('rows',[]) if row.get('keys') and start_date<=str(row['keys'][0])<=end_date and gsc_metrics(row) is not None),default=None),'resource_ref':property_url,
-        'cursor_before':'','cursor_after':'','rate_limit_state':'','quota_state':'',
+        # Versioned JSON offsets describe this complete read, not a resumable
+        # partial commit. Only completed runs persist these cursors.
+        'cursor_before':json.dumps({'version':1,'site_daily':0,'query_page_daily':0},separators=(',',':'),sort_keys=True),
+        'cursor_after':json.dumps({'version':1,'site_daily':len(daily['rows']),'query_page_daily':len(query_page['rows'])},separators=(',',':'),sort_keys=True),
+        'rate_limit_state':'','quota_state':'',
     }
 
 def sync_provider(project_id,provider,site,window,run_id):

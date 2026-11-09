@@ -2,6 +2,22 @@
 
 Last updated: 2026-10-03
 
+## Resumption checkpoint — 9 November 2026
+
+The fresh source assessment is [STATUS.md](STATUS.md), based on main `7138ac3`,
+the README/docs, recent commits and all 48 observed remote branch heads. It
+distinguishes facts, inferences and unknown current production state. The dated
+operational observations below remain historical evidence.
+
+This PR finishes bounded GSC pagination: both the Google adapter and analytics
+gateway honour `startRow`, completed syncs retain cursor offsets, and later-page,
+malformed/repeated-page or budget failures preserve existing evidence without
+claiming new completed coverage. Tests cover more than 5,000 rows, exact page
+multiples, empty results, replay/upserts, project isolation and atomic failure.
+See [VERIFICATION.md](VERIFICATION.md) for final test output and [NEXT.md](NEXT.md)
+for five small follow-ups. No deployment, merge or service activation is part of
+this checkpoint; no programme task or production-completion gate is marked done.
+
 ## Current verified checkpoint — 3 October 2026
 
 The current assessment is [the complete section/feature ledger](docs/ms-robot/completion-assessment-20261003.md), covering all 48 unified prompt sections, all nine analytics stages, the 18 Ms Robot and 20 cross-stack gates, provider/admin fields and programme tasks. Historical phase observations below are dated recovery evidence, not current completion claims.

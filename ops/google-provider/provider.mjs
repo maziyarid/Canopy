@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import { setDefaultResultOrder } from "node:dns";
+import { querySearchAnalytics, validateSiteUrl } from "./search-analytics.mjs";
 
 setDefaultResultOrder("ipv4first");
 
@@ -15,10 +16,6 @@ const PORT = Number(process.env.GOOGLE_PROVIDER_PORT || 9131);
 const TOKEN = process.env.GOOGLE_PROVIDER_TOKEN || "";
 const CREDS = process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
 const MAX_BODY = 1_000_000;
-const ALLOWED_DIMENSIONS = new Set([
-  "date", "query", "page", "country", "device", "searchAppearance",
-]);
-const ALLOWED_TYPES = new Set(["web", "image", "video", "news", "discover", "googleNews"]);
 
 if (!TOKEN) throw new Error("GOOGLE_PROVIDER_TOKEN is required");
 if (!CREDS) throw new Error("GOOGLE_APPLICATION_CREDENTIALS is required");
@@ -70,36 +67,6 @@ async function bodyJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function validateSiteUrl(value) {
-  const siteUrl = String(value || "").trim();
-  if (!siteUrl || !(siteUrl.startsWith("sc-domain:") || /^https?:\/\//i.test(siteUrl))) {
-    throw new Error("invalid_site_url");
-  }
-  return siteUrl;
-}
-
-function validateDate(value, field) {
-  const date = String(value || "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid_${field}`);
-  return date;
-}
-
-function validateDimensions(value) {
-  const dimensions = Array.isArray(value) && value.length ? value.map(String) : ["date"];
-  if (dimensions.some((d) => !ALLOWED_DIMENSIONS.has(d))) throw new Error("invalid_dimensions");
-  return dimensions;
-}
-
-function normaliseSearchRows(rows = []) {
-  return rows.map((row) => ({
-    keys: Array.isArray(row.keys) ? row.keys.map(String) : [],
-    clicks: typeof row.clicks === "number" && Number.isFinite(row.clicks) && row.clicks >= 0 ? row.clicks : null,
-    impressions: typeof row.impressions === "number" && Number.isFinite(row.impressions) && row.impressions >= 0 ? row.impressions : null,
-    ctr: typeof row.ctr === "number" && Number.isFinite(row.ctr) && row.ctr >= 0 ? row.ctr : null,
-    position: typeof row.position === "number" && Number.isFinite(row.position) && row.position >= 0 ? row.position : null,
-  }));
-}
-
 async function listSites() {
   const response = await searchconsole.sites.list();
   return (response.data.siteEntry || []).map((site) => ({
@@ -109,23 +76,7 @@ async function listSites() {
 }
 
 async function searchAnalytics(input) {
-  const siteUrl = validateSiteUrl(input.siteUrl);
-  const startDate = validateDate(input.startDate, "start_date");
-  const endDate = validateDate(input.endDate, "end_date");
-  const dimensions = validateDimensions(input.dimensions);
-  const rowLimit = Math.max(1, Math.min(25_000, Number(input.rowLimit || 1000)));
-  const type = ALLOWED_TYPES.has(input.type) ? input.type : "web";
-  const requestBody = { startDate, endDate, dimensions, rowLimit, type, dataState: "all" };
-  const response = await searchconsole.searchanalytics.query({ siteUrl, requestBody });
-  return {
-    siteUrl,
-    startDate,
-    endDate,
-    dimensions,
-    rows: normaliseSearchRows(response.data.rows || []),
-    responseAggregationType: response.data.responseAggregationType || null,
-    fetchedAt: now(),
-  };
+  return querySearchAnalytics(searchconsole, input);
 }
 
 async function listSitemaps(siteUrl) {
