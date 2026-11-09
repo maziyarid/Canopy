@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import {
   bindStoredMangoolsKey,
   commitMangoolsKey,
@@ -11,6 +12,9 @@ import {
   resolveMangoolsUrl,
 } from "./mangools-bind.ts";
 import type { Sql } from "../db.ts";
+import { createSqlClient, type QueryRunner } from "../sql-client.ts";
+import { saveStudioSettingsRecord } from "./integration-settings-service.ts";
+import { readSettingsSecret } from "./settings-vault.server.ts";
 
 async function fixture() {
   const db = new PGlite();
@@ -18,16 +22,11 @@ async function fixture() {
   for (const name of (await readdir(dir)).filter((x) => /^\d+.*\.sql$/.test(x)).sort()) {
     await db.exec(await readFile(join(dir, name), "utf8"));
   }
-  const sql = (async <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]> => {
-    let text = strings[0];
-    for (let i = 0; i < values.length; i++) text += `$${i + 1}${strings[i + 1]}`;
-    const result = await db.query<T>(text, values);
-    return result.rows;
-  }) as Sql;
-  sql.query = async <T = Record<string, unknown>>(text: string, params: unknown[] = []): Promise<T[]> => {
-    const result = await db.query<T>(text, params);
-    return result.rows;
-  };
+  const run: QueryRunner = async <T>(text: string, params: unknown[]) => (await db.query<T>(text, params)).rows;
+  const sql: Sql = createSqlClient(run, async (work) => db.transaction(async (tx) => {
+    const txRun: QueryRunner = async <T>(text: string, params: unknown[]) => (await tx.query<T>(text, params)).rows;
+    return work(txRun);
+  }));
   return { db, sql };
 }
 
@@ -150,29 +149,19 @@ test("invalid replacement Mangools key leaves the existing key active", async ()
 
   const { db, sql } = await fixture();
   try {
-    await sql.query(
-      "insert into studio_settings(user_id, mangools_key, monday_webhook) values('u1','good-stored-key-value','')",
+    const keyring = { activeVersion: 1, keys: { 1: randomBytes(32).toString("base64") } };
+    await saveStudioSettingsRecord(sql, "u1", { mangoolsKey: "good-stored-key-value" }, async () => true, keyring);
+    await assert.rejects(
+      saveStudioSettingsRecord(sql, "u1", { mangoolsKey: "invalid-candidate-key" }, async () => false, keyring),
+      /Mangools key validation failed/,
     );
-    try {
-      const next = await commitMangoolsKey({
-        existingKey: "good-stored-key-value",
-        candidateKey: "invalid-candidate-key",
-        validate: async () => false,
-      });
-      await sql.query("update studio_settings set mangools_key=$1 where user_id='u1'", [next]);
-    } catch {
-      // candidate must not be persisted
-    }
     const rows = await sql.query<{ mangools_key: string }>("select mangools_key from studio_settings where user_id='u1'");
-    assert.equal(rows[0].mangools_key, "good-stored-key-value");
-    const replaced = await commitMangoolsKey({
-      existingKey: "good-stored-key-value",
-      candidateKey: "new-valid-key-value",
-      validate: async () => true,
-    });
-    await sql.query("update studio_settings set mangools_key=$1 where user_id='u1'", [replaced]);
+    assert.equal(rows[0].mangools_key, "");
+    assert.equal(await readSettingsSecret(sql, "u1", "mangools", keyring) === "good-stored-key-value", true);
+    await saveStudioSettingsRecord(sql, "u1", { mangoolsKey: "new-valid-key-value" }, async () => true, keyring);
     const after = await sql.query<{ mangools_key: string }>("select mangools_key from studio_settings where user_id='u1'");
-    assert.equal(after[0].mangools_key, "new-valid-key-value");
+    assert.equal(after[0].mangools_key, "");
+    assert.equal(await readSettingsSecret(sql, "u1", "mangools", keyring) === "new-valid-key-value", true);
   } finally {
     await db.close();
   }

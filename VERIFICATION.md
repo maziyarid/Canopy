@@ -1,5 +1,9 @@
 # Ms Robot resume: GSC pagination verification
 
+This records PR #32's checks. The subsequent encrypted-settings migration and its
+fresh test output are documented in
+[the encrypted settings runbook](docs/ms-robot/encrypted-settings-migration.md).
+
 9 November 2026. Baseline `7138ac3`; Node `v24.19.0`, npm `11.9.0`, Python
 `3.12.14`. All data used for verification was synthetic/disposable. No provider
 credentials, live databases or production queues were used.

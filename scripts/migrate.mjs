@@ -17,12 +17,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
 import { pendingMigrations } from "./migration-plan.mjs";
+import { createSqlClient } from "../src/lib/sql-client.ts";
+import { applyApplicationMigration } from "../src/lib/application-migrations.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
-  console.log(
-    "[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).",
-  );
+  console.log("[migrate] DATABASE_URL not set — skipping (the PGLite fallback migrates itself).");
   process.exit(0);
 }
 
@@ -48,9 +48,7 @@ async function main() {
     await client.query(
       "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",
     );
-    const applied = (await client.query("SELECT name FROM _migrations")).rows.map(
-      (r) => r.name,
-    );
+    const applied = (await client.query("SELECT name FROM _migrations")).rows.map((r) => r.name);
 
     let count = 0;
     for (const { name } of pendingMigrations(entries, applied)) {
@@ -58,8 +56,10 @@ async function main() {
       try {
         await client.query("BEGIN");
         // pg's simple-query protocol runs a whole multi-statement file at once.
-        await client.query(text);
-        await client.query("INSERT INTO _migrations (name) VALUES ($1)", [name]);
+        const sql = createSqlClient(
+          async (query, params) => (await client.query(query, params)).rows,
+        );
+        await applyApplicationMigration(name, text, sql, (source) => client.query(source));
         await client.query("COMMIT");
       } catch (err) {
         console.error(`[migrate] error applying ${name}`);
@@ -73,7 +73,9 @@ async function main() {
       console.log(`[migrate] applied ${name}`);
       count += 1;
     }
-    console.log(count ? `[migrate] done — ${count} migration(s) applied.` : "[migrate] up to date.");
+    console.log(
+      count ? `[migrate] done — ${count} migration(s) applied.` : "[migrate] up to date.",
+    );
   } finally {
     client.release();
     await pool.end();

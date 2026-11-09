@@ -1,18 +1,15 @@
 import { assertUnrestrictedSession } from "./platform-launch-scope.server";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { Sql } from "@/lib/db";
 import { studioAuth } from "./studio-auth";
 import { canWrite, resolveAccess } from "./access";
 import {
   buildProjectKeywordQuery,
   executeClickUpKeywordSync,
-  mergeClickUpSettings,
-  toPublicClickUpSettings,
   type ClickUpKeywordRow,
-  type ClickUpSettingsRow,
   type PublicClickUpSettings,
 } from "./query-builders";
+import { loadClickUpSettingsRecord, publicClickUpSettings, saveClickUpSettingsRecord } from "./integration-settings-service";
 export type { PublicClickUpSettings } from "./query-builders";
 
 const CLICKUP_API_URL = "https://api.clickup.com/api/v2";
@@ -47,19 +44,7 @@ const GetTasksSchema = z.object({
   limit: z.number().int().min(1).max(100).default(50),
 });
 
-async function loadStoredClickUpSettings(sql: Sql, userId: string): Promise<ClickUpSettingsRow> {
-  const rows = await sql<ClickUpSettingsRow>`
-    SELECT api_key, team_id, folder_id, list_id
-    FROM clickup_settings
-    WHERE user_id = ${userId}
-    LIMIT 1
-  `;
-  const row = rows[0];
-  if (!row?.api_key?.trim()) {
-    throw new Error("ClickUp is not configured");
-  }
-  return row;
-}
+const loadStoredClickUpSettings = loadClickUpSettingsRecord;
 
 async function clickUpRequest(apiKey: string, path: string, init?: RequestInit) {
   const response = await fetch(`${CLICKUP_API_URL}${path}`, {
@@ -110,31 +95,7 @@ export const saveClickUpSettings = createServerFn({ method: "POST" })
       throw new Error("Unauthorized");
     }
 
-    const existing = await sql<ClickUpSettingsRow>`
-      SELECT api_key, team_id, folder_id, list_id
-      FROM clickup_settings
-      WHERE user_id = ${context.userId}
-      LIMIT 1
-    `;
-    const merged = mergeClickUpSettings(existing[0], data);
-
-    await sql`
-      INSERT INTO clickup_settings (user_id, api_key, team_id, folder_id, list_id, created_at, updated_at)
-      VALUES (${context.userId}, ${merged.api_key}, ${merged.team_id}, ${merged.folder_id}, ${merged.list_id}, NOW(), NOW())
-      ON CONFLICT (user_id)
-      DO UPDATE SET
-        api_key = ${merged.api_key},
-        team_id = ${merged.team_id},
-        folder_id = ${merged.folder_id},
-        list_id = ${merged.list_id},
-        updated_at = NOW()
-    `;
-
-    return {
-      ok: true as const,
-      message: "ClickUp settings saved successfully",
-      ...toPublicClickUpSettings(merged),
-    };
+    return saveClickUpSettingsRecord(sql, context.userId, data);
   });
 
 export const getClickUpSettings = createServerFn({ method: "GET" })
@@ -146,14 +107,7 @@ export const getClickUpSettings = createServerFn({ method: "GET" })
       throw new Error("Unauthorized");
     }
 
-    const rows = await sql<ClickUpSettingsRow>`
-      SELECT api_key, team_id, folder_id, list_id
-      FROM clickup_settings
-      WHERE user_id = ${context.userId}
-      LIMIT 1
-    `;
-
-    return toPublicClickUpSettings(rows[0]);
+    return publicClickUpSettings(sql, context.userId);
   });
 
 export const getClickUpLists = createServerFn({ method: "POST" })
