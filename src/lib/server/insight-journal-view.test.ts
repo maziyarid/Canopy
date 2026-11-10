@@ -79,6 +79,23 @@ describe("AAX-82 insight journal view-model", () => {
     assert.match(view.days[1].cards[0].limitation, /not proven/i);
   });
 
+  it("renders recommendations as proposal-only guidance", () => {
+    const recommendation = createInsight(
+      draft({
+        type: "recommendation",
+        title: "Review page copy",
+        body: "Observed evidence supports a manual review.",
+        recommendedAction: "Review the page; do not publish automatically.",
+      }),
+    );
+    const card = buildInsightJournalView([
+      { date: recommendation.generatedAt.slice(0, 10), insights: [recommendation] },
+    ]).days[0].cards[0];
+    assert.equal(card.type, "recommendation");
+    assert.equal(card.recommendationDisposition, "proposal_only");
+    assert.equal(card.recommendedAction, "Review the page; do not publish automatically.");
+  });
+
   it("does not attach another project's notes to a metric", () => {
     const store = new InsightStore();
     store.put(approveForClient(createInsight(draft({ projectId: "proj_b" })), "human:editor"));

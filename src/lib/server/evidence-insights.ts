@@ -2,6 +2,7 @@ export type InsightKind = "observation" | "anomaly" | "hypothesis" | "recommenda
 export type InsightProvenance = "first_party" | "third_party_estimate" | "mixed_blocked";
 export type InsightVisibility = "internal" | "client" | "restricted";
 export type InsightReviewState = "draft" | "pending_review" | "approved" | "rejected";
+export type RecommendationDisposition = "proposal_only";
 export type EvidenceProvider = "gsc" | "ga4" | "mangools" | "other";
 export type EvidenceKind = "metric" | "query" | "page" | "snapshot";
 
@@ -59,6 +60,7 @@ export interface InsightRecord {
   confidence: number;
   limitation: string;
   recommendedAction: string | null;
+  recommendationDisposition: RecommendationDisposition | null;
   generatedBy: string;
   generatedAt: string;
   reviewedBy: string | null;
@@ -134,6 +136,37 @@ export function classifyProvenance(refs: readonly EvidenceRef[]): InsightProvena
   return "first_party";
 }
 
+
+export function normalizeRecommendationSafety(insight: InsightRecord): InsightRecord {
+  const disposition: RecommendationDisposition | null =
+    insight.type === "recommendation" ? "proposal_only" : null;
+  if (insight.recommendationDisposition === disposition) return insight;
+  return { ...insight, recommendationDisposition: disposition };
+}
+
+
+export function recommendationCanBeClientVisible(insight: InsightRecord): boolean {
+  if (insight.type !== "recommendation") return true;
+  const safeInsight = normalizeRecommendationSafety(insight);
+  return (
+    Boolean(safeInsight.recommendedAction?.trim()) &&
+    safeInsight.recommendationDisposition === "proposal_only"
+  );
+}
+
+
+export function assertRecommendationReadyForApproval(insight: InsightRecord): void {
+  if (insight.type !== "recommendation") return;
+  if (!insight.recommendedAction?.trim()) {
+    throw new InsightValidationError(
+      "recommendations require a concrete recommendedAction before approval",
+    );
+  }
+  if (!recommendationCanBeClientVisible(normalizeRecommendationSafety(insight))) {
+    throw new InsightValidationError("recommendations must remain proposal_only");
+  }
+}
+
 export function assertCompatibleEvidence(refs: readonly EvidenceRef[]): void {
   if (!refs.length) {
     throw new InsightValidationError("generated claims require at least one evidenceRef");
@@ -157,16 +190,21 @@ export function assertCompatibleEvidence(refs: readonly EvidenceRef[]): void {
 export function clientMaySee(insight: InsightRecord, role: InsightRole): boolean {
   if (role === "owner" || role === "editor") return true;
   if (role === "service") return insight.visibility !== "restricted";
-  return insight.visibility === "client" && insight.reviewState === "approved";
+  return (
+    insight.visibility === "client" &&
+    insight.reviewState === "approved" &&
+    recommendationCanBeClientVisible(insight)
+  );
 }
 
 export function redactInsightForRole(insight: InsightRecord, role: InsightRole): InsightRecord | null {
   if (!clientMaySee(insight, role)) return null;
-  if (role !== "client") return insight;
+  const safeInsight = normalizeRecommendationSafety(insight);
+  if (role !== "client") return safeInsight;
   return {
-    ...insight,
-    generatedBy: insight.generatedBy.startsWith("human:") ? "human" : "assistant",
-    reviewedBy: insight.reviewedBy ? "reviewer" : null,
+    ...safeInsight,
+    generatedBy: safeInsight.generatedBy.startsWith("human:") ? "human" : "assistant",
+    reviewedBy: safeInsight.reviewedBy ? "reviewer" : null,
     linkedTaskId: null,
     // Draft/previous text is operator audit only. Clients see the approved body.
     editHistory: Object.freeze([]),
@@ -185,6 +223,10 @@ export function createInsight(draft: InsightDraft, now = new Date()): InsightRec
   }
   const evidenceRefs = Object.freeze(cloneEvidenceRefs(draft.evidenceRefs));
   const confidence = draft.confidence ?? (draft.type === "observation" ? 0.8 : 0.4);
+  const recommendedAction = draft.recommendedAction?.trim() || null;
+  if (draft.type === "recommendation" && !recommendedAction) {
+    throw new InsightValidationError("recommendations require a concrete recommendedAction");
+  }
   seq += 1;
   return {
     id: `ins_${seq.toString().padStart(4, "0")}`,
@@ -198,7 +240,8 @@ export function createInsight(draft: InsightDraft, now = new Date()): InsightRec
     provenance: classifyProvenance(evidenceRefs),
     confidence,
     limitation: draft.limitation ?? "Causality is not proven; treat as observed or likely.",
-    recommendedAction: draft.recommendedAction ?? null,
+    recommendedAction,
+    recommendationDisposition: draft.type === "recommendation" ? "proposal_only" : null,
     generatedBy: draft.generatedBy,
     generatedAt: now.toISOString(),
     reviewedBy: null,
@@ -240,7 +283,7 @@ export function editManualInsight(
     previousBody: insight.body,
   };
   const needsReReview = insight.reviewState === "approved" || insight.visibility === "client";
-  return {
+  return normalizeRecommendationSafety({
     ...insight,
     title,
     body,
@@ -248,7 +291,7 @@ export function editManualInsight(
     reviewState: needsReReview ? "pending_review" : insight.reviewState,
     reviewedBy: needsReReview ? null : insight.reviewedBy,
     visibility: needsReReview && insight.visibility === "client" ? "internal" : insight.visibility,
-  };
+  });
 }
 
 export function approveForClient(insight: InsightRecord, reviewerId: string): InsightRecord {
@@ -256,10 +299,12 @@ export function approveForClient(insight: InsightRecord, reviewerId: string): In
     throw new InsightValidationError("rejected insights cannot be approved without a new draft");
   }
   assertCompatibleEvidence(insight.evidenceRefs);
+  const safeInsight = normalizeRecommendationSafety(insight);
+  assertRecommendationReadyForApproval(safeInsight);
   return {
-    ...insight,
-    evidenceRefs: Object.freeze(cloneEvidenceRefs(insight.evidenceRefs)),
-    provenance: classifyProvenance(insight.evidenceRefs),
+    ...safeInsight,
+    evidenceRefs: Object.freeze(cloneEvidenceRefs(safeInsight.evidenceRefs)),
+    provenance: classifyProvenance(safeInsight.evidenceRefs),
     reviewedBy: reviewerId,
     reviewState: "approved",
     visibility: "client",
@@ -270,8 +315,9 @@ export class InsightStore {
   private readonly byId = new Map<string, InsightRecord>();
 
   put(insight: InsightRecord): InsightRecord {
-    this.byId.set(insight.id, insight);
-    return insight;
+    const safe = normalizeRecommendationSafety(insight);
+    this.byId.set(safe.id, safe);
+    return safe;
   }
 
   listForProject(projectId: string, role: InsightRole): InsightRecord[] {

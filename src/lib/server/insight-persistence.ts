@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { approveForClient, createInsight, editManualInsight, redactInsightForRole, type InsightRecord } from "./evidence-insights.ts";
+import { approveForClient, createInsight, editManualInsight, normalizeRecommendationSafety, redactInsightForRole, type InsightRecord } from "./evidence-insights.ts";
 import { evidenceFromSnapshot, insightsFromSnapshot } from "./snapshot-insight-adapter.ts";
 import { SnapshotAccessError, type SnapshotAccess, type SnapshotSql } from "./reporting-snapshot-service.ts";
 import type { ReportingSnapshot, SnapshotPeriod } from "./reporting-snapshot-core.ts";
@@ -13,7 +13,7 @@ function assertWriter(access: SnapshotAccess) {
 function safeStoredNote(payload: string, access: SnapshotAccess): InsightRecord | null {
   const note = JSON.parse(payload) as InsightRecord;
   if (note.projectId !== access.project.id || !Array.isArray(note.evidenceRefs) || note.evidenceRefs.some(ref => ref.site !== access.project.domain)) return null;
-  return note;
+  return normalizeRecommendationSafety(note);
 }
 
 async function insertNote(sql: SnapshotSql, access: SnapshotAccess, note: InsightRecord) {

@@ -6,8 +6,10 @@ import {
   approveForClient,
   createInsight,
   editManualInsight,
+  normalizeRecommendationSafety,
   type EvidenceRef,
   type InsightDraft,
+  type InsightRecord,
 } from "./evidence-insights.ts";
 
 const gscRef: EvidenceRef = {
@@ -120,6 +122,113 @@ describe("AAX-82 evidence-linked insights", () => {
   it("does not approve a rejected insight", () => {
     const rejected = { ...createInsight(baseDraft()), reviewState: "rejected" as const };
     assert.throws(() => approveForClient(rejected, "human:editor"), /rejected insights cannot be approved/);
+  });
+
+
+  it("requires a concrete action for recommendation records", () => {
+    assert.throws(
+      () =>
+        createInsight(
+          baseDraft({
+            type: "recommendation",
+            title: "Improve the landing page",
+            body: "Evidence supports a review of the landing page.",
+          }),
+        ),
+      /require a concrete recommendedAction/,
+    );
+  });
+
+  it("keeps recommendations proposal-only through approval", () => {
+    const recommendation = createInsight(
+      baseDraft({
+        type: "recommendation",
+        title: "Review the landing page",
+        body: "Observed search evidence supports a manual landing-page review.",
+        recommendedAction: "  Review copy and internal links before any production change.  ",
+      }),
+    );
+    assert.equal(recommendation.recommendedAction, "Review copy and internal links before any production change.");
+    assert.equal(recommendation.recommendationDisposition, "proposal_only");
+
+    const approved = approveForClient(recommendation, "human:editor");
+    assert.equal(approved.recommendationDisposition, "proposal_only");
+    assert.equal(approved.reviewState, "approved");
+  });
+
+  it("normalizes legacy recommendation records to proposal-only", () => {
+    const current = createInsight(
+      baseDraft({
+        type: "recommendation",
+        recommendedAction: "Review the page manually.",
+      }),
+    );
+    const legacy = { ...current } as Partial<InsightRecord>;
+    delete legacy.recommendationDisposition;
+    const normalized = normalizeRecommendationSafety(legacy as InsightRecord);
+    assert.equal(normalized.recommendationDisposition, "proposal_only");
+  });
+
+
+  it("does not approve a legacy recommendation until an action is supplied", () => {
+    const current = createInsight(
+      baseDraft({
+        type: "recommendation",
+        recommendedAction: "Review the page manually.",
+      }),
+    );
+    const legacy = {
+      ...current,
+      recommendedAction: null,
+      recommendationDisposition: undefined,
+    } as unknown as InsightRecord;
+    assert.throws(
+      () => approveForClient(legacy, "human:editor"),
+      /before approval/,
+    );
+  });
+
+
+  it("keeps an already-approved actionless legacy recommendation out of client reads", () => {
+    const store = new InsightStore();
+    const current = createInsight(
+      baseDraft({
+        type: "recommendation",
+        recommendedAction: "Review the page manually.",
+      }),
+    );
+    const legacy = {
+      ...current,
+      recommendedAction: null,
+      recommendationDisposition: undefined,
+      reviewState: "approved",
+      visibility: "client",
+      reviewedBy: "human:legacy-reviewer",
+    } as unknown as InsightRecord;
+    store.put(legacy);
+    assert.equal(store.listForProject("proj_a", "client").length, 0);
+    assert.equal(store.listForProject("proj_a", "owner").length, 1);
+  });
+
+
+  it("strips a non-proposal disposition on edit and store", () => {
+    const recommendation = createInsight(
+      baseDraft({
+        type: "recommendation",
+        generatedBy: "human:editor",
+        recommendedAction: "Review the page manually.",
+      }),
+    );
+    const forged = {
+      ...recommendation,
+      recommendationDisposition: "execute",
+    } as unknown as InsightRecord;
+    const edited = editManualInsight(forged, { title: "Review the page again" }, "human:editor");
+    assert.equal(edited.recommendationDisposition, "proposal_only");
+    const store = new InsightStore();
+    const stored = store.put(forged);
+    assert.equal(stored.recommendationDisposition, "proposal_only");
+    assert.equal(store.listForProject("proj_a", "owner")[0].recommendationDisposition, "proposal_only");
   });
 
   it("does not invent numeric facts inside the model", () => {
