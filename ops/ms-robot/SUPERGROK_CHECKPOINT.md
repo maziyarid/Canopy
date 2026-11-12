@@ -2,7 +2,7 @@
 
 - task: AAX-128 / PR #18 current; AAX-132 / PR #4 and AAX-111 / PR #5 remain merged and clean (no new P1/Major); AAX-55 operational retention planner green; AAX-80 client gate strengthened with confusable/invalid-input refusal; AAX-81 snapshot provenance green; AAX-82 evidence gate green
 - branch: fix/unified-privacy-reconcile-20261005 (PR #18 head)
-- full SHA: pending local commit (base dc9d6d0a3d2cd3d3019ab749f91e32aacc2c1b10)
+- full SHA: 0ed6f45cec9b453947dd1fe00ef182d9f8fb6abd
 - files changed this hour: ops/ms-robot/client_reporting_gate.py, ops/ms-robot/test_client_reporting_gate.py, ops/ms-robot/SUPERGROK_CHECKPOINT.md
 - issue fixed: AAX-80 client_gate_decision now fail-closes on non-string/empty/control/non-ASCII/unknown roles and unbound project ids (ClientReportingRefused); never enables routes or reads data when reporting is unconfigured for clients
 - tests/checks actually run this hour: ops/ms-robot/test_client_reporting_gate 9/9 PASS; ops.analytics-gateway.test_sqlite_migrations 9/9 PASS; git diff --check PASS
