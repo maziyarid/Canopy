@@ -2,7 +2,7 @@
 
 import unittest
 
-from client_reporting_gate import client_gate_decision
+from client_reporting_gate import ClientReportingRefused, client_gate_decision
 
 
 class TestClientReportingGate(unittest.TestCase):
@@ -32,6 +32,27 @@ class TestClientReportingGate(unittest.TestCase):
             decision = client_gate_decision(False, role)
             self.assertNotIn("clientReportingEnabled", decision)
             self.assertFalse(decision.get("scheduledSyncEnabled", False))
+
+    def test_non_string_role_refused(self):
+        with self.assertRaises(ClientReportingRefused) as caught:
+            client_gate_decision(False, None)
+        self.assertEqual(str(caught.exception), "client_role_invalid")
+
+    def test_confusable_role_refused(self):
+        for role in ("ｃｌｉｅｎｔ", "client​", "clіent"):
+            with self.assertRaises(ClientReportingRefused) as caught:
+                client_gate_decision(False, role, "p1")
+            self.assertEqual(str(caught.exception), "client_role_invalid")
+
+    def test_unknown_role_refused(self):
+        with self.assertRaises(ClientReportingRefused) as caught:
+            client_gate_decision(False, "admin", "p1")
+        self.assertEqual(str(caught.exception), "client_role_unknown")
+
+    def test_invalid_project_refused(self):
+        with self.assertRaises(ClientReportingRefused) as caught:
+            client_gate_decision(False, "client", "proj\x00a")
+        self.assertEqual(str(caught.exception), "client_project_unbound")
 
 
 if __name__ == "__main__":
