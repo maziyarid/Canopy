@@ -50,6 +50,9 @@ def classify_evidence_insight(draft, mode="inspect"):
         provider = str(ref.get("provider") or "").strip().lower()
         if provider not in {"gsc", "ga4", "mangools", "other"}:
             raise EvidenceProvenanceRefused("evidence_provider_unknown")
+    # Fail closed if a draft attempts to self-promote readiness or client visibility.
+    if draft.get("reviewReady") is True or draft.get("clientVisible") is True:
+        raise EvidenceProvenanceRefused("evidence_self_promotion_refused")
     return {
         "reviewReady": False,
         "clientVisible": False,
