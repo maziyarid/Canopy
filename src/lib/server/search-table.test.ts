@@ -52,3 +52,23 @@ test("encoded contact information in page paths cannot bypass client redaction",
   assert.doesNotMatch(JSON.stringify(table), /private|%40|912|4567/);
   assert.match(table.rows[0].page, /REDACTED/);
 });
+
+test("search table fails closed when the requested project id is not the resolved binding", async () => {
+  let reads = 0;
+  await assert.rejects(loadSearchTable({
+    ...opts,
+    projectId: "client-supplied",
+    resolveAccess: async () => ({ ...owner, project: { ...owner.project, id: "resolved-project" } }),
+    readRows: async () => { reads++; return { rows }; },
+  }), /Forbidden/);
+  assert.equal(reads, 0);
+});
+
+test("search table reads the gateway with the resolved project id only", async () => {
+  let seen = "";
+  await loadSearchTable({
+    ...opts,
+    readRows: async (projectId) => { seen = projectId; return { rows }; },
+  });
+  assert.equal(seen, "p1");
+});

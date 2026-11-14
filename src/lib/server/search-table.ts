@@ -14,13 +14,14 @@ export async function loadSearchTable(opts: {
   readRows(projectId: string, site: string, dataset: string, start: string, end: string): Promise<GatewayMetricResponse>;
 }): Promise<SearchTable> {
   const access = await resolveSnapshotAccess(opts.resolveAccess, opts.sql, opts.userId, opts.email, opts.projectId);
+  if (!access.project.id || opts.projectId !== access.project.id) throw new SnapshotAccessError(403, "Forbidden");
   if (access.filter.trim() || (access.role === "client" && !parseReportSections(access.reportSections).includes("search"))) throw new SnapshotAccessError(403, "Forbidden");
   const limit = Math.max(1, Math.min(100, Math.trunc(opts.limit ?? 20)));
   const offset = Math.max(0, Math.min(2000, Math.trunc(opts.offset ?? 0)));
   const base: SearchTable = { status: "unavailable", rows: [], total: 0, offset, limit, truncated: false, dataDate: null, period: opts.period };
   if (!Number.isFinite(limit) || !Number.isFinite(offset)) throw new SnapshotAccessError(400, "Invalid table page");
   let response: GatewayMetricResponse;
-  try { response = await opts.readRows(opts.projectId, access.project.domain, "query_page_daily", opts.period.start, opts.period.end); }
+  try { response = await opts.readRows(access.project.id, access.project.domain, "query_page_daily", opts.period.start, opts.period.end); }
   catch { return base; }
   if (!Array.isArray(response.rows)) return base;
   base.truncated = response.truncated === true || response.rows.length > 2000;
