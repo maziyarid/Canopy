@@ -119,3 +119,13 @@ class OperationalRetentionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_control_characters_in_domain_and_mode_fail_closed(self):
+        for bad in ("thesis\x00", "other\x1f", "thesis\x7f", "\x01other"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain=bad, mode="dry-run", candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_refused_domain")
+        for bad in ("dry-run\x00", "dry-run\x1f", "dry\x7f-run"):
+            with self.assertRaises(RetentionRefused) as caught:
+                plan_operational_retention(data_domain="other", mode=bad, candidate_rows=1)
+            self.assertEqual(str(caught.exception), "retention_execution_disabled")

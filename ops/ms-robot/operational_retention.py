@@ -24,12 +24,12 @@ def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: i
     domain = raw_domain.strip().lower()
     # Fail closed on any non-ASCII after normalisation so confusables and format characters
     # cannot be accepted even if a future set membership check is loosened.
-    if any(ord(char) > 127 for char in domain):
+    if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in domain):
         raise RetentionRefused("retention_refused_domain")
     requested = mode.strip().lower()
     # Fail closed on any non-ASCII after normalisation so confusables and format characters
     # cannot be accepted even if a future exact-match check is loosened.
-    if any(ord(char) > 127 for char in requested):
+    if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in requested):
         raise RetentionRefused("retention_execution_disabled")
     if domain == "medical" or domain not in OPERATIONAL_DOMAINS:
         raise RetentionRefused("retention_refused_domain")
