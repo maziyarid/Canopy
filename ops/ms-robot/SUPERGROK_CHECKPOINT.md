@@ -2,7 +2,7 @@
 
 - task: AAX-128 / PR #18 current; AAX-132 / PR #4 and AAX-111 / PR #5 remain merged and clean (no new P1/Major); AAX-55 operational retention strengthened with control-character fail-closed; AAX-80 client gate; AAX-81 snapshot provenance; AAX-82 evidence gate all green
 - branch: fix/unified-privacy-reconcile-20261005 (PR #18 head)
-- full SHA: 477fd06ed3697b33ce40e28b53baa93328ca4804
+- full SHA: c512828deaf1fa9cc88846e069451487bcd41c84
 - files changed this hour: ops/ms-robot/operational_retention.py, ops/ms-robot/test_operational_retention.py, ops/ms-robot/SUPERGROK_CHECKPOINT.md
 - issue fixed: strengthened AAX-55 retention planner to refuse control characters (0x00-0x1F, DEL) in domain and mode after normalisation, matching client-gate style; no execution or medical activation
 - tests/checks actually run this hour: ops.ms-robot.test_operational_retention + ops.analytics-gateway.test_sqlite_migrations + ops.ms-robot.test_promotion_readiness 38/38 PASS; git diff --check (pending)
