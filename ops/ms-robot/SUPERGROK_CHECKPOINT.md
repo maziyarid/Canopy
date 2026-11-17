@@ -2,7 +2,7 @@
 
 - task: AAX-128 / PR #18 current; AAX-132 / PR #4 and AAX-111 / PR #5 remain merged and clean (no new P1/Major); AAX-55 operational retention, AAX-80 client gate, AAX-81 snapshot/GA4 provenance, AAX-82 evidence gate all green
 - branch: fix/unified-privacy-reconcile-20261005 (PR #18 head)
-- full SHA: 52a1254f50556143feee4b9bc368cea38200cbf0
+- full SHA: 777ca3793a4541e73ec449a9d1e03083cac46358
 - files changed this hour: ops/ms-robot/SUPERGROK_CHECKPOINT.md (checkpoint only)
 - issue fixed: verified post-restore state after 2026-11-16 GSC property fail-closed + gateway.py restoration; all focused gates remain green
 - tests/checks actually run this hour: ops.ms-robot discover (195 tests including promotion_readiness, operational_retention, client_reporting_gate, evidence_provenance_gate, snapshot/GA4 provenance) 195/195 PASS; ops.analytics-gateway.test_sqlite_migrations included in earlier run 9/9 PASS; git diff --check PASS; changed-file secret scan no real credentials
