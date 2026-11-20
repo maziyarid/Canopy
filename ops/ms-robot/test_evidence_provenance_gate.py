@@ -79,5 +79,19 @@ class EvidenceProvenanceGateTest(unittest.TestCase):
                 classify_evidence_insight(draft)
             self.assertEqual(str(caught.exception), "evidence_provenance_missing")
 
+
+    def test_self_promotion_is_refused(self):
+        base = {
+            "projectId": "proj_a",
+            "type": "observation",
+            "provenance": "first_party",
+            "evidenceRefs": [{"provider": "gsc"}],
+        }
+        for flag in ("reviewReady", "clientVisible"):
+            draft = {**base, flag: True}
+            with self.assertRaises(EvidenceProvenanceRefused) as caught:
+                classify_evidence_insight(draft)
+            self.assertEqual(str(caught.exception), "evidence_self_promotion_refused")
+
 if __name__ == "__main__":
     unittest.main()

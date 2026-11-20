@@ -246,6 +246,20 @@ class SnapshotWindowProvenanceTests(unittest.TestCase):
         self.assertFalse(plan["clientReady"])
         self.assertFalse(plan["reportingRouteEnabled"])
 
+    def test_measurement_kind_confusable_refused(self):
+        snapshot = {
+            "projectId": "p1",
+            "boundProjectId": "p1",
+            "startDate": "2026-09-01",
+            "endDate": "2026-09-01",
+            "requestedStartDate": "2026-09-01",
+            "requestedEndDate": "2026-09-01",
+            "measurementKind": "еvent",  # Cyrillic e
+        }
+        with self.assertRaises(SnapshotWindowRefused) as cm:
+            classify_snapshot_window(snapshot)
+        self.assertEqual(cm.exception.code, "snapshot_measurement_kind_confusable")
+
 
 if __name__ == "__main__":
     unittest.main()

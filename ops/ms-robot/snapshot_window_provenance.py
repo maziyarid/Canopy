@@ -55,6 +55,20 @@ def _metric_key(metric, blank_code="snapshot_metric_blank"):
     return key
 
 
+def _measurement_kind(value):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise SnapshotWindowRefused("snapshot_measurement_kind_invalid")
+    text = value.strip()
+    if not text:
+        return None
+    normalized = unicodedata.normalize("NFKC", text)
+    if any(ord(ch) > 127 and ch.isalpha() for ch in normalized):
+        raise SnapshotWindowRefused("snapshot_measurement_kind_confusable")
+    return normalized.casefold()
+
+
 def _declared_metrics(raw_metrics, duplicate_code, blank_code):
     if not isinstance(raw_metrics, list):
         raise SnapshotWindowRefused("snapshot_metric_invalid")
@@ -101,6 +115,7 @@ def classify_snapshot_window(snapshot, mode="inspect"):
     bound_project_id = str(snapshot.get("boundProjectId") or "").strip()
     if not project_id or project_id != bound_project_id:
         raise SnapshotWindowRefused("snapshot_project_unbound")
+    _measurement_kind(snapshot.get("measurementKind"))
     start = _date(snapshot.get("startDate"), "snapshot_window_invalid")
     end = _date(snapshot.get("endDate"), "snapshot_window_invalid")
     if end < start:
