@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { readIfReportingConfigured } from "./reporting-read-gate.ts";
+import { SnapshotAccessError } from "./reporting-snapshot-service.ts";
 import {
   applySectionFreshness,
   buildClientReportView,
@@ -265,7 +267,19 @@ describe("AAX-80 gated client dashboard", () => {
     assert.equal(isReportingConfiguredForRole("editor"), true);
   });
 
-  it("wires the client activation gate before reporting data reads in every client entrypoint", () => {
+  it("wires the client activation gate before reporting data reads in every client entrypoint", async () => {
+    // Behavioral proof that the gate itself never invokes the reader for clients.
+    // Full handler execution is covered by reporting-read-gate.test.ts; this asserts the same contract.
+    let clientReads = 0;
+    await assert.rejects(
+      () => readIfReportingConfigured("client", async () => { clientReads += 1; return "leaked"; }),
+      (error: unknown) => error instanceof SnapshotAccessError && error.status === 503,
+    );
+    assert.equal(clientReads, 0, "unconfigured client must not invoke the snapshot reader");
+    let ownerReads = 0;
+    const result = await readIfReportingConfigured("owner", async () => { ownerReads += 1; return "ok"; });
+    assert.equal(ownerReads, 1);
+    assert.equal(result, "ok");
     const source = readFileSync(new URL("./reporting-snapshot.ts", import.meta.url), "utf8");
     const handlers = ["getReportingSnapshot", "getProjectReport", "exportProjectReport", "getProjectSearchTable"];
     for (const name of handlers) {
