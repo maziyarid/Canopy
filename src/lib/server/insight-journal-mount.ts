@@ -7,10 +7,12 @@ import {
 import {
   buildInsightJournalView,
   insightsBesideMetric,
+  toClientInsightCardView,
   toInsightCardView,
   type InsightCardView,
   type InsightJournalView,
 } from "./insight-journal-view.ts";
+import { redactClientText } from "./client-report-view.ts";
 import {
   evidenceFromSnapshot,
   insightsFromSnapshot,
@@ -39,7 +41,11 @@ function visibleInsights(insights: readonly InsightRecord[], role: InsightRole):
     .filter((insight): insight is InsightRecord => insight !== null && clientMaySee(insight, role));
 }
 
-function journalDays(insights: readonly InsightRecord[], truncated = false, visibleLimit = 100): InsightJournalView {
+function cardForRole(insight: InsightRecord, role: InsightRole): InsightCardView | null {
+  return role === "client" ? toClientInsightCardView(insight) : toInsightCardView(insight);
+}
+
+function journalDays(insights: readonly InsightRecord[], role: InsightRole, truncated = false, visibleLimit = 100): InsightJournalView {
   const byDate = new Map<string, InsightRecord[]>();
   for (const insight of insights) {
     const date = insight.generatedAt.slice(0, 10);
@@ -53,7 +59,19 @@ function journalDays(insights: readonly InsightRecord[], truncated = false, visi
       date,
       insights: rows.sort((a, b) => (a.generatedAt < b.generatedAt ? 1 : -1)),
     }));
-  return buildInsightJournalView(days, { truncated, visibleLimit });
+  const view = buildInsightJournalView(days, { truncated, visibleLimit });
+  return {
+    ...view,
+    days: view.days.map((day) => ({
+      ...day,
+      cards: day.cards
+        .map((card) => {
+          const source = insights.find((insight) => insight.id === card.id);
+          return source ? cardForRole(source, role) : card;
+        })
+        .filter((card): card is InsightCardView => card !== null),
+    })).filter((day) => day.cards.length > 0),
+  };
 }
 
 function metricHasUsableValue(value: unknown): boolean {
@@ -108,7 +126,7 @@ export function mountInsightJournal(options: {
   const projectId = options.snapshot?.projectId ?? options.projectId;
   const combined = scopedInsights([...(options.insights ?? []), ...generated], projectId);
   const visible = visibleInsights(combined, options.role);
-  const journal = journalDays(visible, options.truncated === true, options.visibleLimit ?? 100);
+  const journal = journalDays(visible, options.role, options.truncated === true, options.visibleLimit ?? 100);
 
   const beside: InsightJournalMountModel["beside"] = [];
   const warnings: string[] = [];
@@ -130,12 +148,16 @@ export function mountInsightJournal(options: {
           periodEnd: options.snapshot.period.end,
         });
         if (!matches.length) continue;
+        const cards = matches
+          .map((insight) => cardForRole(insight, options.role))
+          .filter((card): card is InsightCardView => card !== null);
+        if (!cards.length) continue;
         beside.push({
-          metricName: metric.name,
-          site: options.snapshot.site,
-          periodStart: options.snapshot.period.start,
-          periodEnd: options.snapshot.period.end,
-          cards: matches.map(toInsightCardView),
+          metricName: options.role === "client" ? (redactClientText(metric.name) ?? "metric") : metric.name,
+          site: options.role === "client" ? (redactClientText(options.snapshot.site) ?? "") : options.snapshot.site,
+          periodStart: options.role === "client" ? (redactClientText(options.snapshot.period.start) ?? "") : options.snapshot.period.start,
+          periodEnd: options.role === "client" ? (redactClientText(options.snapshot.period.end) ?? "") : options.snapshot.period.end,
+          cards,
         });
       }
     }
