@@ -160,5 +160,19 @@ class ProviderJobRecoveryTest(unittest.TestCase):
             self.assertEqual(preserved[0], "failed_closed")
             self.assertEqual(preserved[1], "gsc_property_not_authorised")
 
+    def test_non_ascii_project_and_job_identity_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "jobs.sqlite"
+            started = datetime(2026, 10, 4, 2, 0, tzinfo=timezone.utc)
+            for bad in ("project-ａ", "project\u200b", "project\x00", "ｊob-1"):
+                with self.assertRaises(ProviderJobRecoveryError) as raised:
+                    record_running(path, "job-clean", "gsc", bad, attempt=1, now=started)
+                self.assertEqual(str(raised.exception), "invalid_project_id")
+            with self.assertRaises(ProviderJobRecoveryError) as raised:
+                record_running(path, "ｊob-1", "gsc", "project-a", attempt=1, now=started)
+            self.assertEqual(str(raised.exception), "invalid_project_id")
+            clean = record_running(path, "job-clean", "gsc", "project-a", attempt=1, now=started)
+            self.assertEqual(clean["project_id"], "project-a")
+
 if __name__ == "__main__":
     unittest.main()
