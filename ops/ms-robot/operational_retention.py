@@ -4,11 +4,14 @@ This module never deletes rows and never activates medical retention.
 A caller may request a dry-run count for thesis/other domains only.
 Any execute/apply mode, unknown domain, or medical domain fails closed.
 Non-string inputs for domain or mode are refused before normalisation.
+Excessively long domain or mode strings are refused to bound work.
 """
 from __future__ import annotations
 
 OPERATIONAL_DOMAINS = frozenset({"thesis", "other"})
 MAX_CANDIDATE_ROWS = 1_000_000
+MAX_DOMAIN_LENGTH = 64
+MAX_MODE_LENGTH = 32
 
 
 class RetentionRefused(RuntimeError):
@@ -19,6 +22,10 @@ def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: i
     if not isinstance(data_domain, str):
         raise RetentionRefused("retention_refused_domain")
     if not isinstance(mode, str):
+        raise RetentionRefused("retention_execution_disabled")
+    if len(data_domain) > MAX_DOMAIN_LENGTH:
+        raise RetentionRefused("retention_refused_domain")
+    if len(mode) > MAX_MODE_LENGTH:
         raise RetentionRefused("retention_execution_disabled")
     raw_domain = data_domain
     # Reject control/DEL/non-ASCII in the raw value before any normalisation so
