@@ -21,11 +21,19 @@ def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: i
     if not isinstance(mode, str):
         raise RetentionRefused("retention_execution_disabled")
     raw_domain = data_domain
+    # Reject control/DEL/non-ASCII in the raw value before any normalisation so
+    # trailing controls that strip() would remove cannot smuggle a valid domain.
+    if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in raw_domain):
+        raise RetentionRefused("retention_refused_domain")
     domain = raw_domain.strip().lower()
     # Fail closed on any non-ASCII after normalisation so confusables and format characters
     # cannot be accepted even if a future set membership check is loosened.
     if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in domain):
         raise RetentionRefused("retention_refused_domain")
+    # Reject control/DEL/non-ASCII in the raw mode before normalisation so
+    # trailing controls that strip() would remove cannot smuggle a valid mode.
+    if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in mode):
+        raise RetentionRefused("retention_execution_disabled")
     requested = mode.strip().lower()
     # Fail closed on any non-ASCII after normalisation so confusables and format characters
     # cannot be accepted even if a future exact-match check is loosened.

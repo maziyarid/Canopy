@@ -116,10 +116,6 @@ class OperationalRetentionTest(unittest.TestCase):
         self.assertEqual(plan["candidateRows"], 1_000_000)
         self.assertFalse(plan["executed"])
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_control_characters_in_domain_and_mode_fail_closed(self):
         for bad in ("thesis\x00", "other\x1f", "thesis\x7f", "\x01other"):
             with self.assertRaises(RetentionRefused) as caught:
@@ -129,3 +125,7 @@ if __name__ == "__main__":
             with self.assertRaises(RetentionRefused) as caught:
                 plan_operational_retention(data_domain="other", mode=bad, candidate_rows=1)
             self.assertEqual(str(caught.exception), "retention_execution_disabled")
+
+
+if __name__ == "__main__":
+    unittest.main()
