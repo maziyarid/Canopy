@@ -124,5 +124,17 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
             classify_snapshot(snapshot, mode="inspect")
         self.assertEqual(caught.exception.code, "snapshot_source_missing")
 
+    def test_whitespace_only_identity_and_source_fail_closed(self):
+        # Whitespace-only after strip must not be treated as bound or present.
+        for field, value in (("projectId", "   \t  "), ("boundProjectId", " \n "), ("sourceRef", "  \t\n  ")):
+            snapshot = dict(VALID)
+            snapshot[field] = value
+            if field == "projectId":
+                snapshot["boundProjectId"] = value
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(snapshot, mode="inspect")
+            expected = "snapshot_project_unbound" if field != "sourceRef" else "snapshot_source_missing"
+            self.assertEqual(caught.exception.code, expected)
+
 if __name__ == "__main__":
     unittest.main()
