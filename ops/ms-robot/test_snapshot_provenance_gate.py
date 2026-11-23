@@ -46,6 +46,14 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
                 classify_snapshot(snapshot, mode=mode)
             self.assertEqual(caught.exception.code, "snapshot_mode_unknown")
 
+
+    def test_raw_control_mode_before_strip_is_refused(self):
+        # Trailing controls that strip() would remove must not smuggle "inspect".
+        for mode in ("inspect\x00", "inspect\x1f", "inspect\x7f", "\x00inspect"):
+            with self.assertRaises(SnapshotProvenanceRefused) as caught:
+                classify_snapshot(VALID, mode=mode)
+            self.assertEqual(caught.exception.code, "snapshot_mode_unknown")
+
     def test_control_and_nonascii_project_and_source_fail_closed(self):
         base = dict(VALID)
         for bad in ("proj\x001", "proj\u200b1", "proj-1\u0000"):

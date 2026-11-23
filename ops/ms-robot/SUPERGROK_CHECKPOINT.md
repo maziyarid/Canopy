@@ -1,14 +1,17 @@
-# SuperGrok Checkpoint 2026-11-23T09:00+0330
+# SuperGrok Checkpoint 2026-11-23T12:03+0330
 
-- task: AAX-55 / PR #34 current (retention fail-closed strengthening); AAX-128 / PR #18 remains open draft; AAX-132 / PR #4 and AAX-111 / PR #5 remain merged and clean (no new P1/Major)
-- branch: aax55-retention-edge-20261122 (PR #34 head)
-- full SHA: 26ed0b96911948faf2d01ceae607a0b76ebef1fe (pre-this-checkpoint)
-- files changed this hour: ops/ms-robot/SUPERGROK_CHECKPOINT.md (checkpoint only)
-- issue fixed: verified current GitHub state (PR #4/#5 merged clean, PR #18 draft open, PR #34 draft open with AAX-55 control-char rejection in operational_retention.py); no new valid unresolved P1/Major on #4/#5
-- tests/checks actually run this hour: inspection only (prior suites recorded green on this head: retention + promotion 30/30); Python compile not re-run this hour; git diff --check not re-run
-- GitHub current state: PR #4 closed/merged 2026-10-04 (head ~0b914518); PR #5 closed/merged 2026-10-04 (head ~63988c96); PR #18 draft open; PR #34 draft open (head 26ed0b96), mergeable false (likely draft or base); Agiflow not connected / write unavailable
-- unresolved findings: promotion remains not_promotable pending human gates. No code-level P1/Major on active heads. Browser smoke not run. Node tests not re-run.
-- exact next action: push this checkpoint; leave PR #34 in review/draft; on next run continue non-overlapping AAX-55 ambient enforcement or inspect PR #18/#26 for executable slices; do not merge to main; do not deploy; do not enable scheduled portfolio sync.
+- task: AAX-81 snapshot provenance raw-control strengthening (non-overlapping with AAX-55 / PR #34); AAX-128 / PR #18 remains open draft; AAX-132 / PR #4 and AAX-111 / PR #5 remain merged and clean (no new P1/Major)
+- branch: aax55-retention-edge-20261122 (PR #34 head; this commit advances it)
+- full SHA: 6a4de4a06656ae90389dad6f6c97c224b61b78d4 (pre-this-change)
+- files changed: ops/ms-robot/snapshot_provenance_gate.py, ops/ms-robot/test_snapshot_provenance_gate.py, ops/ms-robot/SUPERGROK_CHECKPOINT.md
+- issue fixed: reject control/DEL/non-ASCII in raw mode argument of classify_snapshot before strip(), preventing trailing controls from smuggling "inspect"; added focused regression test
+- tests/checks actually run:
+  - ops/ms-robot test_snapshot_provenance_gate: 11/11 PASS
+  - ops/ms-robot test_operational_retention + test_promotion_readiness: 31/31 PASS
+  - Python compile on changed files: implicit PASS via successful import/run
+- GitHub current state: PR #4 closed/merged; PR #5 closed/merged; PR #18 draft open mergeable clean; PR #34 draft open (head was 6a4de4a); no new review threads or valid unresolved P1/Major on #4/#5
+- unresolved findings: promotion remains not_promotable pending human gates (canonical map, credentials, deploy). Browser smoke not run. Node tests not re-run. Agiflow write unavailable.
+- exact next action: push this change; leave PR #34 in draft; on next run continue non-overlapping AAX-81 or AAX-82 or inspect other open drafts for executable slices; do not merge to main; do not deploy; do not enable scheduled portfolio sync.
 - blocker: Agiflow write unavailable; this GitHub commit is the checkpoint.
 
-Cross-comment: Shared SQLite coordinator (AAX-132) remains on main and green. AAX-55 retention now rejects raw control/DEL/non-ASCII before normalisation. Continuous queue advancing on AAX-55 / AAX-128 verification.
+Cross-comment: Shared SQLite coordinator (AAX-132) remains green. AAX-55 retention and AAX-81 snapshot gates now both reject raw control characters before normalisation. Continuous queue advancing on AAX-55 / AAX-81 / AAX-128 verification.

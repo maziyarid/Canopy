@@ -20,7 +20,14 @@ class SnapshotProvenanceRefused(RuntimeError):
 def classify_snapshot(snapshot, mode="inspect"):
     if not isinstance(snapshot, dict):
         raise SnapshotProvenanceRefused("snapshot_invalid")
-    requested = str(mode or "").strip().lower()
+    if not isinstance(mode, str):
+        raise SnapshotProvenanceRefused("snapshot_mode_unknown")
+    raw_mode = mode
+    # Reject control/DEL/non-ASCII in the raw mode before any strip so trailing
+    # controls that strip() would remove cannot smuggle a valid inspect mode.
+    if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in raw_mode):
+        raise SnapshotProvenanceRefused("snapshot_mode_unknown")
+    requested = raw_mode.strip().lower()
     # Fail closed on any non-ASCII after normalisation so confusables and format characters
     # cannot be accepted even if a future exact-match check is loosened.
     if any(ord(char) > 127 for char in requested):
