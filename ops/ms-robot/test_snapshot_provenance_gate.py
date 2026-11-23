@@ -107,5 +107,22 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
             classify_snapshot({"projectId": "p1", "boundProjectId": "p1", "provenance": "first_party", "measurementKind": "observed", "sourceRef": "s1"}, mode=long_mode)
         self.assertEqual(str(caught.exception), "snapshot_mode_unknown")
 
+
+    def test_excessively_long_identity_is_refused(self):
+        long_id = "proj-" + ("x" * 200)
+        snapshot = dict(VALID)
+        snapshot["projectId"] = long_id
+        snapshot["boundProjectId"] = long_id
+        with self.assertRaises(SnapshotProvenanceRefused) as caught:
+            classify_snapshot(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_project_unbound")
+
+    def test_excessively_long_source_is_refused(self):
+        snapshot = dict(VALID)
+        snapshot["sourceRef"] = "ga4:" + ("x" * 300)
+        with self.assertRaises(SnapshotProvenanceRefused) as caught:
+            classify_snapshot(snapshot, mode="inspect")
+        self.assertEqual(caught.exception.code, "snapshot_source_missing")
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,8 @@ from __future__ import annotations
 SAMPLED_KINDS = frozenset({"sampled", "incomplete", "estimated", "partial"})
 ALLOWED_KINDS = frozenset({"", "observed", "complete", "unsampled"})
 MAX_MODE_LENGTH = 32
+MAX_IDENTITY_LENGTH = 128
+MAX_SOURCE_LENGTH = 256
 
 
 class SnapshotProvenanceRefused(RuntimeError):
@@ -43,6 +45,9 @@ def classify_snapshot(snapshot, mode="inspect"):
         raise SnapshotProvenanceRefused("snapshot_route_disabled")
     project_id = str(snapshot.get("projectId") or "").strip()
     bound_project_id = str(snapshot.get("boundProjectId") or "").strip()
+    # Bound length before other checks so excessively long identities fail closed.
+    if len(project_id) > MAX_IDENTITY_LENGTH or len(bound_project_id) > MAX_IDENTITY_LENGTH:
+        raise SnapshotProvenanceRefused("snapshot_project_unbound")
     # Fail closed on control characters or non-ASCII in identity fields so confusables and
     # injection residues cannot be treated as bound.
     for field in (project_id, bound_project_id):
@@ -65,6 +70,8 @@ def classify_snapshot(snapshot, mode="inspect"):
     if measurement not in ALLOWED_KINDS:
         raise SnapshotProvenanceRefused("snapshot_measurement_kind_unknown")
     source_ref = str(snapshot.get("sourceRef") or "").strip()
+    if len(source_ref) > MAX_SOURCE_LENGTH:
+        raise SnapshotProvenanceRefused("snapshot_source_missing")
     if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 127 for c in source_ref):
         raise SnapshotProvenanceRefused("snapshot_source_missing")
     if not source_ref:
