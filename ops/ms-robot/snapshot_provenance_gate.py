@@ -9,6 +9,7 @@ from __future__ import annotations
 
 SAMPLED_KINDS = frozenset({"sampled", "incomplete", "estimated", "partial"})
 ALLOWED_KINDS = frozenset({"", "observed", "complete", "unsampled"})
+MAX_MODE_LENGTH = 32
 
 
 class SnapshotProvenanceRefused(RuntimeError):
@@ -21,6 +22,8 @@ def classify_snapshot(snapshot, mode="inspect"):
     if not isinstance(snapshot, dict):
         raise SnapshotProvenanceRefused("snapshot_invalid")
     if not isinstance(mode, str):
+        raise SnapshotProvenanceRefused("snapshot_mode_unknown")
+    if len(mode) > MAX_MODE_LENGTH:
         raise SnapshotProvenanceRefused("snapshot_mode_unknown")
     raw_mode = mode
     # Reject control/DEL/non-ASCII in the raw mode before any strip so trailing

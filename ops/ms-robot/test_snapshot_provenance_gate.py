@@ -100,5 +100,12 @@ class SnapshotProvenanceGateTest(unittest.TestCase):
                 classify_snapshot(snapshot, mode="inspect")
             self.assertEqual(caught.exception.code, "snapshot_measurement_kind_unknown")
 
+
+    def test_excessively_long_mode_is_refused(self):
+        long_mode = "inspect" + ("x" * 100)
+        with self.assertRaises(SnapshotProvenanceRefused) as caught:
+            classify_snapshot({"projectId": "p1", "boundProjectId": "p1", "provenance": "first_party", "measurementKind": "observed", "sourceRef": "s1"}, mode=long_mode)
+        self.assertEqual(str(caught.exception), "snapshot_mode_unknown")
+
 if __name__ == "__main__":
     unittest.main()
