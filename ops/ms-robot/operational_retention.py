@@ -4,6 +4,7 @@ This module never deletes rows and never activates medical retention.
 A caller may request a dry-run count for thesis/other domains only.
 Any execute/apply mode, unknown domain, or medical domain fails closed.
 Non-string inputs for domain or mode are refused before normalisation.
+Raw control, DEL, or non-ASCII characters are refused before any strip/lower so they cannot be stripped away to smuggle a valid value.
 """
 from __future__ import annotations
 
@@ -15,22 +16,22 @@ class RetentionRefused(RuntimeError):
     pass
 
 
+def _has_forbidden_chars(value: str) -> bool:
+    return any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in value)
+
+
 def plan_operational_retention(*, data_domain: str, mode: str, candidate_rows: int) -> dict:
     if not isinstance(data_domain, str):
         raise RetentionRefused("retention_refused_domain")
     if not isinstance(mode, str):
         raise RetentionRefused("retention_execution_disabled")
-    raw_domain = data_domain
-    domain = raw_domain.strip().lower()
-    # Fail closed on any non-ASCII after normalisation so confusables and format characters
-    # cannot be accepted even if a future set membership check is loosened.
-    if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in domain):
+    # Reject raw control/DEL/non-ASCII before strip so trailing controls that strip() removes cannot smuggle a valid domain or mode.
+    if _has_forbidden_chars(data_domain):
         raise RetentionRefused("retention_refused_domain")
-    requested = mode.strip().lower()
-    # Fail closed on any non-ASCII after normalisation so confusables and format characters
-    # cannot be accepted even if a future exact-match check is loosened.
-    if any(ord(char) < 32 or ord(char) == 127 or ord(char) > 127 for char in requested):
+    if _has_forbidden_chars(mode):
         raise RetentionRefused("retention_execution_disabled")
+    domain = data_domain.strip().lower()
+    requested = mode.strip().lower()
     if domain == "medical" or domain not in OPERATIONAL_DOMAINS:
         raise RetentionRefused("retention_refused_domain")
     if requested != "dry-run":
