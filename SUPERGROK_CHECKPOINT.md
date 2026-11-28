@@ -1,3 +1,18 @@
+# SuperGrok Checkpoint 2026-11-28T10:00+0330
+
+**Task:** AAX-128 unified promotion/reconciliation readiness (PR #18). AAX-132 (PR #4) and AAX-111 (PR #5) remain merged with no new valid unresolved P1/Major findings on current heads.
+**Branch:** fix/unified-privacy-reconcile-20261005
+**Full SHA:** 34e48beb944b7aa0fd5379867de0e3978090c379 (this checkpoint advances the branch)
+**Files changed:** SUPERGROK_CHECKPOINT.md
+**Issue fixed:** Confirmed current GitHub state. PR #4 merged @ 0b914518350ae0ff4293887aaaaaa5aea96b92fc; PR #5 merged @ 63988c96676e6a5be675b13dec5e94c2e7f06548. Shared SQLite schema-migration coordinator (BEGIN IMMEDIATE, busy_timeout + bounded retry, one-transaction inspect/rename/copy/validate/cleanup/marker, legacy under project_id='legacy', fail-closed ambiguous, shadow recovery, concurrent process tests) present and verified. No PostgreSQL 0006/0007/0008 collision.
+**Tests/checks actually run this hour:** PYTHONPATH=ops/ms-robot:ops/analytics-gateway python3 -m unittest ops.analytics-gateway.test_sqlite_migrations ops.ms-robot.test_promotion_readiness ops.ms-robot.test_operational_retention → 39/39 PASS. Python compile clean. git status clean. PR #18: open draft, mergeable_state=clean, 0 review threads, status pending (0 checks). Browser smoke: not run. Full repository npm/TypeScript/lint/build: not run (sandbox Node constraints; not claimed).
+**Unresolved findings:** none code-level on #4/#5/#18. Promotion remains not_promotable pending human gates (canonical project/site map, medical notes/retention activation, credentials, shared auth, deploy approval). PR #34 (AAX-55) mergeable_state dirty. External reviewers limited (not code findings). Agiflow write unavailable (no connector); this commit + GitHub comment is the checkpoint.
+**Exact next action:** Leave PR #18 in review. On next run, if no new P1/Major, start non-overlapping AAX-55 ambient enforcement or retention edge on a clean branch off main (reconcile PR #34 non-destructively if possible) or advance AAX-81 snapshot provenance. Do not merge to main. Do not deploy. Do not enable scheduled portfolio sync. Do not force-push. Monitor for new trusted review findings.
+
+Continuous queue advancing under AAX-128 / launch-readiness. No blocker requiring stop.
+
+---
+
 # SuperGrok Checkpoint 2026-11-27T19:09+0330
 
 **Task:** Hourly SuperGrok run — inspect AAX-132 / AAX-111 / AAX-68 / AAX-128; continue non-overlapping launch readiness after PR #4/#5 convergence.
@@ -10,18 +25,3 @@
 **Exact next action:** Leave PR #18 draft in review. On next run attempt safe non-overlapping AAX-55 ambient data_domain enforcement or retention edge on a clean branch off main (or carefully reconcile PR #34 if non-destructive). Do not merge to main. Do not deploy. Do not enable scheduled portfolio sync. Monitor for new trusted review findings. Do not force-push.
 
 PR #4 and PR #5 remain merged. No valid unresolved P1/Major. Continuous queue on AAX-128 promotion readiness then AAX-55. Agiflow write unavailable; this commit is the checkpoint.
-
----
-
-# SuperGrok Checkpoint 2026-11-27T18:18+0330
-
-**Task:** AAX-128 unified branch promotion/reconciliation readiness (PR #18). PR #4/#5 merged and clean. AAX-132 SQLite coordinator verified present on main.
-**Branch:** fix/unified-privacy-reconcile-20261005
-**SHA:** current head after this checkpoint commit (prior tree 8a697d542d06ed9d6458bd2c8b7d2dd5576f9983 / 8be49c5dace8cf7d662b01f737ea9f3c9d8d298a)
-**Files changed:** SUPERGROK_CHECKPOINT.md (checkpoint only)
-**Issue fixed:** Confirmed current GitHub state on hourly run. PR #4 and PR #5 remain merged/closed with no valid unresolved P1/Major. Shared SQLite schema coordinator (sqlite_migrations.py) present on main with BEGIN IMMEDIATE, busy_timeout, legacy project_id='legacy', fail-closed ambiguous states. PR #18 open draft, clean, no review threads. PR #34 draft with merge conflicts. No new trusted review findings.
-**Tests/checks actually run:** None new this run (prior verification holds; sandbox limits prevent full re-run of full suite). git diff --check: not re-run. changed-file secret scan: clean on prior. Browser smoke: not run. Full repository/Node/TypeScript/lint/build: not run this cycle.
-**Unresolved findings:** none on PR #4, #5, or #18 heads. Promotion remains not_promotable pending human gates (canonical project/site map, medical notes, credentials, deploy approval). No code-level P1/Major. PR #26 and #34 have merge conflicts (dirty). No collision with PostgreSQL migrations 0006/0007/0008.
-**Exact next action:** Leave PR #18 in review. On next run attempt safe non-overlapping AAX-55 strengthening (ambient data_domain enforcement or retention edge) on a clean branch or reconcile PR #34 conflicts if non-destructive and tests pass. Do not merge to main. Do not deploy. Do not enable scheduled portfolio sync. Monitor for new trusted review findings. Do not force-push.
-
-PR #4 and PR #5 remain merged. No valid unresolved P1/Major. Continuous queue advancing on AAX-128 under promotion readiness, then AAX-55. Agiflow write unavailable; this commit is the checkpoint.
