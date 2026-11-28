@@ -74,3 +74,21 @@ Cross-comment: AAX-132 SQLite migration-race remediation verified present and co
 - blocker: Agiflow write unavailable; this GitHub commit is the checkpoint.
 
 Cross-comment: Shared SQLite coordinator (AAX-132) remains green. AAX-55 retention and AAX-81 snapshot gates now both reject raw control characters before normalisation. Continuous queue advancing on AAX-55 / AAX-81 / AAX-128 verification.
+# SuperGrok Checkpoint 2026-11-28T17:07+0330
+
+- task: Hourly inspection for AAX-132 / AAX-111 / AAX-68 / AAX-128; continue AAX-55
+- branch: aax55-retention-edge-20261122 (PR #34)
+- full SHA: bff87325e48beea7e78bbd4e4c29b0e60a0db06a (pre-this-change)
+- files changed: ops/ms-robot/SUPERGROK_CHECKPOINT.md (this update)
+- issue fixed: none (inspection + verification); confirmed focused AAX-55 retention tests green on current head; no new valid unresolved P1/Major on closed PR #4/#5
+- tests/checks actually run:
+  - ops/ms-robot test_operational_retention.py: 15/15 PASS
+  - Python compile on relevant files: PASS
+  - Browser smoke: not run (sandbox limitation)
+- GitHub current state: PR #4 closed/merged; PR #5 closed/merged; no new valid unresolved P1/Major; PR #34 draft open on head bff87325, mergeable_state dirty, no review threads (Greptile trial ended); other drafts remain
+- unresolved findings: promotion not_promotable pending human gates (canonical map, credentials, deploy approval); Agiflow write unavailable (GitHub comment/commit is the record)
+- exact next action: keep PR #34 draft; continue non-overlapping AAX-55 ambient enforcement or advance AAX-81/AAX-82/AAX-128 slice on next run; do not merge to main; do not deploy; do not enable scheduled portfolio sync; do not force-push
+- blocker: Agiflow write unavailable; no genuine human blocker requiring stop
+
+Cross-comment: AAX-132 shared SQLite coordinator verified present and complete on main. AAX-111 SQL/auth hardening merged and clean. Continuous work advancing on AAX-55 retention strengthening and launch readiness.
+
