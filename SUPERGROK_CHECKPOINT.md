@@ -1,3 +1,16 @@
+# SuperGrok Checkpoint 2026-11-28T11:00+0330
+
+**Task:** AAX-128 unified promotion/reconciliation readiness (PR #18). AAX-132 (PR #4) and AAX-111 (PR #5) remain merged with no new valid unresolved P1/Major findings on current heads.
+**Branch:** fix/unified-privacy-reconcile-20261005
+**Full SHA:** a3864be3bd913ec4951ff5cdb8a216cf86c4961f (this checkpoint advances the branch)
+**Files changed:** SUPERGROK_CHECKPOINT.md
+**Issue fixed:** Confirmed current GitHub state. PR #4 merged @ 0b914518350ae0ff4293887aaaaaa5aea96b92fc; PR #5 merged @ 63988c96676e6a5be675b13dec5e94c2e7f06548. Shared SQLite schema-migration coordinator (BEGIN IMMEDIATE, busy_timeout + bounded retry, one-transaction inspect/rename/copy/validate/cleanup/marker, legacy under project_id='legacy', fail-closed ambiguous, shadow recovery, concurrent process tests) present and verified. No PostgreSQL 0006/0007/0008 collision.
+**Tests/checks actually run this hour:** PYTHONPATH=ops/ms-robot:ops/analytics-gateway python3 -m unittest ops.analytics-gateway.test_sqlite_migrations ops.ms-robot.test_promotion_readiness ops.ms-robot.test_operational_retention ops.ms-robot.test_snapshot_provenance_gate ops.ms-robot.test_snapshot_window_provenance → 9+16+15+ (snapshot suite 57) PASS. Python compile clean on inspected files. PR #18: open draft, mergeable_state=clean, 0 review threads, 0 checks. PR #34: open draft, mergeable_state=dirty, 0 review threads. Browser smoke: not run. Full repository npm/TypeScript/lint/build: not run (sandbox Node constraints; not claimed).
+**Unresolved findings:** none code-level on #4/#5/#18. Promotion remains not_promotable pending human gates (canonical project/site map, medical notes/retention activation, credentials, shared auth, deploy approval). PR #34 mergeable_state dirty due to base divergence. External reviewers limited (not code findings). Agiflow write unavailable (no connector); this commit + GitHub comment is the checkpoint.
+**Exact next action:** Leave PR #18 in review. On next run, if no new P1/Major, start non-overlapping AAX-55 ambient enforcement or retention edge on a clean branch off main (reconcile PR #34 non-destructively if possible) or advance AAX-81 snapshot provenance. Do not merge to main. Do not deploy. Do not enable scheduled portfolio sync. Do not force-push. Monitor for new trusted review findings.
+
+Continuous queue advancing under AAX-128 / launch-readiness. No blocker requiring stop.
+
 # SuperGrok Checkpoint 2026-11-28T10:00+0330
 
 **Task:** AAX-128 unified promotion/reconciliation readiness (PR #18). AAX-132 (PR #4) and AAX-111 (PR #5) remain merged with no new valid unresolved P1/Major findings on current heads.
